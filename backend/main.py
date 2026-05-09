@@ -165,6 +165,10 @@ def create_task(
 @app.patch("/tasks/{task_id}")
 def update_task(
     task_id: int,
+    name: Optional[str] = None,
+    category: Optional[str] = None,
+    subtask: Optional[str] = None,
+    status: Optional[str] = None,
     is_paused: Optional[bool] = None,
     notes: Optional[str] = None,
     manual_last_done_override: Optional[str] = None,
@@ -187,6 +191,14 @@ def update_task(
 
     # Build update map with only the fields that were provided
     updates: dict = {}
+    if name is not None:
+        updates["name"] = name
+    if category is not None:
+        updates["category"] = category
+    if subtask is not None:
+        updates["subtask"] = subtask
+    if status is not None:
+        updates["status"] = status
     if is_paused is not None:
         updates["is_paused"] = int(is_paused)
         updates["paused_at"] = datetime.now().isoformat() if is_paused else None

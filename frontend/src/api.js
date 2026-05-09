@@ -30,3 +30,26 @@ export async function deleteCompletion(taskId, date) {
     throw new Error(`deleteCompletion failed: ${res.status}`);
   }
 }
+
+// Build a query string from a fields object, skipping null/undefined values.
+function toParams(fields) {
+  const p = new URLSearchParams();
+  for (const [key, val] of Object.entries(fields)) {
+    if (val !== null && val !== undefined) {
+      p.append(key, String(val));
+    }
+  }
+  return p.toString();
+}
+
+export async function createTask(fields) {
+  const res = await fetch(`${BASE}/tasks?${toParams(fields)}`, { method: 'POST' });
+  if (!res.ok) throw new Error(`createTask failed: ${res.status}`);
+  return res.json();
+}
+
+export async function updateTask(id, fields) {
+  const res = await fetch(`${BASE}/tasks/${id}?${toParams(fields)}`, { method: 'PATCH' });
+  if (!res.ok) throw new Error(`updateTask failed: ${res.status}`);
+  return res.json();
+}

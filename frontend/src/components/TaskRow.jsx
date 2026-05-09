@@ -8,11 +8,23 @@ function urgencyClass(urgency) {
   return 'urg-low';
 }
 
-export default function TaskRow({ task, dates, todayStr, completions, onIncrement, onClear }) {
+export default function TaskRow({ task, dates, todayStr, completions, onIncrement, onClear, onEdit, onTogglePause }) {
   const isPaused = task.is_paused === 1;
 
   return (
     <tr className={isPaused ? 'task-row paused' : 'task-row'}>
+      <td className="meta-col col-actions">
+        <button
+          className="action-btn"
+          onClick={() => onEdit(task)}
+          title="Edit task"
+        >✏</button>
+        <button
+          className="action-btn"
+          onClick={() => onTogglePause(task)}
+          title={isPaused ? 'Unpause' : 'Pause'}
+        >{isPaused ? '▶' : '⏸'}</button>
+      </td>
       <td className={`meta-col col-urg ${isPaused ? '' : urgencyClass(task.urgency)}`}>
         {isPaused ? '—' : task.urgency}
       </td>

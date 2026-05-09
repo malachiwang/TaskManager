@@ -1,8 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchTasks, fetchCompletions, upsertCompletion, deleteCompletion } from '../api.js';
+import {
+  fetchTasks,
+  fetchCompletions,
+  upsertCompletion,
+  deleteCompletion,
+  createTask,
+  updateTask,
+} from '../api.js';
 import TaskRow from './TaskRow.jsx';
+import TaskModal from './TaskModal.jsx';
 
-// Returns a local-timezone date string YYYY-MM-DD for a given Date object.
 function toLocalDate(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -22,7 +29,6 @@ function buildDateRange() {
   return dates;
 }
 
-// Short column header label for a date string.
 function dateLabel(isoDate) {
   const [y, m, day] = isoDate.split('-').map(Number);
   const d = new Date(y, m - 1, day);
@@ -30,20 +36,23 @@ function dateLabel(isoDate) {
 }
 
 export default function TaskGrid() {
-  // dates is computed once on mount and never changes.
   const [dates] = useState(buildDateRange);
-  const todayStr = dates[7]; // index 7 is always today
+  const todayStr = dates[7];
 
   const [tasks, setTasks] = useState([]);
-  // completions: key "taskId:date" → completion_count
   const [completions, setCompletions] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
+  // Modal: closed when modalOpen=false. editingTask=null → add mode; task obj → edit mode.
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
+
+  // Fetch tasks and completions. Called on mount and after every mutation.
+  const loadData = useCallback(() => {
     const start = dates[0];
     const end = dates[dates.length - 1];
-    Promise.all([fetchTasks(), fetchCompletions(start, end)])
+    return Promise.all([fetchTasks(), fetchCompletions(start, end)])
       .then(([taskList, compList]) => {
         setTasks(taskList);
         const map = {};
@@ -56,7 +65,14 @@ export default function TaskGrid() {
       .finally(() => setLoading(false));
   }, [dates]);
 
-  // Increment count for a cell. Updates state after API confirms.
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // -------------------------------------------------------------------------
+  // Completion cell handlers (unchanged from Ticket 3)
+  // -------------------------------------------------------------------------
+
   const handleIncrement = useCallback(async (taskId, date) => {
     try {
       const result = await upsertCompletion(taskId, date);
@@ -69,7 +85,6 @@ export default function TaskGrid() {
     }
   }, []);
 
-  // Clear a cell. Removes key from state after API confirms.
   const handleClear = useCallback(async (taskId, date) => {
     try {
       await deleteCompletion(taskId, date);
@@ -83,58 +98,128 @@ export default function TaskGrid() {
     }
   }, []);
 
+  // -------------------------------------------------------------------------
+  // Task management handlers
+  // -------------------------------------------------------------------------
+
+  function openAdd() {
+    setEditingTask(null);
+    setModalOpen(true);
+  }
+
+  function openEdit(task) {
+    setEditingTask(task);
+    setModalOpen(true);
+  }
+
+  function closeModal() {
+    setModalOpen(false);
+    setEditingTask(null);
+  }
+
+  async function handleSave(fields) {
+    try {
+      if (editingTask) {
+        await updateTask(editingTask.id, fields);
+      } else {
+        await createTask(fields);
+      }
+      closeModal();
+      await loadData();
+    } catch (e) {
+      console.error('save failed:', e);
+    }
+  }
+
+  async function handleTogglePause(task) {
+    try {
+      await updateTask(task.id, { is_paused: !task.is_paused });
+      await loadData();
+    } catch (e) {
+      console.error('pause toggle failed:', e);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Render
+  // -------------------------------------------------------------------------
+
   if (loading) return <div className="grid-status">Loading…</div>;
-  if (error) return <div className="grid-status error">Error: {error}<br />Is the backend running? <code>uvicorn backend.main:app --reload</code></div>;
+  if (error) return (
+    <div className="grid-status error">
+      Error: {error}<br />
+      Is the backend running? <code>uvicorn backend.main:app --reload</code>
+    </div>
+  );
 
   return (
-    <div className="grid-wrapper">
-      <table className="task-grid">
-        <thead>
-          <tr>
-            <th className="meta-col col-urg" title="Urgency">Urg</th>
-            <th className="meta-col col-pri" title="Priority">P</th>
-            <th className="meta-col col-status">Status</th>
-            <th className="meta-col col-cat">Category</th>
-            <th className="meta-col col-task">Task</th>
-            <th className="meta-col col-sub">Subtask</th>
-            <th className="meta-col col-freq" title="Frequency (days)">Freq</th>
-            <th className="meta-col col-days" title="Days since last done">Days</th>
-            <th className="meta-col col-notes">Notes</th>
-            {dates.map((d) => (
-              <th
-                key={d}
-                className={[
-                  'date-col-header',
-                  d === todayStr ? 'col-today' : '',
-                  d > todayStr ? 'col-future' : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-              >
-                {dateLabel(d)}
-              </th>
+    <>
+      <div className="grid-toolbar">
+        <button className="btn-add-task" onClick={openAdd}>+ Add Task</button>
+      </div>
+
+      <div className="grid-wrapper">
+        <table className="task-grid">
+          <thead>
+            <tr>
+              <th className="meta-col col-actions"></th>
+              <th className="meta-col col-urg" title="Urgency">Urg</th>
+              <th className="meta-col col-pri" title="Priority">P</th>
+              <th className="meta-col col-status">Status</th>
+              <th className="meta-col col-cat">Category</th>
+              <th className="meta-col col-task">Task</th>
+              <th className="meta-col col-sub">Subtask</th>
+              <th className="meta-col col-freq" title="Frequency (days)">Freq</th>
+              <th className="meta-col col-days" title="Days since last done">Days</th>
+              <th className="meta-col col-notes">Notes</th>
+              {dates.map((d) => (
+                <th
+                  key={d}
+                  className={[
+                    'date-col-header',
+                    d === todayStr ? 'col-today' : '',
+                    d > todayStr ? 'col-future' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                >
+                  {dateLabel(d)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {tasks.map((task) => (
+              <TaskRow
+                key={task.id}
+                task={task}
+                dates={dates}
+                todayStr={todayStr}
+                completions={completions}
+                onIncrement={handleIncrement}
+                onClear={handleClear}
+                onEdit={openEdit}
+                onTogglePause={handleTogglePause}
+              />
             ))}
-          </tr>
-        </thead>
-        <tbody>
-          {tasks.map((task) => (
-            <TaskRow
-              key={task.id}
-              task={task}
-              dates={dates}
-              todayStr={todayStr}
-              completions={completions}
-              onIncrement={handleIncrement}
-              onClear={handleClear}
-            />
-          ))}
-        </tbody>
-      </table>
-      {tasks.length === 0 && (
-        <div className="grid-status">
-          No tasks found. Run <code>python -m backend.seed</code> to add sample data.
-        </div>
+          </tbody>
+        </table>
+
+        {tasks.length === 0 && (
+          <div className="grid-status">
+            No tasks found. Click <strong>+ Add Task</strong> or run{' '}
+            <code>python -m backend.seed</code> to add sample data.
+          </div>
+        )}
+      </div>
+
+      {modalOpen && (
+        <TaskModal
+          task={editingTask}
+          onSave={handleSave}
+          onClose={closeModal}
+        />
       )}
-    </div>
+    </>
   );
 }
