@@ -19,14 +19,19 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <span className="app-title">TaskManagementOS</span>
+        <div className="app-identity">
+          <span className="app-title">TaskManagementOS</span>
+          <span className="app-tagline">local-first · pressure tracker</span>
+        </div>
         <nav className="app-tabs">
           <button className={`tab${tab === 'grid' ? ' active' : ''}`} onClick={() => setTab('grid')}>Grid</button>
           <button className={`tab${tab === 'dashboard' ? ' active' : ''}`} onClick={() => setTab('dashboard')}>Dashboard</button>
           <button className={`tab${tab === 'archive' ? ' active' : ''}`} onClick={() => setTab('archive')}>Archive</button>
           <button className={`tab${tab === 'settings' ? ' active' : ''}`} onClick={() => setTab('settings')}>Settings</button>
         </nav>
-        <a className="btn-export-backup" href={buildExportBackupUrl()} download>Export Backup JSON</a>
+        <a className="header-pill" href={buildExportBackupUrl()} download>
+          ⤓ <span className="pill-value">Export</span>
+        </a>
       </header>
       <main className="app-main">
         {tab === 'grid' && <TaskGrid />}

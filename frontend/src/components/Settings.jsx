@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { buildExportBackupUrl } from '../api.js';
 
-const LS_SETTINGS_KEY = 'taskos-settings';
+const LS_SETTINGS_KEY  = 'taskos-settings';
 const LS_COL_WIDTHS_KEY = 'taskos-col-widths';
 
 function loadSettings() {
@@ -14,19 +14,19 @@ function loadSettings() {
 }
 
 export default function Settings() {
-  const [theme, setTheme] = useState(() => localStorage.getItem('taskos-theme') || 'sheets');
+  const [theme, setTheme]                   = useState(() => localStorage.getItem('taskos-theme') || 'sheets');
   const [defaultSection, setDefaultSection] = useState(() => loadSettings().defaultSection ?? 'General');
   const [defaultPriority, setDefaultPriority] = useState(() => loadSettings().defaultPriority ?? 5);
   const [defaultInterval, setDefaultInterval] = useState(() => loadSettings().defaultIntervalDays ?? 7);
-  const [savedMsg, setSavedMsg] = useState(false);
-  const [colResetMsg, setColResetMsg] = useState(false);
+  const [savedMsg, setSavedMsg]             = useState(false);
+  const [colResetMsg, setColResetMsg]       = useState(false);
 
   function handleSaveDefaults(e) {
     e.preventDefault();
     try {
       localStorage.setItem(LS_SETTINGS_KEY, JSON.stringify({
-        defaultSection: defaultSection.trim() || 'General',
-        defaultPriority: Math.min(10, Math.max(1, Number(defaultPriority) || 5)),
+        defaultSection:     defaultSection.trim() || 'General',
+        defaultPriority:    Math.min(10, Math.max(1, Number(defaultPriority) || 5)),
         defaultIntervalDays: Math.max(1, Number(defaultInterval) || 7),
       }));
       setSavedMsg(true);
@@ -47,37 +47,48 @@ export default function Settings() {
   }
 
   return (
-    <div className="settings">
+    <div className="ws-settings">
 
-      <div className="dash-header">
-        <span className="dash-header-title">Settings</span>
-        <span className="dash-header-sub">Local preferences — stored in browser</span>
+      {/* ── Page chrome — design report .mh as page header ── */}
+      <div className="ws-page-header">
+        <span>Settings</span>
+        <span className="ws-page-header-sub">local preferences · stored in browser · never synced</span>
       </div>
 
-      {/* Appearance */}
-      <section className="dash-section">
-        <div className="dash-section-title">Appearance</div>
-        <div className="settings-body">
-          <label className="settings-label">
-            Theme
-            <select
-              className="settings-input"
-              style={{ width: '180px' }}
-              value={theme}
-              onChange={handleThemeChange}
-            >
-              <option value="sheets">Sheets Classic</option>
-              <option value="paper">Paper Workstation</option>
-            </select>
-          </label>
+      {/* ── Appearance — design report .stl/.grp pattern ── */}
+      <div className="ws-frame">
+        <div className="ws-frame-header">
+          <span>Appearance</span>
         </div>
-      </section>
+        <ul className="ws-settings-list">
+          <li className="ws-settings-item">
+            <div>
+              <div className="ws-settings-name">Visual theme</div>
+              <span className="ws-settings-desc">tokens only · no layout change</span>
+            </div>
+            <div className="ws-settings-ctl">
+              <select
+                className="settings-input"
+                style={{ width: '180px' }}
+                value={theme}
+                onChange={handleThemeChange}
+              >
+                <option value="sheets">Sheets Classic</option>
+                <option value="paper">Paper Workstation</option>
+              </select>
+            </div>
+          </li>
+        </ul>
+      </div>
 
-      {/* Task Defaults */}
-      <section className="dash-section">
-        <div className="dash-section-title">Task Defaults</div>
-        <div className="settings-body">
-          <p className="settings-help">
+      {/* ── Task defaults ── */}
+      <div className="ws-frame">
+        <div className="ws-frame-header">
+          <span>Task defaults</span>
+          <span className="ws-frame-header-sub">applied when opening Add Task</span>
+        </div>
+        <div className="ws-frame-body">
+          <p className="settings-help" style={{ marginBottom: '10px' }}>
             Applied when opening the Add Task dialog. Editing an existing task always uses its saved values.
           </p>
           <form onSubmit={handleSaveDefaults} className="settings-form">
@@ -117,50 +128,95 @@ export default function Settings() {
               </label>
             </div>
             <div className="settings-actions">
-              <button className="btn-archive-sheet" type="submit">Save Defaults</button>
+              <button className="button-secondary" type="submit">Save Defaults</button>
               {savedMsg && <span className="settings-saved">Saved.</span>}
             </div>
           </form>
         </div>
-      </section>
+      </div>
 
-      {/* Columns */}
-      <section className="dash-section">
-        <div className="dash-section-title">Columns</div>
-        <div className="settings-body">
-          <div>
-            <button className="btn-archive-sheet" onClick={handleResetColumns}>
-              Reset Column Widths
-            </button>
-          </div>
+      {/* ── Grid columns ── */}
+      <div className="ws-frame">
+        <div className="ws-frame-header">
+          <span>Grid columns</span>
+        </div>
+        <ul className="ws-settings-list">
+          <li className="ws-settings-item">
+            <div>
+              <div className="ws-settings-name">Column widths</div>
+              <span className="ws-settings-desc">drag column edges in the grid to resize · stored in localStorage</span>
+            </div>
+            <div className="ws-settings-ctl">
+              <button className="button-secondary" onClick={handleResetColumns}>
+                Reset widths
+              </button>
+            </div>
+          </li>
           {colResetMsg && (
-            <span className="settings-saved">
-              Column widths cleared. Switch to the Grid tab (or refresh the page) to see the updated layout.
-            </span>
+            <li className="ws-settings-item">
+              <span className="settings-saved">
+                Column widths cleared. Switch to the Grid tab to see the updated layout.
+              </span>
+            </li>
           )}
-        </div>
-      </section>
+        </ul>
+      </div>
 
-      {/* Data */}
-      <section className="dash-section">
-        <div className="dash-section-title">Data</div>
-        <div className="settings-body">
-          <p className="settings-help">
-            Export a full backup before importing or making bulk changes.
-          </p>
-          <div>
-            <a className="btn-archive-sheet" href={buildExportBackupUrl()} download>
-              Export Backup JSON
+      {/* ── Data safety — design report Privacy group pattern ── */}
+      <div className="ws-frame">
+        <div className="ws-frame-header">
+          <span>Data safety</span>
+          <span className="ws-frame-header-sub">export before bulk changes</span>
+        </div>
+        <ul className="ws-settings-list">
+          <li className="ws-settings-item">
+            <div>
+              <div className="ws-settings-name">Database</div>
+              <span className="ws-settings-desc">local SQLite · taskos.db · gitignored · never committed</span>
+            </div>
+            <span className="ws-settings-ctl verified">local</span>
+          </li>
+          <li className="ws-settings-item">
+            <div>
+              <div className="ws-settings-name">Cloud sync</div>
+              <span className="ws-settings-desc">no cloud sync · no authentication · no external services</span>
+            </div>
+            <span className="ws-settings-ctl none">none</span>
+          </li>
+          <li className="ws-settings-item">
+            <div>
+              <div className="ws-settings-name">Telemetry</div>
+              <span className="ws-settings-desc">there is none. ever.</span>
+            </div>
+            <span className="ws-settings-ctl verified">off</span>
+          </li>
+          <li className="ws-settings-item">
+            <div>
+              <div className="ws-settings-name">Network calls</div>
+              <span className="ws-settings-desc">localhost only · 0 outbound requests</span>
+            </div>
+            <span className="ws-settings-ctl verified">verified</span>
+          </li>
+          <li className="ws-settings-item">
+            <div>
+              <div className="ws-settings-name">Export backup JSON</div>
+              <span className="ws-settings-desc">full database export · use before importing or bulk changes</span>
+            </div>
+            <a className="button-secondary" href={buildExportBackupUrl()} download>
+              Export JSON
             </a>
-          </div>
-        </div>
-      </section>
+          </li>
+        </ul>
+      </div>
 
-      {/* Urgency Formula */}
-      <section className="dash-section">
-        <div className="dash-section-title">Urgency Formula</div>
-        <div className="settings-body">
-          <p className="settings-help">
+      {/* ── Urgency formula — read only ── */}
+      <div className="ws-frame">
+        <div className="ws-frame-header">
+          <span>Urgency formula</span>
+          <span className="ws-frame-header-sub">read only · fixed in backend/logic.py</span>
+        </div>
+        <div className="ws-frame-body">
+          <p className="settings-help" style={{ marginBottom: '8px' }}>
             Asymptotic — urgency approaches 10 but never exceeds it. Paused tasks always have urgency 0.
             Formula constants are fixed in <code>backend/logic.py</code> and are not editable here.
           </p>
@@ -171,12 +227,14 @@ urgency = 10 × (floor + (1 − floor) × growth)
 
 k = 2.0   D = days_since   I = interval_days`}</pre>
         </div>
-      </section>
+      </div>
 
-      {/* About */}
-      <section className="dash-section">
-        <div className="dash-section-title">About</div>
-        <div className="settings-body settings-prose">
+      {/* ── About ── */}
+      <div className="ws-frame">
+        <div className="ws-frame-header">
+          <span>About</span>
+        </div>
+        <div className="ws-frame-body settings-prose">
           <p><strong>TaskManagementOS</strong> is a local-first task-pressure tracker.</p>
           <ul>
             <li>All data is stored in a local SQLite file (<code>taskos.db</code>).</li>
@@ -187,7 +245,7 @@ k = 2.0   D = days_since   I = interval_days`}</pre>
             <li>Current limitations: no notifications, no mobile app, no multi-user support.</li>
           </ul>
         </div>
-      </section>
+      </div>
 
     </div>
   );

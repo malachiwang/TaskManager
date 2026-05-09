@@ -109,25 +109,46 @@ body {
 .app-header {
   display: flex;
   align-items: center;
-  gap: 20px;
-  padding: 6px 14px;
+  gap: 0;
+  padding: 0 16px;
   background: var(--ink);
   color: #e0e0e0;
   border-bottom: 2px solid var(--ink-2);
   flex-shrink: 0;
+  height: 46px;
+}
+
+/* App product identity zone — title + tagline stacked */
+.app-identity {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 20px 0 0;
+  margin-right: 4px;
+  border-right: 1px solid rgba(255, 255, 255, 0.18);
+  height: 100%;
 }
 
 .app-title {
-  font-weight: bold;
-  font-size: 13px;
-  letter-spacing: 0.06em;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.1em;
   color: #fff;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.app-tagline {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.38);
+  letter-spacing: 0.04em;
+  line-height: 1;
 }
 
 .app-tabs {
   display: flex;
   gap: 2px;
-  border-left: 1px solid rgba(255, 255, 255, 0.2);
   padding-left: 16px;
 }
 
@@ -694,7 +715,7 @@ thead .meta-col {
 .modal-form {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   padding: 14px;
 }
 
@@ -779,11 +800,14 @@ thead .meta-col {
   font-family: var(--font-sans);
 }
 
-/* Modal form group — tight inner stack, outer gap handled by .modal-form */
+/* Modal form group — bordered block with kicker label above fields */
 .modal-group {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  background: var(--bg-app);
+  border: 1px solid var(--grid-border);
+  padding: 10px 12px;
 }
 
 /* -------------------------------------------------------------------------
@@ -804,13 +828,6 @@ thead .meta-col {
   font-family: inherit;
   font-size: 12px;
   cursor: pointer;
-  border: 1px solid var(--ink);
-  background: var(--ink);
-  color: #fff;
-}
-
-.modal-actions button:hover {
-  background: var(--ink-2);
 }
 
 .modal-actions .btn-cancel {
@@ -844,7 +861,7 @@ thead .meta-col {
   display: flex;
   align-items: baseline;
   gap: 12px;
-  padding: 8px 12px;
+  padding: 12px 16px;
   background: var(--bg-panel);
   border: 1px solid var(--grid-border);
   border-left: 3px solid var(--ink);
@@ -872,6 +889,7 @@ thead .meta-col {
   border: 1px solid var(--grid-border);
   background: var(--bg-panel);
   min-width: 0;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.07);
 }
 
 .dash-section-title {
@@ -909,7 +927,7 @@ thead .meta-col {
 }
 
 .dash-stat-value {
-  font-size: 22px;
+  font-size: 28px;
   font-weight: 700;
   font-family: var(--font-mono);
   color: var(--ink);
@@ -1022,6 +1040,7 @@ thead .meta-col {
   flex-direction: column;
   gap: 8px;
   font-size: 12px;
+  background: var(--bg-app);
 }
 
 /* Help / descriptor text — italic muted note below a section title. */
@@ -1216,6 +1235,61 @@ thead .meta-col {
   flex-shrink: 0;
 }
 
+/* -------------------------------------------------------------------------
+   Button system (UI-17)
+   ---------------------------------------------------------------------- */
+
+/* Primary action — accent fill */
+.button-primary {
+  padding: 5px 16px;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent);
+}
+
+.button-primary:hover {
+  filter: brightness(1.1);
+}
+
+/* Secondary action — neutral outline */
+.button-secondary {
+  padding: 5px 16px;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  background: var(--bg-panel);
+  color: var(--ink-2);
+  border: 1px solid var(--grid-border);
+}
+
+.button-secondary:hover {
+  background: var(--header-bg);
+}
+
+/* -------------------------------------------------------------------------
+   Toolbar control groups (UI-17)
+   ---------------------------------------------------------------------- */
+
+/* Inline cluster of related toolbar controls */
+.control-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Secondary-action cluster — pushed right of the primary group */
+.control-group--actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--grid-border);
+}
+
 /* Month navigation controls in grid toolbar */
 .range-nav {
   margin-left: auto;
@@ -1246,4 +1320,453 @@ thead .meta-col {
   color: var(--muted);
   padding: 0 6px;
   white-space: nowrap;
+}
+
+/* =========================================================================
+   Design Report v2 — Paper Workstation surfaces (UI-17B)
+   Dashboard · Archive · Settings
+   Implements formats from §07, §08, §09 of the design report.
+   ========================================================================= */
+
+/* -------------------------------------------------------------------------
+   ws-frame — shared panel chrome (§09 .frame / .mh pattern)
+   Ink header bar + content body. Used in Dashboard panels, Archive, Settings.
+   ---------------------------------------------------------------------- */
+
+.ws-frame {
+  border: 1px solid var(--rule);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+.ws-frame + .ws-frame {
+  border-top: none;
+}
+
+/* Ink header bar — matches design report .mh */
+.ws-frame-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 12px;
+  background: var(--ink);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.ws-frame-header-sub {
+  color: rgba(255, 255, 255, 0.38);
+  font-weight: 400;
+  letter-spacing: .04em;
+  text-transform: none;
+}
+
+.ws-frame-body {
+  padding: 12px 14px;
+  font-size: 12px;
+}
+
+/* -------------------------------------------------------------------------
+   ws-dashboard — Dashboard page (§08)
+   ---------------------------------------------------------------------- */
+
+.ws-dashboard {
+  font-family: var(--font-sans);
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-app);
+}
+
+/* Serif headline row — design report .dh pattern */
+.ws-dash-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px 12px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--bg-panel);
+  flex-shrink: 0;
+  gap: 14px;
+}
+
+.ws-dash-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Plex Serif title — design report .dh .ttl */
+.ws-dash-title {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--ink);
+  line-height: 1.1;
+}
+
+/* Mono sub — design report .dh .sub */
+.ws-dash-sub {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+/* Right-aligned date/time — design report .dh .now */
+.ws-dash-now {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* -------------------------------------------------------------------------
+   Stat strip — design report .ds / .st pattern (§08, Fig 8.1)
+   5-cell grid with Plex Serif numerals + mono labels + delta line
+   ---------------------------------------------------------------------- */
+
+.ws-stat-strip {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--rule);
+  flex-shrink: 0;
+}
+
+.ws-stat-cell {
+  padding: 11px 16px;
+  border-right: 1px solid var(--rule);
+}
+
+.ws-stat-cell:last-child {
+  border-right: none;
+}
+
+/* Mono label — design report .ds .lbl */
+.ws-stat-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .08em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+/* Plex Serif numeral — design report .ds .val */
+.ws-stat-value {
+  font-family: var(--font-serif);
+  font-size: 24px;
+  line-height: 1.1;
+  margin-top: 3px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.ws-stat-value small {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  margin-left: 3px;
+}
+
+/* Delta / descriptor line — design report .ds .delta */
+.ws-stat-delta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ws-stat-delta.up { color: var(--good); }
+.ws-stat-delta.dn { color: var(--urg-hi); }
+
+/* -------------------------------------------------------------------------
+   Dashboard panels grid
+   ---------------------------------------------------------------------- */
+
+.ws-panels {
+  flex: 1;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-content: start;
+}
+
+.ws-frame--full {
+  grid-column: 1 / -1;
+}
+
+/* Empty state inside panels */
+.ws-empty {
+  padding: 14px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted-2);
+  font-style: italic;
+}
+
+/* -------------------------------------------------------------------------
+   Archive page (§09)
+   ---------------------------------------------------------------------- */
+
+.ws-archive {
+  font-family: var(--font-sans);
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-app);
+  gap: 0;
+}
+
+/* Page-level ink header — design report .mh used as page chrome */
+.ws-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: var(--ink);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.ws-page-header-sub {
+  color: rgba(255, 255, 255, 0.38);
+  font-weight: 400;
+  letter-spacing: .04em;
+  text-transform: none;
+}
+
+/* Archive meta strip (snapshot count / size hint) */
+.ws-archive-meta {
+  padding: 6px 14px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--rule-2);
+  background: var(--bg-panel);
+}
+
+/* Snapshot list — design report .snap pattern */
+.ws-snap-list {
+  list-style: none;
+}
+
+.ws-snap-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--rule-2);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.ws-snap-item:last-child {
+  border-bottom: none;
+}
+
+.ws-snap-item:hover {
+  background: var(--row-hover-bg);
+}
+
+/* Selected snapshot — design report .snap li.sel */
+.ws-snap-item--active {
+  background: var(--accent-soft);
+  border-left: 2px solid var(--accent);
+  padding-left: 12px;
+}
+
+.ws-snap-item--active:hover {
+  background: var(--accent-soft);
+}
+
+/* Snapshot name — design report .snap .nm */
+.ws-snap-name {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--ink);
+}
+
+/* Snapshot date range — design report .snap .dt */
+.ws-snap-date {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  display: block;
+  margin-top: 2px;
+}
+
+/* Snapshot right-side meta — design report .snap .ct */
+.ws-snap-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.ws-snap-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* -------------------------------------------------------------------------
+   Import banner — design report .ban pattern (§09)
+   ---------------------------------------------------------------------- */
+
+.ws-import-banner {
+  display: flex;
+  gap: 10px;
+  padding: 9px 12px;
+  background: var(--caution-bg);
+  border: 1px solid var(--caution-border);
+  color: var(--ink-2);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+
+.ws-import-banner-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--urg-mid);
+  display: block;
+  margin-bottom: 2px;
+  font-weight: 600;
+}
+
+/* -------------------------------------------------------------------------
+   Settings page (§09 .stl / .grp pattern)
+   ---------------------------------------------------------------------- */
+
+.ws-settings {
+  font-family: var(--font-sans);
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-app);
+}
+
+/* Settings list — design report .stl */
+.ws-settings-list {
+  list-style: none;
+}
+
+/* Group separator — design report .stl .grp */
+.ws-settings-group {
+  background: var(--header-bg);
+  padding: 5px 14px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule-2);
+}
+
+.ws-settings-group:first-child {
+  border-top: none;
+}
+
+/* Settings row — design report .stl li */
+.ws-settings-item {
+  border-bottom: 1px solid var(--rule-2);
+  padding: 9px 14px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.ws-settings-item:last-child {
+  border-bottom: none;
+}
+
+/* Name — design report .stl .nm */
+.ws-settings-name {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--ink);
+}
+
+/* Descriptor below name — design report .stl .nm .d */
+.ws-settings-desc {
+  display: block;
+  font-family: var(--font-mono);
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 2px;
+  letter-spacing: .02em;
+}
+
+/* Right-side control — design report .stl .ctl */
+.ws-settings-ctl {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink);
+  white-space: nowrap;
+  text-align: right;
+}
+
+.ws-settings-ctl.verified {
+  color: var(--good);
+}
+
+.ws-settings-ctl.none {
+  color: var(--good);
+}
+
+/* Settings form block inside ws-frame-body */
+.ws-frame-body .settings-form-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+/* -------------------------------------------------------------------------
+   App header pills — design report §07 .tb .right .pill pattern
+   ---------------------------------------------------------------------- */
+
+.header-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 12px;
+  color: rgba(255, 255, 255, 0.5);
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .04em;
+  white-space: nowrap;
+  height: 100%;
+}
+
+.header-pill .pill-value {
+  color: #fff;
 }

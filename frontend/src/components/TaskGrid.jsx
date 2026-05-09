@@ -375,15 +375,18 @@ export default function TaskGrid() {
   return (
     <>
       <div className="grid-toolbar">
-        <button className="btn-add-task" onClick={openAdd}>+ Add Task</button>
-        <span className="toolbar-sep" />
-        <button className="btn-archive-sheet" onClick={handleArchive}>Archive Current Sheet</button>
-        <a
-          className="btn-archive-sheet"
-          href={buildExportSheetUrl(dates[0], dates[dates.length - 1])}
-          download
-        >Export Sheet CSV</a>
-        <button className="btn-archive-sheet" onClick={resetColWidths}>Reset Columns</button>
+        <div className="control-group">
+          <button className="btn-add-task" onClick={openAdd}>+ Add Task</button>
+        </div>
+        <div className="control-group control-group--actions">
+          <button className="btn-archive-sheet" onClick={handleArchive}>Archive Current Sheet</button>
+          <a
+            className="btn-archive-sheet"
+            href={buildExportSheetUrl(dates[0], dates[dates.length - 1])}
+            download
+          >Export Sheet CSV</a>
+          <button className="btn-archive-sheet" onClick={resetColWidths}>Reset Columns</button>
+        </div>
         <div className="range-nav">
           <button className="range-btn" onClick={goToPrevMonth}>← Prev</button>
           <button className="range-btn" onClick={goToCurrentMonth}>Current</button>

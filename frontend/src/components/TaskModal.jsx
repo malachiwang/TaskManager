@@ -147,7 +147,7 @@ export default function TaskModal({ task, onSave, onClose }) {
           </div>
 
           <div className="modal-row full-width modal-actions">
-            <button type="submit">{isEdit ? 'Save Changes' : 'Add Task'}</button>
+            <button type="submit" className="button-primary">{isEdit ? 'Save Changes' : 'Add Task'}</button>
             <button type="button" className="btn-cancel" onClick={onClose}>Cancel</button>
           </div>
 

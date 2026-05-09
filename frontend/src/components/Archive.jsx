@@ -84,7 +84,8 @@ function ArchiveMiniGrid({ data }) {
 }
 
 // ---------------------------------------------------------------------------
-// Import preview
+// Import preview — behavior entirely preserved, only outer wrapper removed
+// so Archive can wrap it in a ws-frame panel.
 // ---------------------------------------------------------------------------
 
 function PreviewResults({ preview }) {
@@ -199,15 +200,16 @@ function ImportSummary({ summary }) {
   );
 }
 
-function ImportPreview() {
-  const [file, setFile] = useState(null);
-  const [preview, setPreview] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [confirmed, setConfirmed] = useState(false);
+// ImportPreview renders only its inner content — Archive wraps it in ws-frame.
+function ImportPreviewBody() {
+  const [file, setFile]             = useState(null);
+  const [preview, setPreview]       = useState(null);
+  const [loading, setLoading]       = useState(false);
+  const [error, setError]           = useState(null);
+  const [confirmed, setConfirmed]   = useState(false);
   const [applyLoading, setApplyLoading] = useState(false);
-  const [applyResult, setApplyResult] = useState(null);
-  const [applyError, setApplyError] = useState(null);
+  const [applyResult, setApplyResult]   = useState(null);
+  const [applyError, setApplyError]     = useState(null);
 
   const previewHasName = preview?.detected_metadata_columns?.name != null;
 
@@ -242,77 +244,80 @@ function ImportPreview() {
   }
 
   return (
-    <section className="dash-section">
-      <div className="dash-section-title">Import CSV</div>
-      <div className="import-body">
-        <div className="import-warn-box">
-          <strong>Before importing:</strong> export a backup via{' '}
-          <em>Export Sheet CSV</em> or the backup JSON button so you can recover
-          if something goes wrong. Import creates new tasks only — it never
-          modifies or deletes existing data.
+    <div className="ws-frame-body" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      {/* Dry-run banner — design report .ban pattern */}
+      <div className="ws-import-banner">
+        <div>
+          <span className="ws-import-banner-label">Before importing</span>
+          Export a backup via <em>Export Backup JSON</em> so you can recover if something
+          goes wrong. Import creates new tasks only — it never modifies or deletes existing data.
         </div>
-        <div className="import-file-row">
-          <input
-            type="file"
-            accept=".csv"
-            style={{ fontSize: '12px' }}
-            onChange={(e) => {
-              setFile(e.target.files[0] || null);
-              setPreview(null);
-              setConfirmed(false);
-              setApplyResult(null);
-              setApplyError(null);
-            }}
-          />
+      </div>
+
+      <div className="import-file-row">
+        <input
+          type="file"
+          accept=".csv"
+          style={{ fontSize: '12px' }}
+          onChange={(e) => {
+            setFile(e.target.files[0] || null);
+            setPreview(null);
+            setConfirmed(false);
+            setApplyResult(null);
+            setApplyError(null);
+          }}
+        />
+        <button
+          className="btn-archive-sheet"
+          onClick={handlePreview}
+          disabled={!file || loading}
+        >
+          {loading ? 'Parsing…' : 'Preview CSV'}
+        </button>
+      </div>
+
+      {error && <div className="grid-status error" style={{ padding: '4px 0' }}>Error: {error}</div>}
+      {preview && <PreviewResults preview={preview} />}
+
+      {preview && previewHasName && (
+        <div className="import-apply-row">
+          <label className="import-confirm-label">
+            <input
+              type="checkbox"
+              checked={confirmed}
+              onChange={(e) => setConfirmed(e.target.checked)}
+              style={{ marginTop: '2px' }}
+            />
+            I exported a backup and understand this will create new tasks.
+          </label>
           <button
             className="btn-archive-sheet"
-            onClick={handlePreview}
-            disabled={!file || loading}
+            onClick={handleApply}
+            disabled={!confirmed || applyLoading}
+            style={{ alignSelf: 'flex-start' }}
           >
-            {loading ? 'Parsing…' : 'Preview CSV'}
+            {applyLoading ? 'Importing…' : 'Apply Import'}
           </button>
         </div>
-        {error && <div className="grid-status error" style={{ padding: '4px 0' }}>Error: {error}</div>}
-        {preview && <PreviewResults preview={preview} />}
-        {preview && previewHasName && (
-          <div className="import-apply-row">
-            <label className="import-confirm-label">
-              <input
-                type="checkbox"
-                checked={confirmed}
-                onChange={(e) => setConfirmed(e.target.checked)}
-                style={{ marginTop: '2px' }}
-              />
-              I exported a backup and understand this will create new tasks.
-            </label>
-            <button
-              className="btn-archive-sheet"
-              onClick={handleApply}
-              disabled={!confirmed || applyLoading}
-              style={{ alignSelf: 'flex-start' }}
-            >
-              {applyLoading ? 'Importing…' : 'Apply Import'}
-            </button>
-          </div>
-        )}
-        {applyError && (
-          <div className="grid-status error" style={{ padding: '4px 0' }}>Error: {applyError}</div>
-        )}
-        {applyResult && <ImportSummary summary={applyResult} />}
-      </div>
-    </section>
+      )}
+
+      {applyError && (
+        <div className="grid-status error" style={{ padding: '4px 0' }}>Error: {applyError}</div>
+      )}
+      {applyResult && <ImportSummary summary={applyResult} />}
+    </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Archive list + detail
+// Archive — main component
 // ---------------------------------------------------------------------------
 
 export default function Archive() {
-  const [archives, setArchives] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [selected, setSelected] = useState(null);
+  const [archives, setArchives]         = useState([]);
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState(null);
+  const [selected, setSelected]         = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
   useEffect(() => {
@@ -331,58 +336,84 @@ export default function Archive() {
   }
 
   if (loading) return <div className="grid-status">Loading…</div>;
-  if (error) return <div className="grid-status error">Error: {error}</div>;
+  if (error)   return <div className="grid-status error">Error: {error}</div>;
 
   return (
-    <div className="archive">
-      <div className="dash-header">
-        <span className="dash-header-title">Archive</span>
-        <span className="dash-header-sub">Saved monthly snapshots — read only</span>
+    <div className="ws-archive">
+
+      {/* ── Page chrome — design report .mh as page header ── */}
+      <div className="ws-page-header">
+        <span>Archive</span>
+        <span className="ws-page-header-sub">monthly snapshots · read only</span>
       </div>
-      <ImportPreview />
-      <section className="dash-section">
-        <div className="dash-section-title">Saved Snapshots</div>
+
+      {/* ── Zone 1: Import CSV ── */}
+      <div className="ws-frame">
+        <div className="ws-frame-header">
+          <span>Import CSV</span>
+          <span className="ws-frame-header-sub">create tasks from a backup export</span>
+        </div>
+        <ImportPreviewBody />
+      </div>
+
+      {/* ── Zone 2: Snapshot list — design report .snap pattern ── */}
+      <div className="ws-frame">
+        <div className="ws-frame-header">
+          <span>Saved snapshots</span>
+          <span className="ws-frame-header-sub">
+            {archives.length} archived sheet{archives.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+
         {archives.length === 0 ? (
-          <div className="dash-empty">
+          <div className="ws-empty">
             No archives yet. Use <strong>Archive Current Sheet</strong> in the Grid tab.
           </div>
         ) : (
-          <table className="dash-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Date Range</th>
-                <th>Archived At</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {archives.map((a) => (
-                <tr key={a.id} className={selected?.id === a.id ? 'archive-row-selected' : ''}>
-                  <td>{a.name}</td>
-                  <td>{a.start_date} → {a.end_date}</td>
-                  <td>{a.archived_at.replace('T', ' ').slice(0, 19)}</td>
-                  <td>
-                    <button className="action-btn" onClick={() => handleView(a.id)}>View</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ul className="ws-snap-list">
+            {archives.map((a) => (
+              <li
+                key={a.id}
+                className={`ws-snap-item${selected?.id === a.id ? ' ws-snap-item--active' : ''}`}
+                onClick={() => handleView(a.id)}
+              >
+                <div>
+                  <div className="ws-snap-name">{a.name}</div>
+                  <span className="ws-snap-date">{a.start_date} → {a.end_date}</span>
+                </div>
+                <div className="ws-snap-right">
+                  <span className="ws-snap-meta">
+                    {a.archived_at.replace('T', ' ').slice(0, 10)}
+                  </span>
+                  <button
+                    className="action-btn"
+                    onClick={(e) => { e.stopPropagation(); handleView(a.id); }}
+                  >
+                    View →
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
         )}
-      </section>
+      </div>
 
+      {/* ── Zone 3: Snapshot detail ── */}
       {detailLoading && <div className="grid-status">Loading snapshot…</div>}
 
       {selected && !detailLoading && (
-        <section className="dash-section archive-detail">
-          <div className="dash-section-title">
-            <span>{selected.name} — {selected.snapshot_data_json.start_date} to {selected.snapshot_data_json.end_date}</span>
-            <span className="read-only-badge">Read Only</span>
+        <div className="ws-frame">
+          <div className="ws-frame-header">
+            <span>{selected.name}</span>
+            <span className="ws-frame-header-sub">
+              {selected.snapshot_data_json.start_date} → {selected.snapshot_data_json.end_date}
+              {' · '}snapshot · read only
+            </span>
           </div>
           <ArchiveMiniGrid data={selected.snapshot_data_json} />
-        </section>
+        </div>
       )}
+
     </div>
   );
 }
