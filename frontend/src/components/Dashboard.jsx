@@ -26,6 +26,11 @@ export default function Dashboard() {
   return (
     <div className="dashboard">
 
+      <div className="dash-header">
+        <span className="dash-header-title">Dashboard</span>
+        <span className="dash-header-sub">System pressure — passive readout</span>
+      </div>
+
       {/* Summary stats */}
       <section className="dash-section">
         <div className="dash-section-title">Overview</div>

@@ -784,14 +784,46 @@ thead .meta-col {
   flex: 1;
   overflow-y: auto;
   padding: 16px 20px;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 20px;
+  align-content: start;
 }
+
+/* Dashboard page header */
+.dash-header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--grid-border);
+  border-left: 3px solid var(--ink);
+}
+
+.dash-header-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: 0.02em;
+}
+
+.dash-header-sub {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Overview and Dormant span full width; Top 5 + By Category share a row */
+.dashboard > section:first-of-type { grid-column: 1 / -1; }
+.dashboard > section:last-of-type  { grid-column: 1 / -1; }
 
 .dash-section {
   border: 1px solid var(--grid-border);
   background: var(--bg-panel);
+  min-width: 0;
 }
 
 .dash-section-title {
@@ -837,6 +869,7 @@ thead .meta-col {
 .dash-table {
   border-collapse: collapse;
   width: 100%;
+  min-width: 0;
 }
 
 .dash-table th,
