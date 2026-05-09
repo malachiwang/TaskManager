@@ -15,9 +15,11 @@ export default function TaskRow({
   const isPaused = task.is_paused === 1;
 
   // Returns inline style for a metadata column cell.
-  // Sticky cols get width + left; non-sticky cols get width only.
+  // minWidth + maxWidth = width enforces the cell against table layout compression.
+  // Sticky cols additionally get left; non-sticky cols get width constraints only.
   function cs(col) {
-    const style = { width: colLayout.widths[col] };
+    const w = colLayout.widths[col];
+    const style = { width: w, minWidth: w, maxWidth: w };
     if (colLayout.offsets[col] !== undefined) style.left = colLayout.offsets[col];
     return style;
   }

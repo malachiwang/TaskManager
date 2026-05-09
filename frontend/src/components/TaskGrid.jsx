@@ -332,9 +332,12 @@ export default function TaskGrid() {
     );
   }
 
-  // Inline style for a header <th> or body <td>: width + sticky left offset.
+  // Inline style for a header <th> or body <td>.
+  // minWidth + maxWidth = width enforces the cell against table layout compression.
+  // Sticky cols additionally get left; non-sticky cols get width constraints only.
   function thStyle(col) {
-    const style = { width: colLayout.widths[col] };
+    const w = colLayout.widths[col];
+    const style = { width: w, minWidth: w, maxWidth: w };
     if (colLayout.offsets[col] !== undefined) style.left = colLayout.offsets[col];
     return style;
   }
