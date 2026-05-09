@@ -13,6 +13,11 @@ export default function TaskRow({
   onIncrement, onClear, onEdit, onTogglePause, onSelect,
 }) {
   const isPaused = task.is_paused === 1;
+  const isOverdue =
+    !isPaused &&
+    task.days_since != null &&
+    task.interval_days != null &&
+    task.days_since >= task.interval_days;
 
   // Returns inline style for a metadata column cell.
   // minWidth + maxWidth = width enforces the cell against table layout compression.
@@ -48,7 +53,7 @@ export default function TaskRow({
       <td className="meta-col sticky-col col-task" title={task.name} style={cs('col-task')}>{task.name}</td>
       <td className="meta-col sticky-col col-sub" title={task.subtask} style={cs('col-sub')}>{task.subtask || ''}</td>
       <td className="meta-col scroll-meta-col col-freq" style={cs('col-freq')}>{task.interval_days}d</td>
-      <td className="meta-col scroll-meta-col col-days" style={cs('col-days')}>{isPaused ? '—' : task.days_since}</td>
+      <td className={`meta-col scroll-meta-col col-days${isOverdue ? ' days-overdue' : ''}`} style={cs('col-days')}>{isPaused ? '—' : task.days_since}</td>
       <td className="meta-col scroll-meta-col col-notes" title={task.notes} style={cs('col-notes')}>{task.notes || ''}</td>
       {dates.map((date) => {
         const isFuture = date > todayStr;

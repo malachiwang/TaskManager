@@ -420,6 +420,14 @@ thead .meta-col {
 .urg-high       { color: var(--urg-hi); font-weight: 700; }
 .urg-critical   { color: var(--urg-crit); font-weight: 700; background: var(--crit-bg); }
 
+/* UI-11: Inset left bar for urgency cells — box-shadow has no layout footprint. */
+.col-urg.urg-noticeable { box-shadow: inset 3px 0 0 var(--urg-mid); }
+.col-urg.urg-high       { box-shadow: inset 3px 0 0 var(--urg-hi); }
+.col-urg.urg-critical   { box-shadow: inset 3px 0 0 var(--urg-crit); }
+
+/* UI-11: Overdue days emphasis — fires when days_since >= interval_days. */
+.col-days.days-overdue  { color: var(--urg-mid); font-weight: 600; }
+
 /* -------------------------------------------------------------------------
    Grid cell text hierarchy (UI-04)
    CSS-only; no layout, width, padding, or font-size changes.
