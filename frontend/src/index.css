@@ -727,3 +727,33 @@ thead .meta-col {
 .btn-archive-sheet:hover {
   background: #f0f0f0;
 }
+
+/* Month navigation controls in grid toolbar */
+.range-nav {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.range-btn {
+  padding: 3px 8px;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  background: #fff;
+  color: #333;
+  border: 1px solid #aaa;
+  border-radius: 2px;
+}
+
+.range-btn:hover {
+  background: #e8e8e8;
+}
+
+.range-label {
+  font-size: 11px;
+  color: #555;
+  padding: 0 6px;
+  white-space: nowrap;
+}
