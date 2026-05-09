@@ -24,6 +24,10 @@ export default function DateCell({
 }) {
   const isDisabled = isFuture || isPaused;
 
+  // Detect weekend (Saturday=6, Sunday=0) from ISO date string.
+  const [wy, wm, wd] = date.split('-').map(Number);
+  const isWeekend = new Date(wy, wm - 1, wd).getDay() % 6 === 0;
+
   function display() {
     if (count === 0) return '';
     if (count === 1) return '✓';
@@ -44,6 +48,7 @@ export default function DateCell({
     'date-cell',
     isFuture ? 'future' : '',
     isToday && !isFuture ? 'today' : '',
+    isWeekend ? 'weekend' : '',
     count > 0 && !isPaused ? 'has-count' : '',
     isSelected ? 'selected' : '',
   ]

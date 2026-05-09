@@ -302,13 +302,18 @@ thead .meta-col {
 }
 
 .date-col-header.col-today {
-  background: #ddeeff;
-  color: #004499;
+  background: var(--today-bg);
+  color: var(--accent);
 }
 
 .date-col-header.col-future {
-  background: #f7f7f7;
-  color: #bbb;
+  background: var(--bg-app);
+  color: var(--muted-2);
+}
+
+/* Weekend header — subtle warm tint; today/future states take precedence. */
+.date-col-header.weekend:not(.col-today):not(.col-future) {
+  background: var(--weekend-bg);
 }
 
 /* -------------------------------------------------------------------------
@@ -349,7 +354,7 @@ thead .meta-col {
 }
 
 .date-cell:hover:not(.future) {
-  background: #eef4ff;
+  background: var(--accent-soft);
 }
 
 .date-cell.today {
@@ -357,9 +362,14 @@ thead .meta-col {
 }
 
 .date-cell.future {
-  background: #f8f8f8;
-  color: #ccc;
+  background: var(--bg-app);
+  color: var(--muted-2);
   cursor: not-allowed;
+}
+
+/* Weekend body cell — subtle warm tint; today/future/selected states take precedence. */
+.date-cell.weekend:not(.future):not(.today):not(.selected) {
+  background: var(--weekend-bg);
 }
 
 /* Completed cell */

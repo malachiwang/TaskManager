@@ -43,6 +43,11 @@ function dateLabel(isoDate) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+function isWeekendDate(isoDate) {
+  const [y, m, day] = isoDate.split('-').map(Number);
+  return new Date(y, m - 1, day).getDay() % 6 === 0;
+}
+
 // Returns a label like "May 1 – May 31, 2026" for the toolbar.
 function monthRangeLabel(year, month) {
   const first = new Date(year, month - 1, 1);
@@ -425,6 +430,7 @@ export default function TaskGrid() {
                     'date-col-header',
                     d === todayStr ? 'col-today' : '',
                     d > todayStr ? 'col-future' : '',
+                    isWeekendDate(d) ? 'weekend' : '',
                   ]
                     .filter(Boolean)
                     .join(' ')}
