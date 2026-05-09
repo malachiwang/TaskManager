@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchArchives, fetchArchive, previewImport } from '../api.js';
+import { fetchArchives, fetchArchive, previewImport, applyImport } from '../api.js';
 
 function buildDates(start, end) {
   const dates = [];
@@ -156,16 +156,63 @@ function PreviewResults({ preview }) {
   );
 }
 
+function ImportSummary({ summary }) {
+  const { tasks_created, completions_created, rows_skipped, potential_duplicates, warnings, errors } = summary;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px' }}>
+      <div style={{ fontWeight: 600, color: '#2a7a2a' }}>Import complete</div>
+      <div>Tasks created: <strong>{tasks_created}</strong></div>
+      <div>Completions created: <strong>{completions_created}</strong></div>
+      <div>Rows skipped: <strong>{rows_skipped}</strong></div>
+      {potential_duplicates.length > 0 && (
+        <div>
+          <div style={{ fontWeight: 600, color: '#b36a00', marginBottom: '3px' }}>
+            Potential duplicates skipped ({potential_duplicates.length})
+          </div>
+          <ul style={{ margin: 0, paddingLeft: '18px', color: '#b36a00' }}>
+            {potential_duplicates.map((d, i) => <li key={i}>{d}</li>)}
+          </ul>
+        </div>
+      )}
+      {warnings.length > 0 && (
+        <div>
+          <div style={{ fontWeight: 600, color: '#b36a00', marginBottom: '3px' }}>Warnings</div>
+          <ul style={{ margin: 0, paddingLeft: '18px', color: '#b36a00' }}>
+            {warnings.map((w, i) => <li key={i}>{w}</li>)}
+          </ul>
+        </div>
+      )}
+      {errors.length > 0 && (
+        <div>
+          <div style={{ fontWeight: 600, color: '#b00000', marginBottom: '3px' }}>Errors</div>
+          <ul style={{ margin: 0, paddingLeft: '18px', color: '#b00000' }}>
+            {errors.map((e, i) => <li key={i}>{e}</li>)}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ImportPreview() {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [applyLoading, setApplyLoading] = useState(false);
+  const [applyResult, setApplyResult] = useState(null);
+  const [applyError, setApplyError] = useState(null);
+
+  const previewHasName = preview?.detected_metadata_columns?.name != null;
 
   async function handlePreview() {
     if (!file) return;
     setLoading(true);
     setError(null);
+    setApplyResult(null);
+    setApplyError(null);
+    setConfirmed(false);
     try {
       setPreview(await previewImport(file));
     } catch (e) {
@@ -175,19 +222,47 @@ function ImportPreview() {
     }
   }
 
+  async function handleApply() {
+    if (!file || !confirmed) return;
+    setApplyLoading(true);
+    setApplyError(null);
+    setApplyResult(null);
+    try {
+      setApplyResult(await applyImport(file));
+    } catch (e) {
+      setApplyError(e.message);
+    } finally {
+      setApplyLoading(false);
+    }
+  }
+
   return (
     <section className="dash-section">
-      <div className="dash-section-title">Import Preview</div>
+      <div className="dash-section-title">Import CSV</div>
       <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <p style={{ fontSize: '11px', color: '#888', fontStyle: 'italic', margin: 0 }}>
-          Preview only — no data will be imported.
-        </p>
+        <div
+          style={{
+            background: '#fff8e1', border: '1px solid #f0c040', borderRadius: '4px',
+            padding: '8px 10px', fontSize: '12px', color: '#7a5800',
+          }}
+        >
+          <strong>Before importing:</strong> export a backup via{' '}
+          <em>Export Sheet CSV</em> or the backup JSON button so you can recover
+          if something goes wrong. Import creates new tasks only — it never
+          modifies or deletes existing data.
+        </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
           <input
             type="file"
             accept=".csv"
             style={{ fontSize: '12px' }}
-            onChange={(e) => { setFile(e.target.files[0] || null); setPreview(null); }}
+            onChange={(e) => {
+              setFile(e.target.files[0] || null);
+              setPreview(null);
+              setConfirmed(false);
+              setApplyResult(null);
+              setApplyError(null);
+            }}
           />
           <button
             className="btn-archive-sheet"
@@ -199,6 +274,31 @@ function ImportPreview() {
         </div>
         {error && <div className="grid-status error" style={{ padding: '4px 0' }}>Error: {error}</div>}
         {preview && <PreviewResults preview={preview} />}
+        {preview && previewHasName && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontSize: '12px', display: 'flex', gap: '6px', alignItems: 'flex-start', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={confirmed}
+                onChange={(e) => setConfirmed(e.target.checked)}
+                style={{ marginTop: '2px' }}
+              />
+              I exported a backup and understand this will create new tasks.
+            </label>
+            <button
+              className="btn-archive-sheet"
+              onClick={handleApply}
+              disabled={!confirmed || applyLoading}
+              style={{ alignSelf: 'flex-start' }}
+            >
+              {applyLoading ? 'Importing…' : 'Apply Import'}
+            </button>
+          </div>
+        )}
+        {applyError && (
+          <div className="grid-status error" style={{ padding: '4px 0' }}>Error: {applyError}</div>
+        )}
+        {applyResult && <ImportSummary summary={applyResult} />}
       </div>
     </section>
   );

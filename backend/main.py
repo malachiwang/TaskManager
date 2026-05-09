@@ -664,12 +664,11 @@ def export_sheet_csv(
 
 
 # ---------------------------------------------------------------------------
-# Import preview
+# Import helpers
 # ---------------------------------------------------------------------------
 
 # Known metadata field aliases.
 # Detection uses exact match against the normalized (lowercased, stripped) header.
-# Order within each list is irrelevant — all are checked as exact matches.
 _IMPORT_ALIASES: dict[str, list[str]] = {
     "name":                      ["task", "name", "task name"],
     "section":                   ["section", "group", "grouping", "major category", "area"],
@@ -697,10 +696,8 @@ def _is_iso_date(s: str) -> bool:
 
 def _looks_like_nonio_date(s: str) -> bool:
     """Heuristic: header looks date-like but is not ISO format."""
-    # M/D/YYYY or MM/DD/YYYY style
     if re.fullmatch(r"\d{1,2}/\d{1,2}/\d{2,4}", s):
         return True
-    # "Jan 8", "May 1" style
     parts = s.lower().split()
     return len(parts) == 2 and parts[0] in _MONTH_ABBREVS and parts[1].isdigit()
 
@@ -713,102 +710,348 @@ def _detect_field(norm: str) -> Optional[str]:
     return None
 
 
-@app.post("/import/preview")
-async def import_preview(file: UploadFile = File(...)):
+def _parse_csv_file(raw: bytes) -> dict:
     """
-    Parse an uploaded CSV and return a column-detection preview.
-    Does not write anything to the database.
-    Encoding: UTF-8 with optional BOM (utf-8-sig).
-    First row is treated as headers; blank rows are skipped.
+    Parse a CSV file from raw bytes (UTF-8 with optional BOM).
+    Returns a dict with keys:
+      headers, header_to_idx, meta_map, header_to_field,
+      date_cols, candidate_date_cols, unrecognized_cols, data_rows, warnings.
+    Duplicate ISO date headers: first occurrence wins; duplicates are warned and skipped.
     """
-    raw = await file.read()
     text = raw.decode("utf-8-sig")
     all_rows = list(csv.reader(io.StringIO(text)))
+    warnings: list[str] = []
 
-    empty: dict = {
-        "row_count": 0,
-        "detected_metadata_columns": {f: None for f in _IMPORT_ALIASES},
-        "detected_date_columns": [],
-        "candidate_date_columns": [],
-        "unrecognized_columns": [],
-        "sample_rows": [],
-        "warnings": [],
-    }
+    empty = dict(
+        headers=[],
+        header_to_idx={},
+        meta_map={f: None for f in _IMPORT_ALIASES},
+        header_to_field={},
+        date_cols=[],
+        candidate_date_cols=[],
+        unrecognized_cols=[],
+        data_rows=[],
+        warnings=warnings,
+    )
 
     if not all_rows:
-        empty["warnings"] = ["CSV is empty — no headers found."]
+        warnings.append("CSV is empty — no headers found.")
         return empty
 
     headers: list[str] = [h.strip() for h in all_rows[0]]
     if not any(headers):
-        empty["warnings"] = ["CSV has no headers."]
+        warnings.append("CSV has no headers.")
         return empty
 
     data_rows = [r for r in all_rows[1:] if any(cell.strip() for cell in r)]
 
-    detected_meta: dict[str, Optional[str]] = {f: None for f in _IMPORT_ALIASES}
-    detected_dates: list[str] = []
-    candidate_dates: list[str] = []
-    unrecognized: list[str] = []
-    warnings: list[str] = []
-    header_to_field: dict[str, str] = {}  # original header → internal field
+    # Build header_to_idx: first-occurrence-wins for duplicate raw headers.
+    header_to_idx: dict[str, int] = {}
+    for i, h in enumerate(headers):
+        if h not in header_to_idx:
+            header_to_idx[h] = i
 
-    for header in headers:
+    meta_map: dict[str, Optional[str]] = {f: None for f in _IMPORT_ALIASES}
+    date_cols: list[str] = []
+    seen_iso_dates: set[str] = set()
+    candidate_date_cols: list[str] = []
+    unrecognized_cols: list[str] = []
+    header_to_field: dict[str, str] = {}
+
+    for i, header in enumerate(headers):
         norm = header.strip().lower()
         if not norm:
             continue
 
         if _is_iso_date(norm):
-            detected_dates.append(header)
+            if norm in seen_iso_dates:
+                warnings.append(
+                    f"Duplicate ISO date column '{header}' at position {i + 1}; "
+                    "using first occurrence."
+                )
+            else:
+                seen_iso_dates.add(norm)
+                date_cols.append(header)  # ISO date headers equal their normalized form
             continue
 
         if _looks_like_nonio_date(norm):
-            candidate_dates.append(header)
+            candidate_date_cols.append(header)
             continue
 
         field = _detect_field(norm)
         if field:
-            if detected_meta[field] is None:
-                detected_meta[field] = header
+            if meta_map[field] is None:
+                meta_map[field] = header
                 header_to_field[header] = field
             else:
                 warnings.append(
-                    f"Duplicate mapping for '{field}': '{detected_meta[field]}' and "
-                    f"'{header}' both match. Using '{detected_meta[field]}'."
+                    f"Duplicate mapping for '{field}': '{meta_map[field]}' and "
+                    f"'{header}' both match. Using '{meta_map[field]}'."
                 )
-                unrecognized.append(header)
+                unrecognized_cols.append(header)
         else:
-            unrecognized.append(header)
+            unrecognized_cols.append(header)
 
-    if detected_meta["name"] is None:
+    if meta_map["name"] is None:
         warnings.append(
             "Required field 'name' not detected. "
             "Expected a header named 'Task' or 'Name'."
         )
 
-    if candidate_dates:
+    if candidate_date_cols:
         warnings.append(
-            f"{len(candidate_dates)} non-ISO date-like column(s) found but not imported: "
-            + ", ".join(f"'{c}'" for c in candidate_dates)
+            f"{len(candidate_date_cols)} non-ISO date-like column(s) found but not imported: "
+            + ", ".join(f"'{c}'" for c in candidate_date_cols)
             + ". Rename to YYYY-MM-DD format for date column detection."
         )
+
+    return dict(
+        headers=headers,
+        header_to_idx=header_to_idx,
+        meta_map=meta_map,
+        header_to_field=header_to_field,
+        date_cols=date_cols,
+        candidate_date_cols=candidate_date_cols,
+        unrecognized_cols=unrecognized_cols,
+        data_rows=data_rows,
+        warnings=warnings,
+    )
+
+
+def _parse_completion_cell(value: str):
+    """
+    Parse a completion cell value from an imported CSV.
+    Returns:
+      None        — blank, '0', 'false', 'no'
+      1           — 'true', 'yes', 'x', '✓', '✔', '1'
+      int >= 2    — any positive integer > 1
+      'negative'  — negative integer
+      'invalid'   — anything else
+    """
+    v = value.strip().lower()
+    if v in ("", "0", "false", "no"):
+        return None
+    if v in ("true", "yes", "x", "✓", "✔", "1"):
+        return 1
+    try:
+        n = int(v)
+        if n < 0:
+            return "negative"
+        if n == 0:
+            return None
+        return n
+    except ValueError:
+        return "invalid"
+
+
+# ---------------------------------------------------------------------------
+# Import preview
+# ---------------------------------------------------------------------------
+
+@app.post("/import/preview")
+async def import_preview(file: UploadFile = File(...)):
+    """
+    Parse an uploaded CSV and return a column-detection preview.
+    Does not write anything to the database.
+    """
+    raw = await file.read()
+    parsed = _parse_csv_file(raw)
+
+    meta_map = parsed["meta_map"]
+    header_to_field = parsed["header_to_field"]
+    date_cols = parsed["date_cols"]
+    candidate_date_cols = parsed["candidate_date_cols"]
+    unrecognized_cols = parsed["unrecognized_cols"]
+    data_rows = parsed["data_rows"]
+    headers = parsed["headers"]
+    header_to_idx = parsed["header_to_idx"]
+    warnings = parsed["warnings"]
 
     sample_rows: list[dict] = []
     for row in data_rows[:5]:
         sample: dict = {}
-        for i, header in enumerate(headers):
-            field = header_to_field.get(header)
-            if field:
-                sample[field] = row[i] if i < len(row) else ""
+        for header, field in header_to_field.items():
+            idx = header_to_idx.get(header)
+            if idx is not None:
+                sample[field] = row[idx] if idx < len(row) else ""
         if sample:
             sample_rows.append(sample)
 
     return {
         "row_count": len(data_rows),
-        "detected_metadata_columns": detected_meta,
-        "detected_date_columns": detected_dates,
-        "candidate_date_columns": candidate_dates,
-        "unrecognized_columns": unrecognized,
+        "detected_metadata_columns": meta_map,
+        "detected_date_columns": date_cols,
+        "candidate_date_columns": candidate_date_cols,
+        "unrecognized_columns": unrecognized_cols,
         "sample_rows": sample_rows,
         "warnings": warnings,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Import apply
+# ---------------------------------------------------------------------------
+
+@app.post("/import/apply", status_code=200)
+async def import_apply(file: UploadFile = File(...)):
+    """
+    Parse an uploaded CSV and create new tasks + completions.
+    Does not update or delete any existing data.
+    Missing 'name' column is fatal (HTTP 400, nothing written).
+    """
+    raw = await file.read()
+    parsed = _parse_csv_file(raw)
+
+    meta_map = parsed["meta_map"]
+    header_to_field = parsed["header_to_field"]
+    date_cols = parsed["date_cols"]
+    data_rows = parsed["data_rows"]
+    header_to_idx = parsed["header_to_idx"]
+    warnings: list[str] = list(parsed["warnings"])
+
+    if meta_map["name"] is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Required field 'name' not detected. "
+                "Expected a header named 'Task' or 'Name'. No data was written."
+            ),
+        )
+
+    today_str = date.today().isoformat()
+    now = datetime.utcnow().isoformat()
+
+    tasks_created = 0
+    completions_created = 0
+    rows_skipped = 0
+    potential_duplicates: list[str] = []
+    errors: list[str] = []
+
+    def get_cell(row: list, header: str) -> str:
+        idx = header_to_idx.get(header)
+        if idx is None:
+            return ""
+        return row[idx].strip() if idx < len(row) else ""
+
+    conn = get_connection()
+    with conn:
+        # Load existing tasks for duplicate detection (section+category+name+subtask).
+        existing_rows = conn.execute(
+            "SELECT section, category, name, subtask FROM tasks"
+        ).fetchall()
+        existing_keys: set[tuple] = {
+            (r["section"], r["category"], r["name"], r["subtask"])
+            for r in existing_rows
+        }
+
+        for row_num, row in enumerate(data_rows, start=2):  # +2: 1-indexed + header row
+            name_val = get_cell(row, meta_map["name"])
+            if not name_val:
+                rows_skipped += 1
+                warnings.append(f"Row {row_num}: blank task name, skipped.")
+                continue
+
+            def fv(field: str) -> Optional[str]:
+                h = meta_map.get(field)
+                if h is None:
+                    return None
+                v = get_cell(row, h)
+                return v if v else None
+
+            section = fv("section") or "General"
+            category = fv("category") or ""
+            subtask = fv("subtask") or ""
+            status = fv("status") or "active"
+            notes = fv("notes") or ""
+            manual_override = fv("manual_last_done_override")
+
+            priority = 5
+            priority_str = fv("priority")
+            if priority_str:
+                try:
+                    priority = int(priority_str)
+                except ValueError:
+                    warnings.append(
+                        f"Row {row_num}: invalid priority '{priority_str}', using 5."
+                    )
+
+            interval_days = 7
+            interval_str = fv("interval_days")
+            if interval_str:
+                try:
+                    interval_days = int(interval_str)
+                except ValueError:
+                    warnings.append(
+                        f"Row {row_num}: invalid interval_days '{interval_str}', using 7."
+                    )
+
+            dup_key = (section, category, name_val, subtask)
+            if dup_key in existing_keys:
+                potential_duplicates.append(
+                    f"Row {row_num}: '{name_val}' matches an existing task "
+                    "(same section/category/name/subtask), skipped."
+                )
+                rows_skipped += 1
+                continue
+
+            cursor = conn.execute(
+                """
+                INSERT INTO tasks (
+                    name, section, category, subtask, priority, interval_days,
+                    status, notes, created_at, is_active, is_paused,
+                    manual_last_done_override, display_order
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, 0)
+                """,
+                (
+                    name_val, section, category, subtask, priority, interval_days,
+                    status, notes, today_str, manual_override,
+                ),
+            )
+            task_id = cursor.lastrowid
+            existing_keys.add(dup_key)
+            tasks_created += 1
+
+            for iso_date in date_cols:
+                idx = header_to_idx.get(iso_date)
+                if idx is None:
+                    continue
+                raw_val = row[idx] if idx < len(row) else ""
+                count = _parse_completion_cell(raw_val)
+                if count is None:
+                    continue
+                if count == "negative":
+                    errors.append(
+                        f"Row {row_num}, {iso_date}: negative count '{raw_val}', skipped."
+                    )
+                    continue
+                if count == "invalid":
+                    errors.append(
+                        f"Row {row_num}, {iso_date}: invalid value '{raw_val}', skipped."
+                    )
+                    continue
+                if iso_date > today_str:
+                    warnings.append(
+                        f"Row {row_num}, {iso_date}: future date, skipped."
+                    )
+                    continue
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO completions
+                        (task_id, completion_date, completion_count,
+                         created_timestamp, updated_timestamp)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (task_id, iso_date, count, now, now),
+                )
+                completions_created += 1
+
+    conn.close()
+
+    return {
+        "tasks_created": tasks_created,
+        "completions_created": completions_created,
+        "rows_skipped": rows_skipped,
+        "potential_duplicates": potential_duplicates,
+        "warnings": warnings,
+        "errors": errors,
     }

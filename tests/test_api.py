@@ -1095,3 +1095,217 @@ class TestSetCompletionCount:
         match = next((c for c in comps if c["task_id"] == t["id"]), None)
         assert match is not None
         assert match["completion_count"] == 4
+
+
+# ---------------------------------------------------------------------------
+# POST /import/apply
+# ---------------------------------------------------------------------------
+
+class TestImportApply:
+    def _csv_bytes(self, rows: list[list[str]]) -> bytes:
+        buf = io.StringIO()
+        csv.writer(buf).writerows(rows)
+        return buf.getvalue().encode("utf-8")
+
+    def _post(self, client, content: bytes, filename: str = "sheet.csv"):
+        return client.post(
+            "/import/apply",
+            files={"file": (filename, content, "text/csv")},
+        )
+
+    # --- fatal: missing name column ---
+
+    def test_apply_missing_name_column_returns_400(self, client):
+        resp = self._post(client, self._csv_bytes([["Category"], ["Health"]]))
+        assert resp.status_code == 400
+
+    def test_apply_missing_name_column_writes_nothing(self, client):
+        self._post(client, self._csv_bytes([["Category"], ["Health"]]))
+        assert client.get("/tasks").json() == []
+
+    def test_apply_empty_csv_returns_400(self, client):
+        resp = self._post(client, b"")
+        assert resp.status_code == 400
+
+    # --- basic creation ---
+
+    def test_apply_creates_tasks(self, client):
+        csv_bytes = self._csv_bytes([
+            ["Task", "Priority", "Freq"],
+            ["Exercise", "7", "3"],
+            ["Meditate", "5", "1"],
+        ])
+        resp = self._post(client, csv_bytes)
+        assert resp.status_code == 200
+        assert resp.json()["tasks_created"] == 2
+        tasks = client.get("/tasks").json()
+        assert len(tasks) == 2
+        names = {t["name"] for t in tasks}
+        assert "Exercise" in names
+        assert "Meditate" in names
+
+    def test_apply_returns_summary_shape(self, client):
+        resp = self._post(client, self._csv_bytes([["Task"], ["Run"]]))
+        data = resp.json()
+        for key in ("tasks_created", "completions_created", "rows_skipped",
+                    "potential_duplicates", "warnings", "errors"):
+            assert key in data
+
+    # --- blank name ---
+
+    def test_apply_blank_name_row_skipped(self, client):
+        # Row has a non-blank category but blank name — survives the blank-row filter,
+        # but is skipped by the apply logic when the name cell is empty.
+        csv_bytes = self._csv_bytes([
+            ["Task", "Category"],
+            ["Exercise", "Health"],
+            ["", "Fitness"],
+        ])
+        data = self._post(client, csv_bytes).json()
+        assert data["tasks_created"] == 1
+        assert data["rows_skipped"] == 1
+
+    # --- duplicate detection ---
+
+    def test_apply_duplicate_existing_task_skipped(self, client):
+        create_task(client, name="Exercise", category="Health")
+        csv_bytes = self._csv_bytes([["Task", "Category"], ["Exercise", "Health"]])
+        data = self._post(client, csv_bytes).json()
+        assert data["tasks_created"] == 0
+        assert data["rows_skipped"] == 1
+        assert len(data["potential_duplicates"]) == 1
+
+    def test_apply_intra_import_duplicate_skipped(self, client):
+        csv_bytes = self._csv_bytes([
+            ["Task", "Category"],
+            ["Exercise", "Health"],
+            ["Exercise", "Health"],
+        ])
+        data = self._post(client, csv_bytes).json()
+        assert data["tasks_created"] == 1
+        assert data["rows_skipped"] == 1
+
+    # --- completions ---
+
+    def test_apply_creates_completions_for_date_cols(self, client):
+        csv_bytes = self._csv_bytes([
+            ["Task", YESTERDAY, TODAY],
+            ["Exercise", "1", "1"],
+        ])
+        data = self._post(client, csv_bytes).json()
+        assert data["tasks_created"] == 1
+        assert data["completions_created"] == 2
+        comps = client.get(
+            "/completions", params={"start": YESTERDAY, "end": TODAY}
+        ).json()
+        assert len(comps) == 2
+
+    def test_apply_completion_blank_is_none(self, client):
+        csv_bytes = self._csv_bytes([["Task", TODAY], ["Exercise", ""]])
+        data = self._post(client, csv_bytes).json()
+        assert data["completions_created"] == 0
+
+    def test_apply_completion_zero_is_none(self, client):
+        csv_bytes = self._csv_bytes([["Task", TODAY], ["Exercise", "0"]])
+        data = self._post(client, csv_bytes).json()
+        assert data["completions_created"] == 0
+
+    def test_apply_completion_false_is_none(self, client):
+        csv_bytes = self._csv_bytes([["Task", TODAY], ["Exercise", "false"]])
+        data = self._post(client, csv_bytes).json()
+        assert data["completions_created"] == 0
+
+    def test_apply_completion_no_is_none(self, client):
+        csv_bytes = self._csv_bytes([["Task", TODAY], ["Exercise", "no"]])
+        data = self._post(client, csv_bytes).json()
+        assert data["completions_created"] == 0
+
+    def test_apply_completion_true_creates_one(self, client):
+        csv_bytes = self._csv_bytes([["Task", TODAY], ["Exercise", "true"]])
+        data = self._post(client, csv_bytes).json()
+        assert data["completions_created"] == 1
+        comps = client.get("/completions", params={"start": TODAY, "end": TODAY}).json()
+        assert comps[0]["completion_count"] == 1
+
+    def test_apply_completion_yes_creates_one(self, client):
+        csv_bytes = self._csv_bytes([["Task", TODAY], ["Exercise", "yes"]])
+        assert self._post(client, csv_bytes).json()["completions_created"] == 1
+
+    def test_apply_completion_x_creates_one(self, client):
+        csv_bytes = self._csv_bytes([["Task", TODAY], ["Exercise", "x"]])
+        assert self._post(client, csv_bytes).json()["completions_created"] == 1
+
+    def test_apply_completion_checkmark_creates_one(self, client):
+        csv_bytes = self._csv_bytes([["Task", TODAY], ["Exercise", "✓"]])
+        assert self._post(client, csv_bytes).json()["completions_created"] == 1
+
+    def test_apply_completion_integer_1_creates_one(self, client):
+        csv_bytes = self._csv_bytes([["Task", TODAY], ["Exercise", "1"]])
+        data = self._post(client, csv_bytes).json()
+        assert data["completions_created"] == 1
+        comps = client.get("/completions", params={"start": TODAY, "end": TODAY}).json()
+        assert comps[0]["completion_count"] == 1
+
+    def test_apply_completion_integer_gt1(self, client):
+        csv_bytes = self._csv_bytes([["Task", TODAY], ["Exercise", "4"]])
+        data = self._post(client, csv_bytes).json()
+        assert data["completions_created"] == 1
+        comps = client.get("/completions", params={"start": TODAY, "end": TODAY}).json()
+        assert comps[0]["completion_count"] == 4
+
+    def test_apply_completion_negative_skipped(self, client):
+        csv_bytes = self._csv_bytes([["Task", TODAY], ["Exercise", "-1"]])
+        data = self._post(client, csv_bytes).json()
+        assert data["completions_created"] == 0
+        assert len(data["errors"]) == 1
+
+    def test_apply_completion_invalid_skipped(self, client):
+        csv_bytes = self._csv_bytes([["Task", TODAY], ["Exercise", "lots"]])
+        data = self._post(client, csv_bytes).json()
+        assert data["completions_created"] == 0
+        assert len(data["errors"]) == 1
+
+    def test_apply_completion_future_date_skipped(self, client):
+        csv_bytes = self._csv_bytes([["Task", TOMORROW], ["Exercise", "1"]])
+        data = self._post(client, csv_bytes).json()
+        assert data["completions_created"] == 0
+        assert any(TOMORROW in w for w in data["warnings"])
+
+    # --- duplicate ISO date headers ---
+
+    def test_apply_duplicate_date_headers_warned(self, client):
+        # Two columns with the same ISO date; only first is used
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(["Task", TODAY, TODAY])
+        writer.writerow(["Exercise", "1", "2"])
+        csv_bytes = buf.getvalue().encode("utf-8")
+        data = self._post(client, csv_bytes).json()
+        assert any("Duplicate" in w or "duplicate" in w for w in data["warnings"])
+        # Only one completion should be created (from first column)
+        assert data["completions_created"] == 1
+
+    # --- defaults ---
+
+    def test_apply_default_priority_used(self, client):
+        csv_bytes = self._csv_bytes([["Task"], ["Exercise"]])
+        self._post(client, csv_bytes)
+        task = client.get("/tasks").json()[0]
+        assert task["priority"] == 5
+
+    def test_apply_default_interval_used(self, client):
+        csv_bytes = self._csv_bytes([["Task"], ["Exercise"]])
+        self._post(client, csv_bytes)
+        task = client.get("/tasks").json()[0]
+        assert task["interval_days"] == 7
+
+    # --- second import is idempotent (no errors) ---
+
+    def test_apply_second_import_is_safe(self, client):
+        csv_bytes = self._csv_bytes([["Task", TODAY], ["Exercise", "1"]])
+        self._post(client, csv_bytes)
+        # Second import: task is duplicate, skipped; no completions attempted
+        data = self._post(client, csv_bytes).json()
+        assert data["tasks_created"] == 0
+        assert data["completions_created"] == 0
+        assert data["errors"] == []

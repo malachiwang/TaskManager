@@ -104,3 +104,18 @@ export async function previewImport(file) {
   if (!res.ok) throw new Error(`previewImport failed: ${res.status}`);
   return res.json();
 }
+
+export async function applyImport(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch(`${BASE}/import/apply`, { method: 'POST', body: formData });
+  if (!res.ok) {
+    let detail = `applyImport failed: ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body.detail) detail = body.detail;
+    } catch {}
+    throw new Error(detail);
+  }
+  return res.json();
+}
