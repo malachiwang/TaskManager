@@ -1024,3 +1024,74 @@ class TestSection:
         content = self._csv_bytes([["Task", "Major Category"], ["Ex", "Career"]])
         resp = client.post("/import/preview", files={"file": ("s.csv", content, "text/csv")})
         assert resp.json()["detected_metadata_columns"]["section"] == "Major Category"
+
+
+# ---------------------------------------------------------------------------
+# PATCH /completions/{task_id}/{date} — set count
+# ---------------------------------------------------------------------------
+
+class TestSetCompletionCount:
+    def test_set_count_on_empty_cell_creates_it(self, client):
+        t = create_task(client)
+        resp = client.patch(f"/completions/{t['id']}/{TODAY}", params={"count": 3})
+        assert resp.status_code == 200
+        assert resp.json()["completion_count"] == 3
+
+    def test_set_count_on_existing_cell_updates_it(self, client):
+        t = create_task(client)
+        client.post("/completions", params={"task_id": t["id"], "completion_date": TODAY})
+        resp = client.patch(f"/completions/{t['id']}/{TODAY}", params={"count": 5})
+        assert resp.status_code == 200
+        assert resp.json()["completion_count"] == 5
+
+    def test_set_count_to_zero_clears_existing_cell(self, client):
+        t = create_task(client)
+        client.post("/completions", params={"task_id": t["id"], "completion_date": TODAY})
+        resp = client.patch(f"/completions/{t['id']}/{TODAY}", params={"count": 0})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["deleted"] is True
+        assert data["completion_count"] == 0
+        # Verify row is actually gone
+        comps = client.get("/completions", params={"start": TODAY, "end": TODAY}).json()
+        assert not any(c["task_id"] == t["id"] for c in comps)
+
+    def test_set_count_to_zero_on_empty_cell_is_noop(self, client):
+        t = create_task(client)
+        resp = client.patch(f"/completions/{t['id']}/{TODAY}", params={"count": 0})
+        assert resp.status_code == 200
+        assert resp.json()["deleted"] is True
+
+    def test_set_count_preserves_created_timestamp(self, client):
+        t = create_task(client)
+        # Create the row via POST so created_timestamp is set
+        client.post("/completions", params={"task_id": t["id"], "completion_date": TODAY})
+        comps_before = client.get("/completions", params={"start": TODAY, "end": TODAY}).json()
+        created_ts = comps_before[0]["created_timestamp"]
+        # PATCH to update count
+        client.patch(f"/completions/{t['id']}/{TODAY}", params={"count": 7})
+        comps_after = client.get("/completions", params={"start": TODAY, "end": TODAY}).json()
+        assert comps_after[0]["created_timestamp"] == created_ts
+        assert comps_after[0]["completion_count"] == 7
+
+    def test_negative_count_rejected(self, client):
+        t = create_task(client)
+        resp = client.patch(f"/completions/{t['id']}/{TODAY}", params={"count": -1})
+        assert resp.status_code == 422
+
+    def test_future_date_rejected(self, client):
+        t = create_task(client)
+        resp = client.patch(f"/completions/{t['id']}/{TOMORROW}", params={"count": 1})
+        assert resp.status_code == 422
+
+    def test_missing_task_returns_404(self, client):
+        resp = client.patch(f"/completions/9999/{TODAY}", params={"count": 1})
+        assert resp.status_code == 404
+
+    def test_set_count_reflected_in_list_completions(self, client):
+        t = create_task(client)
+        client.patch(f"/completions/{t['id']}/{TODAY}", params={"count": 4})
+        comps = client.get("/completions", params={"start": TODAY, "end": TODAY}).json()
+        match = next((c for c in comps if c["task_id"] == t["id"]), None)
+        assert match is not None
+        assert match["completion_count"] == 4

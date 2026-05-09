@@ -4,6 +4,7 @@ import {
   fetchCompletions,
   upsertCompletion,
   deleteCompletion,
+  setCompletionCount,
   createTask,
   updateTask,
   createArchive,
@@ -11,6 +12,7 @@ import {
 } from '../api.js';
 import TaskRow from './TaskRow.jsx';
 import TaskModal from './TaskModal.jsx';
+import EditBar from './EditBar.jsx';
 
 function toLocalDate(d) {
   const y = d.getFullYear();
@@ -49,6 +51,9 @@ export default function TaskGrid() {
   // Modal: closed when modalOpen=false. editingTask=null → add mode; task obj → edit mode.
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
+
+  // Selected date cell for the EditBar.
+  const [selectedCell, setSelectedCell] = useState(null);
 
   // Fetch tasks and completions. Called on mount and after every mutation.
   const loadData = useCallback(() => {
@@ -142,6 +147,30 @@ export default function TaskGrid() {
     }
   }
 
+  const handleSelect = useCallback((taskId, date) => {
+    setSelectedCell({ taskId, date });
+  }, []);
+
+  const handleSetCount = useCallback(async (taskId, date, count) => {
+    try {
+      const result = await setCompletionCount(taskId, date, count);
+      if (result.deleted) {
+        setCompletions((prev) => {
+          const next = { ...prev };
+          delete next[`${taskId}:${date}`];
+          return next;
+        });
+      } else {
+        setCompletions((prev) => ({
+          ...prev,
+          [`${taskId}:${date}`]: result.completion_count,
+        }));
+      }
+    } catch (e) {
+      console.error('setCount failed:', e);
+    }
+  }, []);
+
   async function handleArchive() {
     const name = `${todayStr}`;
     try {
@@ -174,6 +203,16 @@ export default function TaskGrid() {
           download
         >Export Sheet CSV</a>
       </div>
+
+      <EditBar
+        selectedCell={selectedCell}
+        tasks={tasks}
+        completions={completions}
+        todayStr={todayStr}
+        onIncrement={handleIncrement}
+        onClear={handleClear}
+        onSetCount={handleSetCount}
+      />
 
       <div className="grid-wrapper">
         <table className="task-grid">
@@ -214,10 +253,12 @@ export default function TaskGrid() {
                 dates={dates}
                 todayStr={todayStr}
                 completions={completions}
+                selectedCell={selectedCell}
                 onIncrement={handleIncrement}
                 onClear={handleClear}
                 onEdit={openEdit}
                 onTogglePause={handleTogglePause}
+                onSelect={handleSelect}
               />
             ))}
           </tbody>

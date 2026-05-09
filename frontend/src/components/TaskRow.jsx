@@ -8,7 +8,7 @@ function urgencyClass(urgency) {
   return 'urg-low';
 }
 
-export default function TaskRow({ task, dates, todayStr, completions, onIncrement, onClear, onEdit, onTogglePause }) {
+export default function TaskRow({ task, dates, todayStr, completions, selectedCell, onIncrement, onClear, onEdit, onTogglePause, onSelect }) {
   const isPaused = task.is_paused === 1;
 
   return (
@@ -49,8 +49,10 @@ export default function TaskRow({ task, dates, todayStr, completions, onIncremen
             isFuture={isFuture}
             isToday={date === todayStr}
             isPaused={isPaused}
+            isSelected={selectedCell?.taskId === task.id && selectedCell?.date === date}
             onIncrement={onIncrement}
             onClear={onClear}
+            onSelect={onSelect}
           />
         );
       })}

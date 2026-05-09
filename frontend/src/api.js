@@ -88,6 +88,15 @@ export function buildExportBackupUrl() {
   return `${BASE}/export/backup.json`;
 }
 
+export async function setCompletionCount(taskId, date, count) {
+  const res = await fetch(
+    `${BASE}/completions/${taskId}/${date}?count=${count}`,
+    { method: 'PATCH' },
+  );
+  if (!res.ok) throw new Error(`setCompletionCount failed: ${res.status}`);
+  return res.json();
+}
+
 export async function previewImport(file) {
   const formData = new FormData();
   formData.append('file', file);

@@ -17,8 +17,10 @@ export default function DateCell({
   isFuture,
   isToday,
   isPaused,
+  isSelected,
   onIncrement,
   onClear,
+  onSelect,
 }) {
   const isDisabled = isFuture || isPaused;
 
@@ -29,6 +31,7 @@ export default function DateCell({
   }
 
   function handleClick(e) {
+    onSelect(taskId, date);
     if (isDisabled) return;
     if (e.shiftKey) {
       if (count > 0) onClear(taskId, date);
@@ -42,6 +45,7 @@ export default function DateCell({
     isFuture ? 'future' : '',
     isToday && !isFuture ? 'today' : '',
     count > 0 && !isPaused ? 'has-count' : '',
+    isSelected ? 'selected' : '',
   ]
     .filter(Boolean)
     .join(' ');

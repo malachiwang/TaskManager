@@ -238,6 +238,13 @@ thead .meta-col {
   font-weight: 700;
 }
 
+/* Selected cell (EditBar selection) — must come after other .date-cell.* rules */
+.date-cell.selected {
+  outline: 2px solid #3a7bd5;
+  outline-offset: -2px;
+  background: #e8f0fe;
+}
+
 /* -------------------------------------------------------------------------
    Urgency color bands
    ---------------------------------------------------------------------- */
@@ -246,6 +253,112 @@ thead .meta-col {
 .urg-noticeable { color: #b36a00; font-weight: 600; }
 .urg-high       { color: #c84800; font-weight: 700; }
 .urg-critical   { color: #b71c1c; font-weight: 700; background: #fff4f4; }
+
+/* -------------------------------------------------------------------------
+   Edit bar (between toolbar and grid)
+   ---------------------------------------------------------------------- */
+
+.edit-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px;
+  background: #f0f0f0;
+  border-bottom: 1px solid #ddd;
+  flex-shrink: 0;
+  font-size: 12px;
+  min-height: 28px;
+}
+
+.edit-bar-empty {
+  color: #bbb;
+  font-style: italic;
+}
+
+.edit-bar-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.edit-bar-task {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+.edit-bar-sep {
+  color: #bbb;
+  flex-shrink: 0;
+}
+
+.edit-bar-date {
+  color: #555;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.edit-bar-count {
+  color: #2e7d32;
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.edit-bar-disabled {
+  color: #999;
+  font-style: italic;
+  flex-shrink: 0;
+}
+
+.edit-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.edit-bar-btn {
+  padding: 2px 8px;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  border: 1px solid #aaa;
+  background: #fff;
+  color: #333;
+  border-radius: 2px;
+}
+
+.edit-bar-btn:hover:not(:disabled) {
+  background: #e8e8e8;
+}
+
+.edit-bar-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.edit-bar-btn.primary {
+  background: #1c1c1c;
+  color: #fff;
+  border-color: #333;
+}
+
+.edit-bar-btn.primary:hover {
+  background: #333;
+}
+
+.edit-bar-input {
+  width: 52px;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 2px 4px;
+  border: 1px solid #aaa;
+}
 
 /* -------------------------------------------------------------------------
    Loading / error / empty states

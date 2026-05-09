@@ -333,6 +333,62 @@ def delete_completion(task_id: int, completion_date: str):
     return {"deleted": True, "task_id": task_id, "completion_date": completion_date}
 
 
+@app.patch("/completions/{task_id}/{completion_date}")
+def set_completion_count(task_id: int, completion_date: str, count: int):
+    """
+    Set the completion count for a task/date cell to an exact value.
+    count = 0  → delete the row (clear the cell); no-op if already empty.
+    count > 0  → create or update the row; preserves created_timestamp on update.
+    Negative counts and future dates are rejected.
+    """
+    if count < 0:
+        raise HTTPException(status_code=422, detail="count must be >= 0")
+    if completion_date > date.today().isoformat():
+        raise HTTPException(status_code=422, detail="Cannot set completions for future dates")
+
+    conn = get_connection()
+    if not conn.execute("SELECT id FROM tasks WHERE id = ?", (task_id,)).fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    if count == 0:
+        with conn:
+            conn.execute(
+                "DELETE FROM completions WHERE task_id = ? AND completion_date = ?",
+                (task_id, completion_date),
+            )
+        conn.close()
+        return {"deleted": True, "task_id": task_id, "completion_date": completion_date, "completion_count": 0}
+
+    # count > 0: upsert — UPDATE existing row (preserves created_timestamp) or INSERT new row.
+    now = datetime.now().isoformat()
+    existing = conn.execute(
+        "SELECT * FROM completions WHERE task_id = ? AND completion_date = ?",
+        (task_id, completion_date),
+    ).fetchone()
+
+    with conn:
+        if existing:
+            conn.execute(
+                "UPDATE completions SET completion_count = ?, updated_timestamp = ? "
+                "WHERE task_id = ? AND completion_date = ?",
+                (count, now, task_id, completion_date),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO completions (task_id, completion_date, completion_count, "
+                "created_timestamp, updated_timestamp) VALUES (?, ?, ?, ?, ?)",
+                (task_id, completion_date, count, now, now),
+            )
+
+    result = conn.execute(
+        "SELECT * FROM completions WHERE task_id = ? AND completion_date = ?",
+        (task_id, completion_date),
+    ).fetchone()
+    conn.close()
+    return dict(result)
+
+
 # ---------------------------------------------------------------------------
 # Dashboard
 # ---------------------------------------------------------------------------
