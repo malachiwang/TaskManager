@@ -376,6 +376,7 @@ export default function TaskGrid() {
     <>
       <div className="grid-toolbar">
         <button className="btn-add-task" onClick={openAdd}>+ Add Task</button>
+        <span className="toolbar-sep" />
         <button className="btn-archive-sheet" onClick={handleArchive}>Archive Current Sheet</button>
         <a
           className="btn-archive-sheet"
