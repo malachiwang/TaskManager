@@ -1377,9 +1377,9 @@ thead .meta-col {
 .ws-dashboard {
   font-family: var(--font-sans);
   flex: 1;
+  min-height: 0;
+  display: block;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
   background: var(--bg-app);
 }
 
@@ -1495,7 +1495,6 @@ thead .meta-col {
    ---------------------------------------------------------------------- */
 
 .ws-panels {
-  flex: 1;
   padding: 16px;
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1523,11 +1522,10 @@ thead .meta-col {
 .ws-archive {
   font-family: var(--font-sans);
   flex: 1;
+  min-height: 0;
+  display: block;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
   background: var(--bg-app);
-  gap: 0;
 }
 
 /* Page-level ink header — design report .mh used as page chrome */
@@ -1664,11 +1662,15 @@ thead .meta-col {
 
 .ws-settings {
   font-family: var(--font-sans);
+  /* flex item properties — sizing within .app-main */
   flex: 1;
+  min-height: 0;
+  /* block layout for own children — prevents flex-shrink from squishing frames
+     and clipping their content before overflow-y can activate */
+  display: block;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
   background: var(--bg-app);
+  padding-bottom: 16px;
 }
 
 /* Settings list — design report .stl */
