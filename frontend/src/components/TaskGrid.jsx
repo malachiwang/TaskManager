@@ -14,6 +14,10 @@ import TaskRow from './TaskRow.jsx';
 import TaskModal from './TaskModal.jsx';
 import EditBar from './EditBar.jsx';
 
+// ---------------------------------------------------------------------------
+// Date helpers
+// ---------------------------------------------------------------------------
+
 function toLocalDate(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -47,18 +51,67 @@ function monthRangeLabel(year, month) {
   return `${fmt(first)} – ${fmt(last)}, ${year}`;
 }
 
+// ---------------------------------------------------------------------------
+// Column layout — widths and sticky left offsets
+// ---------------------------------------------------------------------------
+
+const LS_KEY = 'taskos-col-widths';
+const MIN_COL_WIDTH = 24;
+
+// Default widths (px) matching the original CSS layout.
+export const DEFAULT_WIDTHS = {
+  'col-actions': 28,
+  'col-urg':     40,
+  'col-pri':     28,
+  'col-status':  62,
+  'col-section': 82,
+  'col-cat':     82,
+  'col-task':   150,
+  'col-sub':    100,
+  'col-freq':    44,
+  'col-days':    44,
+  'col-notes':  100,
+};
+
+// These columns are position:sticky and need cumulative left offsets.
+// col-sub (Subtask) is the last frozen column — content scrolls after it.
+const STICKY_COLS = [
+  'col-actions', 'col-urg', 'col-pri', 'col-status', 'col-section', 'col-cat', 'col-task', 'col-sub',
+];
+
+// Non-sticky metadata columns — resizable width only, no left offset.
+const NON_STICKY_META_COLS = ['col-freq', 'col-days', 'col-notes'];
+
+// Compute { widths, offsets } from current user overrides.
+// widths: every meta col → px value
+// offsets: sticky cols only → cumulative left offset
+function computeColLayout(colWidths) {
+  const widths = {};
+  const offsets = {};
+  let acc = 0;
+  for (const col of STICKY_COLS) {
+    widths[col] = colWidths[col] ?? DEFAULT_WIDTHS[col];
+    offsets[col] = acc;
+    acc += widths[col];
+  }
+  for (const col of NON_STICKY_META_COLS) {
+    widths[col] = colWidths[col] ?? DEFAULT_WIDTHS[col];
+  }
+  return { widths, offsets };
+}
+
 export default function TaskGrid() {
   // Real today — always fixed regardless of which month is displayed.
   const todayStr = toLocalDate(new Date());
 
-  // Currently displayed month. Shape is { year, month } (month is 1-indexed).
+  // Currently displayed month. Shape is { year, month } (1-indexed month).
   // Future modes (Rolling 30, Custom Range) can extend this state shape.
   const [viewMonth, setViewMonth] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() + 1 };
   });
 
-  // Derive the full date array from the selected month.
+  // Derive full date array from the selected month.
   const dates = useMemo(
     () => buildMonthRange(viewMonth.year, viewMonth.month),
     [viewMonth.year, viewMonth.month],
@@ -69,15 +122,32 @@ export default function TaskGrid() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Modal: closed when modalOpen=false. editingTask=null → add mode; task obj → edit mode.
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
-
-  // Selected date cell for the EditBar.
   const [selectedCell, setSelectedCell] = useState(null);
 
-  // Fetch tasks and completions for the visible date range.
-  // Re-runs automatically when `dates` changes (i.e. when the month changes).
+  // Column widths — stored as user overrides; missing keys fall back to DEFAULT_WIDTHS.
+  const [colWidths, setColWidths] = useState(() => {
+    try {
+      const saved = localStorage.getItem(LS_KEY);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // Persist column widths to localStorage on every change.
+  useEffect(() => {
+    localStorage.setItem(LS_KEY, JSON.stringify(colWidths));
+  }, [colWidths]);
+
+  // Derive computed layout (widths + sticky offsets) from overrides.
+  const colLayout = useMemo(() => computeColLayout(colWidths), [colWidths]);
+
+  // ---------------------------------------------------------------------------
+  // Data fetching — reruns when month changes (dates reference changes)
+  // ---------------------------------------------------------------------------
+
   const loadData = useCallback(() => {
     const start = dates[0];
     const end = dates[dates.length - 1];
@@ -98,9 +168,9 @@ export default function TaskGrid() {
     loadData();
   }, [loadData]);
 
-  // -------------------------------------------------------------------------
-  // Completion cell handlers
-  // -------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // Completion handlers
+  // ---------------------------------------------------------------------------
 
   const handleIncrement = useCallback(async (taskId, date) => {
     try {
@@ -127,24 +197,13 @@ export default function TaskGrid() {
     }
   }, []);
 
-  // -------------------------------------------------------------------------
-  // Task management handlers
-  // -------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // Task handlers
+  // ---------------------------------------------------------------------------
 
-  function openAdd() {
-    setEditingTask(null);
-    setModalOpen(true);
-  }
-
-  function openEdit(task) {
-    setEditingTask(task);
-    setModalOpen(true);
-  }
-
-  function closeModal() {
-    setModalOpen(false);
-    setEditingTask(null);
-  }
+  function openAdd() { setEditingTask(null); setModalOpen(true); }
+  function openEdit(task) { setEditingTask(task); setModalOpen(true); }
+  function closeModal() { setModalOpen(false); setEditingTask(null); }
 
   async function handleSave(fields) {
     try {
@@ -204,9 +263,9 @@ export default function TaskGrid() {
     }
   }
 
-  // -------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
   // Month navigation
-  // -------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
 
   function goToPrevMonth() {
     setViewMonth(({ year, month }) =>
@@ -228,9 +287,61 @@ export default function TaskGrid() {
     setSelectedCell(null);
   }
 
-  // -------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // Column resize
+  // ---------------------------------------------------------------------------
+
+  function resetColWidths() {
+    setColWidths({});
+    localStorage.removeItem(LS_KEY);
+  }
+
+  // Starts a drag resize for the given column key.
+  // Uses document-level mousemove/mouseup listeners; cleans up on mouseup.
+  // Width updates are throttled to one per animation frame.
+  function handleResizeStart(colKey, startClientX) {
+    const startWidth = colWidths[colKey] ?? DEFAULT_WIDTHS[colKey];
+    let rafId = null;
+
+    function onMouseMove(e) {
+      const delta = e.clientX - startClientX;
+      const newWidth = Math.max(MIN_COL_WIDTH, startWidth + delta);
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        setColWidths((prev) => ({ ...prev, [colKey]: newWidth }));
+      });
+    }
+
+    function onMouseUp() {
+      if (rafId) cancelAnimationFrame(rafId);
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    }
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }
+
+  // Resize handle element rendered inside each resizable <th>.
+  function rh(colKey) {
+    return (
+      <div
+        className="col-resize-handle"
+        onMouseDown={(e) => { e.preventDefault(); handleResizeStart(colKey, e.clientX); }}
+      />
+    );
+  }
+
+  // Inline style for a header <th> or body <td>: width + sticky left offset.
+  function thStyle(col) {
+    const style = { width: colLayout.widths[col] };
+    if (colLayout.offsets[col] !== undefined) style.left = colLayout.offsets[col];
+    return style;
+  }
+
+  // ---------------------------------------------------------------------------
   // Render
-  // -------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
 
   if (loading) return <div className="grid-status">Loading…</div>;
   if (error) return (
@@ -250,6 +361,7 @@ export default function TaskGrid() {
           href={buildExportSheetUrl(dates[0], dates[dates.length - 1])}
           download
         >Export Sheet CSV</a>
+        <button className="btn-archive-sheet" onClick={resetColWidths}>Reset Columns</button>
         <div className="range-nav">
           <button className="range-btn" onClick={goToPrevMonth}>← Prev</button>
           <button className="range-btn" onClick={goToCurrentMonth}>Current</button>
@@ -272,17 +384,37 @@ export default function TaskGrid() {
         <table className="task-grid">
           <thead>
             <tr>
-              <th className="meta-col col-actions"></th>
-              <th className="meta-col col-urg" title="Urgency">Urg</th>
-              <th className="meta-col col-pri" title="Priority">P</th>
-              <th className="meta-col col-status">Status</th>
-              <th className="meta-col col-section">Section</th>
-              <th className="meta-col col-cat">Category</th>
-              <th className="meta-col col-task">Task</th>
-              <th className="meta-col col-sub">Subtask</th>
-              <th className="meta-col col-freq" title="Frequency (days)">Freq</th>
-              <th className="meta-col col-days" title="Days since last done">Days</th>
-              <th className="meta-col col-notes">Notes</th>
+              <th className="meta-col col-actions" style={thStyle('col-actions')}></th>
+              <th className="meta-col col-urg" title="Urgency" style={thStyle('col-urg')}>
+                Urg{rh('col-urg')}
+              </th>
+              <th className="meta-col col-pri" title="Priority" style={thStyle('col-pri')}>
+                P{rh('col-pri')}
+              </th>
+              <th className="meta-col col-status" style={thStyle('col-status')}>
+                Status{rh('col-status')}
+              </th>
+              <th className="meta-col col-section" style={thStyle('col-section')}>
+                Section{rh('col-section')}
+              </th>
+              <th className="meta-col col-cat" style={thStyle('col-cat')}>
+                Category{rh('col-cat')}
+              </th>
+              <th className="meta-col col-task" style={thStyle('col-task')}>
+                Task{rh('col-task')}
+              </th>
+              <th className="meta-col col-sub" style={thStyle('col-sub')}>
+                Subtask{rh('col-sub')}
+              </th>
+              <th className="meta-col col-freq" title="Frequency (days)" style={thStyle('col-freq')}>
+                Freq{rh('col-freq')}
+              </th>
+              <th className="meta-col col-days" title="Days since last done" style={thStyle('col-days')}>
+                Days{rh('col-days')}
+              </th>
+              <th className="meta-col col-notes" style={thStyle('col-notes')}>
+                Notes{rh('col-notes')}
+              </th>
               {dates.map((d) => (
                 <th
                   key={d}
@@ -308,6 +440,7 @@ export default function TaskGrid() {
                 todayStr={todayStr}
                 completions={completions}
                 selectedCell={selectedCell}
+                colLayout={colLayout}
                 onIncrement={handleIncrement}
                 onClear={handleClear}
                 onEdit={openEdit}
