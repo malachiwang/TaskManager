@@ -53,10 +53,17 @@
 
   /* Row background — inherited by all cells in a row (sticky + scrolling) */
   --row-bg:       var(--bg-panel);
+
+  /* Typography — no external font dependencies.
+     IBM Plex variants apply when locally installed; system fallbacks
+     preserve today's exact rendering otherwise. */
+  --font-mono:  "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+  --font-sans:  "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-serif: "IBM Plex Serif", Georgia, serif;
 }
 
 body {
-  font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
   background: var(--bg-app);
   color: var(--ink-2);
@@ -572,6 +579,7 @@ thead .meta-col {
 }
 
 .modal-card {
+  font-family: var(--font-sans);
   background: var(--bg-panel);
   border: 1px solid #bbb;
   width: 440px;
@@ -697,6 +705,7 @@ thead .meta-col {
    ---------------------------------------------------------------------- */
 
 .dashboard {
+  font-family: var(--font-sans);
   flex: 1;
   overflow-y: auto;
   padding: 16px 20px;
@@ -785,6 +794,7 @@ thead .meta-col {
 
 .archive,
 .settings {
+  font-family: var(--font-sans);
   flex: 1;
   overflow-y: auto;
   padding: 16px 20px;
