@@ -972,6 +972,139 @@ thead .meta-col {
   background: var(--row-hover-bg);
 }
 
+/* -------------------------------------------------------------------------
+   UI-19 Dashboard — analytical content additions
+   ---------------------------------------------------------------------- */
+
+/* Urgency coloring on large serif stat values (no background — stat strip context) */
+.ws-stat-value.dash-stat-urg.urg-critical { color: var(--urg-crit); background: none; }
+.ws-stat-value.dash-stat-urg.urg-high     { color: var(--urg-hi);   background: none; }
+.ws-stat-value.dash-stat-urg.urg-noticeable { color: var(--urg-mid); background: none; }
+.ws-stat-value.dash-stat-urg.urg-low      { color: var(--ink);       background: none; }
+
+/* Dimmed stat cell — for unavailable metrics */
+.ws-stat-cell--dim .ws-stat-value {
+  color: var(--muted-2);
+  font-style: italic;
+}
+.ws-stat-cell--dim .ws-stat-label,
+.ws-stat-cell--dim .ws-stat-delta {
+  opacity: 0.55;
+}
+
+/* CSS-only micro-bar — no chart library */
+.dash-microbar {
+  width: 44px;
+  height: 3px;
+  background: var(--rule);
+  overflow: hidden;
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+
+.dash-microbar--wide {
+  width: 72px;
+  height: 4px;
+  margin-top: 6px;
+}
+
+.dash-microbar-fill {
+  height: 100%;
+}
+
+.dash-microbar-fill--urg-critical   { background: var(--urg-crit); }
+.dash-microbar-fill--urg-high       { background: var(--urg-hi); }
+.dash-microbar-fill--urg-noticeable { background: var(--urg-mid); }
+.dash-microbar-fill--urg-low        { background: var(--muted-2); }
+
+/* Urgency cell: number + microbar stacked vertically, or side-by-side */
+.dash-urg-cell {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.dash-urg-num {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  min-width: 28px;
+  flex-shrink: 0;
+}
+
+/* Table column alignment utilities */
+.dash-th-num,
+.dash-num {
+  text-align: right;
+}
+
+.dash-th-urg {
+  min-width: 90px;
+}
+
+/* Task name — slightly emphasised */
+.dash-task-name {
+  font-weight: 600;
+  color: var(--ink);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Muted secondary text in table cells */
+.dash-muted {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* Never-done metric block */
+.ws-frame-body {
+  padding: 12px 14px;
+}
+
+.dash-metric-block {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+}
+
+.dash-metric-value {
+  font-family: var(--font-serif);
+  font-size: 36px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.dash-metric-desc {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* Deferred panel notes */
+.dash-deferred {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.6;
+  margin-bottom: 6px;
+}
+
+.dash-deferred code {
+  background: var(--header-bg);
+  padding: 1px 4px;
+  border-radius: 2px;
+  color: var(--ink-2);
+}
+
+.dash-deferred--planned {
+  color: var(--muted-2);
+  font-style: italic;
+}
+
 .dash-empty {
   padding: 10px 12px;
   font-size: 12px;
