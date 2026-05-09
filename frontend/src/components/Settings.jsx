@@ -44,46 +44,49 @@ export default function Settings() {
       {/* Task Defaults */}
       <section className="dash-section">
         <div className="dash-section-title">Task Defaults</div>
-        <div style={{ padding: '10px 12px' }}>
-          <p style={{ fontSize: '11px', color: '#888', fontStyle: 'italic', margin: '0 0 10px' }}>
+        <div className="settings-body">
+          <p className="settings-help">
             Applied when opening the Add Task dialog. Editing an existing task always uses its saved values.
           </p>
-          <form onSubmit={handleSaveDefaults} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-              <label style={{ fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+          <form onSubmit={handleSaveDefaults} className="settings-form">
+            <div className="settings-form-row">
+              <label className="settings-label">
                 Default Section
                 <input
-                  style={{ fontSize: '12px', padding: '3px 6px', width: '130px' }}
+                  className="settings-input"
+                  style={{ width: '130px' }}
                   value={defaultSection}
                   onChange={(e) => { setDefaultSection(e.target.value); setSavedMsg(false); }}
                   placeholder="General"
                 />
               </label>
-              <label style={{ fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+              <label className="settings-label">
                 Default Priority (1–10)
                 <input
                   type="number"
                   min="1"
                   max="10"
-                  style={{ fontSize: '12px', padding: '3px 6px', width: '80px' }}
+                  className="settings-input"
+                  style={{ width: '80px' }}
                   value={defaultPriority}
                   onChange={(e) => { setDefaultPriority(e.target.value); setSavedMsg(false); }}
                 />
               </label>
-              <label style={{ fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+              <label className="settings-label">
                 Default Interval (days)
                 <input
                   type="number"
                   min="1"
-                  style={{ fontSize: '12px', padding: '3px 6px', width: '80px' }}
+                  className="settings-input"
+                  style={{ width: '80px' }}
                   value={defaultInterval}
                   onChange={(e) => { setDefaultInterval(e.target.value); setSavedMsg(false); }}
                 />
               </label>
             </div>
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <div className="settings-actions">
               <button className="btn-archive-sheet" type="submit">Save Defaults</button>
-              {savedMsg && <span style={{ fontSize: '12px', color: '#2a7a2a' }}>Saved.</span>}
+              {savedMsg && <span className="settings-saved">Saved.</span>}
             </div>
           </form>
         </div>
@@ -92,17 +95,14 @@ export default function Settings() {
       {/* Columns */}
       <section className="dash-section">
         <div className="dash-section-title">Columns</div>
-        <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div className="settings-body">
           <div>
-            <button
-              className="btn-archive-sheet"
-              onClick={handleResetColumns}
-            >
+            <button className="btn-archive-sheet" onClick={handleResetColumns}>
               Reset Column Widths
             </button>
           </div>
           {colResetMsg && (
-            <span style={{ fontSize: '12px', color: '#2a7a2a' }}>
+            <span className="settings-saved">
               Column widths cleared. Switch to the Grid tab (or refresh the page) to see the updated layout.
             </span>
           )}
@@ -112,16 +112,12 @@ export default function Settings() {
       {/* Data */}
       <section className="dash-section">
         <div className="dash-section-title">Data</div>
-        <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px' }}>
-          <p style={{ margin: 0, color: '#888', fontStyle: 'italic' }}>
+        <div className="settings-body">
+          <p className="settings-help">
             Export a full backup before importing or making bulk changes.
           </p>
           <div>
-            <a
-              className="btn-archive-sheet"
-              href={buildExportBackupUrl()}
-              download
-            >
+            <a className="btn-archive-sheet" href={buildExportBackupUrl()} download>
               Export Backup JSON
             </a>
           </div>
@@ -131,16 +127,12 @@ export default function Settings() {
       {/* Urgency Formula */}
       <section className="dash-section">
         <div className="dash-section-title">Urgency Formula</div>
-        <div style={{ padding: '10px 12px', fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <p style={{ margin: 0, color: '#888', fontStyle: 'italic' }}>
+        <div className="settings-body">
+          <p className="settings-help">
             Asymptotic — urgency approaches 10 but never exceeds it. Paused tasks always have urgency 0.
             Formula constants are fixed in <code>backend/logic.py</code> and are not editable here.
           </p>
-          <pre style={{
-            margin: 0, fontSize: '11px', background: '#f5f5f5',
-            padding: '10px 12px', borderRadius: '4px', lineHeight: 1.7,
-            border: '1px solid #e8e8e8',
-          }}>{`base   = f(priority)       — sets the urgency floor
+          <pre className="settings-pre">{`base   = f(priority)       — sets the urgency floor
 floor  = base / 2
 growth = 1 − exp(−k × D / I)
 urgency = 10 × (floor + (1 − floor) × growth)
@@ -152,9 +144,9 @@ k = 2.0   D = days_since   I = interval_days`}</pre>
       {/* About */}
       <section className="dash-section">
         <div className="dash-section-title">About</div>
-        <div style={{ padding: '10px 12px', fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '6px', color: '#444', lineHeight: 1.7 }}>
-          <p style={{ margin: 0 }}><strong>TaskManagementOS</strong> is a local-first task-pressure tracker.</p>
-          <ul style={{ margin: 0, paddingLeft: '18px' }}>
+        <div className="settings-body settings-prose">
+          <p><strong>TaskManagementOS</strong> is a local-first task-pressure tracker.</p>
+          <ul>
             <li>All data is stored in a local SQLite file (<code>taskos.db</code>).</li>
             <li><code>taskos.db</code> is gitignored — it is never committed to version control.</li>
             <li>There is no cloud sync, no authentication, and no external services.</li>

@@ -857,6 +857,93 @@ thead .meta-col {
   position: static;
 }
 
+/* -------------------------------------------------------------------------
+   Settings page (UI-08A)
+   Replaces repeated inline styles in Settings.jsx with token-based classes.
+   ---------------------------------------------------------------------- */
+
+/* Section body wrapper — shared padding, flex column, base font size. */
+.settings-body {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+}
+
+/* Help / descriptor text — italic muted note below a section title. */
+.settings-help {
+  font-size: 11px;
+  color: var(--muted-2);
+  font-style: italic;
+  margin: 0;
+}
+
+/* Save / confirmation message. */
+.settings-saved {
+  font-size: 12px;
+  color: var(--good);
+}
+
+/* Body prose — about section text color and line rhythm. */
+.settings-prose {
+  color: var(--ink-2);
+  line-height: 1.7;
+}
+.settings-prose p  { margin: 0; }
+.settings-prose ul { margin: 0; padding-left: 18px; }
+
+/* Read-only formula / code block. */
+.settings-pre {
+  margin: 0;
+  font-size: 11px;
+  background: var(--bg-app);
+  padding: 10px 12px;
+  border-radius: 4px;
+  line-height: 1.7;
+  border: 1px solid var(--grid-border);
+}
+
+/* Settings form — vertical stack of field row + action row. */
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Horizontal row of labeled inputs. */
+.settings-form-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+/* Button + confirmation row. */
+.settings-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+/* Field label — stacks label text above input. */
+.settings-label {
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* Settings form inputs — width set inline per field. */
+.settings-input {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid var(--grid-border);
+  background: var(--paused-bg);
+  color: var(--ink-2);
+}
+
 /* Export backup button in app header */
 .btn-export-backup {
   margin-left: auto;
