@@ -6,6 +6,7 @@ import {
   deleteCompletion,
   createTask,
   updateTask,
+  createArchive,
 } from '../api.js';
 import TaskRow from './TaskRow.jsx';
 import TaskModal from './TaskModal.jsx';
@@ -140,6 +141,15 @@ export default function TaskGrid() {
     }
   }
 
+  async function handleArchive() {
+    const name = `${todayStr}`;
+    try {
+      await createArchive(name, dates[0], dates[dates.length - 1]);
+    } catch (e) {
+      console.error('archive failed:', e);
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
@@ -156,6 +166,7 @@ export default function TaskGrid() {
     <>
       <div className="grid-toolbar">
         <button className="btn-add-task" onClick={openAdd}>+ Add Task</button>
+        <button className="btn-archive-sheet" onClick={handleArchive}>Archive Current Sheet</button>
       </div>
 
       <div className="grid-wrapper">

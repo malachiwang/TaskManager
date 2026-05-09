@@ -478,3 +478,112 @@ class TestDashboard:
         top5 = client.get("/dashboard").json()["top_5_urgent"]
         urgencies = [t["urgency"] for t in top5]
         assert urgencies == sorted(urgencies, reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# Archives
+# ---------------------------------------------------------------------------
+
+class TestArchive:
+    def test_create_archive_returns_201(self, client):
+        resp = client.post("/archives", params={"name": "May Snap", "start_date": TODAY, "end_date": TODAY})
+        assert resp.status_code == 201
+
+    def test_create_archive_returns_metadata(self, client):
+        resp = client.post("/archives", params={"name": "Test", "start_date": TODAY, "end_date": YESTERDAY})
+        data = resp.json()
+        assert data["name"] == "Test"
+        assert data["start_date"] == TODAY
+        assert data["end_date"] == YESTERDAY
+        assert "archived_at" in data
+        assert "id" in data
+        assert isinstance(data["id"], int)
+
+    def test_list_archives_empty(self, client):
+        resp = client.get("/archives")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    def test_list_archives_returns_entry(self, client):
+        client.post("/archives", params={"name": "A", "start_date": TODAY, "end_date": TODAY})
+        archives = client.get("/archives").json()
+        assert len(archives) == 1
+        assert archives[0]["name"] == "A"
+
+    def test_list_archives_no_snapshot_data_json(self, client):
+        client.post("/archives", params={"name": "A", "start_date": TODAY, "end_date": TODAY})
+        archives = client.get("/archives").json()
+        assert "snapshot_data_json" not in archives[0]
+
+    def test_list_archives_has_expected_fields(self, client):
+        client.post("/archives", params={"name": "A", "start_date": TODAY, "end_date": TODAY})
+        a = client.get("/archives").json()[0]
+        assert "id" in a
+        assert "name" in a
+        assert "start_date" in a
+        assert "end_date" in a
+        assert "archived_at" in a
+
+    def test_get_archive_returns_snapshot_data_json(self, client):
+        resp = client.post("/archives", params={"name": "A", "start_date": TODAY, "end_date": TODAY})
+        aid = resp.json()["id"]
+        detail = client.get(f"/archives/{aid}").json()
+        assert "snapshot_data_json" in detail
+        snap = detail["snapshot_data_json"]
+        assert "tasks" in snap
+        assert "start_date" in snap
+        assert "end_date" in snap
+
+    def test_get_archive_404_for_unknown(self, client):
+        resp = client.get("/archives/9999")
+        assert resp.status_code == 404
+
+    def test_archive_does_not_mutate_tasks(self, client):
+        create_task(client, name="Original")
+        client.post("/archives", params={"name": "Snap", "start_date": TODAY, "end_date": TODAY})
+        tasks_after = client.get("/tasks").json()
+        assert len(tasks_after) == 1
+        assert tasks_after[0]["name"] == "Original"
+
+    def test_archive_does_not_mutate_completions(self, client):
+        t = create_task(client)
+        client.post("/completions", params={"task_id": t["id"], "completion_date": TODAY})
+        client.post("/archives", params={"name": "Snap", "start_date": TODAY, "end_date": TODAY})
+        comps = client.get("/completions", params={"start": TODAY, "end": TODAY}).json()
+        assert len(comps) == 1
+        assert comps[0]["completion_count"] == 1
+
+    def test_archive_stores_completion_count_not_boolean(self, client):
+        t = create_task(client)
+        # Click three times to get count=3
+        for _ in range(3):
+            client.post("/completions", params={"task_id": t["id"], "completion_date": TODAY})
+        resp = client.post("/archives", params={"name": "Snap", "start_date": TODAY, "end_date": TODAY})
+        aid = resp.json()["id"]
+        detail = client.get(f"/archives/{aid}").json()
+        task_snap = detail["snapshot_data_json"]["tasks"][0]
+        assert task_snap["completions"][TODAY] == 3
+
+    def test_archive_empty_db_has_empty_tasks(self, client):
+        resp = client.post("/archives", params={"name": "Empty", "start_date": TODAY, "end_date": TODAY})
+        aid = resp.json()["id"]
+        snap = client.get(f"/archives/{aid}").json()["snapshot_data_json"]
+        assert snap["tasks"] == []
+
+    def test_archive_completions_outside_range_not_included(self, client):
+        t = create_task(client)
+        client.post("/completions", params={"task_id": t["id"], "completion_date": YESTERDAY})
+        # Archive only covers today — yesterday's completion should not be in completions map
+        resp = client.post("/archives", params={"name": "Snap", "start_date": TODAY, "end_date": TODAY})
+        aid = resp.json()["id"]
+        snap = client.get(f"/archives/{aid}").json()["snapshot_data_json"]
+        task_snap = snap["tasks"][0]
+        assert YESTERDAY not in task_snap["completions"]
+
+    def test_multiple_snapshots_are_independent(self, client):
+        client.post("/archives", params={"name": "First", "start_date": TODAY, "end_date": TODAY})
+        client.post("/archives", params={"name": "Second", "start_date": TODAY, "end_date": TODAY})
+        archives = client.get("/archives").json()
+        assert len(archives) == 2
+        names = {a["name"] for a in archives}
+        assert names == {"First", "Second"}

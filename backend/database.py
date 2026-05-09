@@ -54,5 +54,14 @@ def init_db() -> None:
                 CHECK (completion_count >= 0),
                 UNIQUE (task_id, completion_date)
             );
+
+            CREATE TABLE IF NOT EXISTS archive_snapshots (
+                id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                name               TEXT    NOT NULL,
+                start_date         TEXT    NOT NULL,
+                end_date           TEXT    NOT NULL,
+                archived_at        TEXT    NOT NULL,
+                snapshot_data_json TEXT    NOT NULL
+            );
         """)
     conn.close()

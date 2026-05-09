@@ -59,3 +59,22 @@ export async function fetchDashboard() {
   if (!res.ok) throw new Error(`fetchDashboard failed: ${res.status}`);
   return res.json();
 }
+
+export async function fetchArchives() {
+  const res = await fetch(`${BASE}/archives`);
+  if (!res.ok) throw new Error(`fetchArchives failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createArchive(name, startDate, endDate) {
+  const params = new URLSearchParams({ name, start_date: startDate, end_date: endDate });
+  const res = await fetch(`${BASE}/archives?${params}`, { method: 'POST' });
+  if (!res.ok) throw new Error(`createArchive failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchArchive(id) {
+  const res = await fetch(`${BASE}/archives/${id}`);
+  if (!res.ok) throw new Error(`fetchArchive failed: ${res.status}`);
+  return res.json();
+}

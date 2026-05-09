@@ -7,6 +7,7 @@ Run locally:
 API docs:
     http://localhost:8000/docs
 """
+import json
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import date, datetime
@@ -390,3 +391,93 @@ def dashboard():
         "paused_count": paused_count,
         "never_done_count": never_done_count,
     }
+
+
+# ---------------------------------------------------------------------------
+# Archives
+# ---------------------------------------------------------------------------
+
+@app.post("/archives", status_code=201)
+def create_archive(name: str, start_date: str, end_date: str):
+    """
+    Save a read-only snapshot of all active tasks and their completions
+    for the given date range. Does not modify tasks or completions.
+    """
+    today = date.today()
+    conn = get_connection()
+
+    rows = conn.execute(
+        """
+        SELECT t.*,
+               (SELECT MAX(completion_date)
+                FROM completions c
+                WHERE c.task_id = t.id) AS latest_completion
+        FROM tasks t
+        WHERE t.is_active = 1
+        ORDER BY t.display_order, t.id
+        """
+    ).fetchall()
+    tasks = [_enrich_task(dict(r), today) for r in rows]
+
+    comp_rows = conn.execute(
+        "SELECT task_id, completion_date, completion_count FROM completions "
+        "WHERE completion_date BETWEEN ? AND ?",
+        (start_date, end_date),
+    ).fetchall()
+
+    comp_map: dict[int, dict[str, int]] = {}
+    for c in comp_rows:
+        tid = c["task_id"]
+        if tid not in comp_map:
+            comp_map[tid] = {}
+        comp_map[tid][c["completion_date"]] = c["completion_count"]
+
+    for t in tasks:
+        t["completions"] = comp_map.get(t["id"], {})
+
+    snapshot = {"start_date": start_date, "end_date": end_date, "tasks": tasks}
+    archived_at = datetime.now().isoformat()
+
+    with conn:
+        cursor = conn.execute(
+            "INSERT INTO archive_snapshots (name, start_date, end_date, archived_at, snapshot_data_json) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (name, start_date, end_date, archived_at, json.dumps(snapshot)),
+        )
+        archive_id = cursor.lastrowid
+
+    conn.close()
+    return {
+        "id": archive_id,
+        "name": name,
+        "start_date": start_date,
+        "end_date": end_date,
+        "archived_at": archived_at,
+    }
+
+
+@app.get("/archives")
+def list_archives():
+    """List all archive snapshots without snapshot_data_json."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT id, name, start_date, end_date, archived_at "
+        "FROM archive_snapshots ORDER BY archived_at DESC"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.get("/archives/{archive_id}")
+def get_archive(archive_id: int):
+    """Return one archive snapshot including parsed snapshot_data_json."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM archive_snapshots WHERE id = ?", (archive_id,)
+    ).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Archive not found")
+    result = dict(row)
+    result["snapshot_data_json"] = json.loads(result["snapshot_data_json"])
+    return result
