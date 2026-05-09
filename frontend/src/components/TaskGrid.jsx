@@ -508,16 +508,20 @@ export default function TaskGrid() {
               return (
                 <Fragment key={sectionName}>
                   <tr className="ws-section-row">
-                    <td className="ws-section-cell" colSpan={11 + dates.length}>
-                      <div className="ws-section-inner">
-                        <span className="ws-section-title">{sectionName}</span>
-                        <span className="ws-section-meta">
-                          {sectionTasks.length} task{sectionTasks.length !== 1 ? 's' : ''}
-                          {pausedCount > 0 ? ` · ${pausedCount} paused` : ''}
-                          {avgUrg !== null ? ` · avg urg ${avgUrg}` : ''}
-                        </span>
-                      </div>
+                    {/* Frozen td: sticky left, spans all 8 frozen columns.
+                        Uses the same position:sticky mechanism as TaskRow sticky cells —
+                        directly on the <td>, not a child element. Avoids jank. */}
+                    <td className="ws-section-frozen" colSpan={8}>
+                      <span className="ws-section-title">{sectionName}</span>
+                      <span className="ws-section-meta">
+                        {sectionTasks.length} task{sectionTasks.length !== 1 ? 's' : ''}
+                        {pausedCount > 0 ? ` · ${pausedCount} paused` : ''}
+                        {avgUrg !== null ? ` · avg urg ${avgUrg}` : ''}
+                      </span>
                     </td>
+                    {/* Overflow td: spans the 3 non-sticky meta cols + all date cols,
+                        provides background colour across the full row width. */}
+                    <td className="ws-section-overflow" colSpan={3 + dates.length}></td>
                   </tr>
                   {sectionTasks.map((task) => (
                     <TaskRow

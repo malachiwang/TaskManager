@@ -2123,32 +2123,41 @@ thead .meta-col {
 
 /* =========================================================================
    UI-18C — Sectioned Spreadsheet: section divider rows
+   Two-td approach: frozen td (sticky, left: 0) + overflow td (background band).
+   Mirrors the same sticky mechanism used by TaskRow's sticky columns —
+   position:sticky directly on <td>, never on a child element.
    ========================================================================= */
 
 /* Section row — structural band, not a data row */
 .ws-section-row {
-  /* No hover treatment; cursor default signals non-interactivity */
+  cursor: default;
 }
 
-.ws-section-cell {
-  padding: 0;
-  background: var(--panel-2);
+/* Shared border treatment for both tds in a section row */
+.ws-section-row td {
   border-top: 2px solid var(--rule);
   border-bottom: 1px solid var(--rule-2);
-  /* Override the standard cell right-border so the band reads as a full rule */
-  border-right: none;
 }
 
-/* Inner label — sticky so section name stays visible during horizontal scroll */
-.ws-section-inner {
+/* Frozen td: sticky, spans the 8 frozen columns.
+   Sits at z-index:1 to paint above scrolling date cells,
+   matching the z-index of regular body sticky cells. */
+.ws-section-frozen {
   position: sticky;
   left: 0;
-  display: inline-flex;
-  align-items: baseline;
-  gap: 10px;
+  z-index: 1;
+  background: var(--panel-2);
   padding: 5px 12px 5px 14px;
-  /* Natural content width — does not stretch to fill the colSpan td */
-  width: max-content;
+  white-space: nowrap;
+  /* Right border matches the frozen-column boundary rule on col-sub */
+  border-right: 2px solid var(--ink-2);
+}
+
+/* Overflow td: fills the remaining row width with the band background.
+   No sticky — scrolls normally with date columns. */
+.ws-section-overflow {
+  background: var(--panel-2);
+  border-right: none;
 }
 
 /* Section name: uppercase mono, ink weight */
@@ -2168,9 +2177,10 @@ thead .meta-col {
   color: var(--muted);
   letter-spacing: 0.03em;
   font-weight: 400;
+  margin-left: 10px;
 }
 
-/* First section row does not need a top border — it follows the thead */
-.task-grid tbody tr.ws-section-row:first-child .ws-section-cell {
+/* First section row needs only a hairline top — it immediately follows thead */
+.task-grid tbody tr.ws-section-row:first-child td {
   border-top: 1px solid var(--rule);
 }
