@@ -686,7 +686,7 @@ thead .meta-col {
 .modal-form {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   padding: 14px;
 }
 
@@ -719,9 +719,18 @@ thead .meta-col {
   font-size: 13px;
   padding: 4px 6px;
   border: 1px solid var(--grid-border);
-  background: var(--paused-bg);
+  background: var(--bg-app);
   color: var(--ink-2);
   width: 100%;
+  border-radius: 2px;
+}
+
+.modal-form input:focus,
+.modal-form select:focus,
+.modal-form textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  border-color: var(--accent);
 }
 
 .modal-form textarea {
@@ -737,7 +746,9 @@ thead .meta-col {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
-  padding-top: 2px;
+  padding-top: 10px;
+  margin-top: 4px;
+  border-top: 1px solid var(--grid-border);
 }
 
 .modal-actions button {
@@ -745,18 +756,18 @@ thead .meta-col {
   font-family: inherit;
   font-size: 12px;
   cursor: pointer;
-  border: 1px solid #333;
+  border: 1px solid var(--ink);
   background: var(--ink);
   color: #fff;
 }
 
 .modal-actions button:hover {
-  background: #333;
+  background: var(--ink-2);
 }
 
 .modal-actions .btn-cancel {
   background: var(--bg-panel);
-  color: #333;
+  color: var(--ink-2);
   border-color: var(--grid-border);
 }
 
