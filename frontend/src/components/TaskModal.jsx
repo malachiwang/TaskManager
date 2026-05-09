@@ -2,19 +2,31 @@ import { useState } from 'react';
 
 const STATUS_OPTIONS = ['active', 'focus', 'background', 'passive', 'on-hold', 'someday'];
 
+function loadTaskDefaults() {
+  try {
+    const saved = localStorage.getItem('taskos-settings');
+    return saved ? JSON.parse(saved) : {};
+  } catch {
+    return {};
+  }
+}
+
 export default function TaskModal({ task, onSave, onClose }) {
   const isEdit = task != null;
 
-  const [form, setForm] = useState({
-    name: task?.name ?? '',
-    section: task?.section ?? 'General',
-    category: task?.category ?? '',
-    status: task?.status ?? 'active',
-    subtask: task?.subtask ?? '',
-    priority: task?.priority ?? 5,
-    interval_days: task?.interval_days ?? 7,
-    notes: task?.notes ?? '',
-    manual_last_done_override: task?.manual_last_done_override ?? '',
+  const [form, setForm] = useState(() => {
+    const d = isEdit ? {} : loadTaskDefaults();
+    return {
+      name: task?.name ?? '',
+      section: task?.section ?? d.defaultSection ?? 'General',
+      category: task?.category ?? '',
+      status: task?.status ?? 'active',
+      subtask: task?.subtask ?? '',
+      priority: task?.priority ?? d.defaultPriority ?? 5,
+      interval_days: task?.interval_days ?? d.defaultIntervalDays ?? 7,
+      notes: task?.notes ?? '',
+      manual_last_done_override: task?.manual_last_done_override ?? '',
+    };
   });
 
   function set(key, val) {
