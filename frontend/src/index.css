@@ -217,6 +217,18 @@ thead .meta-col {
 .col-days   { text-align: center; }
 .col-notes  { overflow: hidden; text-overflow: ellipsis; }
 
+/* col-freq, col-days, col-notes share .meta-col for background/width styling
+   but are NOT frozen columns — they should scroll normally after Subtask.
+   position:static overrides the position:sticky and z-index:1 inherited from
+   .meta-col, preventing them from creating a stacking context that paints over
+   the frozen pane during horizontal scroll. CSS custom property inheritance
+   (--row-bg) is unaffected by position:static. */
+.col-freq,
+.col-days,
+.col-notes {
+  position: static;
+}
+
 /* Column resize handle — sits on the right edge of each resizable <th>.
    The <th> has position:sticky which serves as the containing block. */
 .col-resize-handle {
