@@ -26,6 +26,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS tasks (
                 id                       INTEGER PRIMARY KEY AUTOINCREMENT,
                 name                     TEXT    NOT NULL,
+                section                  TEXT    NOT NULL DEFAULT 'General',
                 category                 TEXT    NOT NULL DEFAULT '',
                 subtask                  TEXT             DEFAULT '',
                 priority                 INTEGER NOT NULL DEFAULT 5,
@@ -64,4 +65,13 @@ def init_db() -> None:
                 snapshot_data_json TEXT    NOT NULL
             );
         """)
+    # Migrate existing databases: add section column if not present.
+    # ALTER TABLE ADD COLUMN is safe with NOT NULL DEFAULT on SQLite.
+    try:
+        conn.execute(
+            "ALTER TABLE tasks ADD COLUMN section TEXT NOT NULL DEFAULT 'General'"
+        )
+        conn.commit()
+    except Exception:
+        pass  # Column already exists — no action needed.
     conn.close()

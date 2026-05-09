@@ -136,25 +136,27 @@ thead .meta-col {
 }
 
 /*
-  Widths and cumulative left offsets:
-  col-urg:    40px  → left: 0
-  col-pri:    28px  → left: 40px
-  col-status: 62px  → left: 68px
-  col-cat:    82px  → left: 130px
-  col-task:  150px  → left: 212px   ← last sticky col, right border acts as separator
+  Widths and cumulative left offsets (col-actions is leftmost at 0):
+  col-actions: 28px  → left: 0
+  col-urg:     40px  → left: 28px
+  col-pri:     28px  → left: 68px
+  col-status:  62px  → left: 96px
+  col-section: 82px  → left: 158px
+  col-cat:     82px  → left: 240px
+  col-task:   150px  → left: 322px  ← last sticky col, right border acts as separator
   col-sub, col-freq, col-days, col-notes: not sticky (scroll with dates)
 */
 
-/* col-actions is 28px wide and leftmost; all other meta-col left values shift by +28px */
 .col-actions { left: 0;     width: 28px; min-width: 28px; max-width: 28px;
                text-align: center; padding: 0 2px; }
-.col-urg    { left: 28px;  min-width: 40px;  max-width: 42px;  text-align: center; }
-.col-pri    { left: 68px;  min-width: 28px;  max-width: 30px;  text-align: center; }
-.col-status { left: 96px;  min-width: 62px; }
-.col-cat    { left: 158px; min-width: 82px; }
-.col-task   { left: 240px; min-width: 150px; max-width: 200px;
-              overflow: hidden; text-overflow: ellipsis;
-              border-right: 2px solid #bbb; } /* visual separator */
+.col-urg     { left: 28px;  min-width: 40px;  max-width: 42px;  text-align: center; }
+.col-pri     { left: 68px;  min-width: 28px;  max-width: 30px;  text-align: center; }
+.col-status  { left: 96px;  min-width: 62px; }
+.col-section { left: 158px; min-width: 82px; }
+.col-cat     { left: 240px; min-width: 82px; }
+.col-task    { left: 322px; min-width: 150px; max-width: 200px;
+               overflow: hidden; text-overflow: ellipsis;
+               border-right: 2px solid #bbb; } /* visual separator */
 .col-sub    { min-width: 80px;  max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
 .col-freq   { min-width: 38px;  text-align: center; }
 .col-days   { min-width: 38px;  text-align: center; }

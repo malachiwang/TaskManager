@@ -127,6 +127,7 @@ def get_task(task_id: int):
 @app.post("/tasks", status_code=201)
 def create_task(
     name: str,
+    section: str = "General",
     category: str = "",
     subtask: str = "",
     priority: int = 5,
@@ -147,13 +148,13 @@ def create_task(
         cursor = conn.execute(
             """
             INSERT INTO tasks (
-                name, category, subtask, priority, interval_days,
+                name, section, category, subtask, priority, interval_days,
                 status, notes, created_at, is_active, is_paused,
                 manual_last_done_override, display_order
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
             """,
             (
-                name, category, subtask, priority, interval_days,
+                name, section, category, subtask, priority, interval_days,
                 status, notes, today_str, manual_last_done_override, display_order,
             ),
         )
@@ -171,6 +172,7 @@ def create_task(
 def update_task(
     task_id: int,
     name: Optional[str] = None,
+    section: Optional[str] = None,
     category: Optional[str] = None,
     subtask: Optional[str] = None,
     status: Optional[str] = None,
@@ -198,6 +200,8 @@ def update_task(
     updates: dict = {}
     if name is not None:
         updates["name"] = name
+    if section is not None:
+        updates["section"] = section
     if category is not None:
         updates["category"] = category
     if subtask is not None:
@@ -578,7 +582,7 @@ def export_sheet_csv(
         dates.append(d.isoformat())
         d += timedelta(days=1)
 
-    meta_cols = ["name", "category", "subtask", "priority", "interval_days",
+    meta_cols = ["name", "section", "category", "subtask", "priority", "interval_days",
                  "status", "urgency", "days_since", "notes"]
 
     output = io.StringIO()
@@ -586,8 +590,8 @@ def export_sheet_csv(
     writer.writerow(meta_cols + dates)
     for t in tasks:
         row = [
-            t["name"], t.get("category", ""), t.get("subtask", ""),
-            t["priority"], t["interval_days"], t["status"],
+            t["name"], t.get("section", "General"), t.get("category", ""),
+            t.get("subtask", ""), t["priority"], t["interval_days"], t["status"],
             t["urgency"], t["days_since"], t.get("notes", ""),
         ]
         for iso in dates:
@@ -612,6 +616,7 @@ def export_sheet_csv(
 # Order within each list is irrelevant — all are checked as exact matches.
 _IMPORT_ALIASES: dict[str, list[str]] = {
     "name":                      ["task", "name", "task name"],
+    "section":                   ["section", "group", "grouping", "major category", "area"],
     "category":                  ["category", "cat"],
     "subtask":                   ["subtask", "sub"],
     "priority":                  ["priority", "pri", "p"],

@@ -7,6 +7,7 @@ export default function TaskModal({ task, onSave, onClose }) {
 
   const [form, setForm] = useState({
     name: task?.name ?? '',
+    section: task?.section ?? 'General',
     category: task?.category ?? '',
     status: task?.status ?? 'active',
     subtask: task?.subtask ?? '',
@@ -48,12 +49,23 @@ export default function TaskModal({ task, onSave, onClose }) {
 
           <div className="modal-row">
             <label>
+              Section
+              <input
+                value={form.section}
+                onChange={(e) => set('section', e.target.value)}
+                placeholder="General"
+              />
+            </label>
+            <label>
               Category
               <input
                 value={form.category}
                 onChange={(e) => set('category', e.target.value)}
               />
             </label>
+          </div>
+
+          <div className="modal-row full-width">
             <label>
               Status
               <select value={form.status} onChange={(e) => set('status', e.target.value)}>

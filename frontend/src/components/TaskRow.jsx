@@ -30,6 +30,7 @@ export default function TaskRow({ task, dates, todayStr, completions, onIncremen
       </td>
       <td className="meta-col col-pri">{task.priority}</td>
       <td className="meta-col col-status">{task.status}</td>
+      <td className="meta-col col-section">{task.section || ''}</td>
       <td className="meta-col col-cat">{task.category}</td>
       <td className="meta-col col-task" title={task.name}>{task.name}</td>
       <td className="meta-col col-sub" title={task.subtask}>{task.subtask || ''}</td>

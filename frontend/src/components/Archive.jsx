@@ -36,6 +36,7 @@ function ArchiveMiniGrid({ data }) {
             <th className="col-urg" title="Urgency">Urg</th>
             <th className="col-pri" title="Priority">P</th>
             <th className="col-status">Status</th>
+            <th className="col-section">Section</th>
             <th className="col-cat">Category</th>
             <th className="col-task">Task</th>
             <th className="col-freq" title="Frequency">Freq</th>
@@ -51,6 +52,7 @@ function ArchiveMiniGrid({ data }) {
               <td className="col-urg">{task.is_paused ? '—' : task.urgency}</td>
               <td className="col-pri">{task.priority}</td>
               <td className="col-status">{task.status}</td>
+              <td className="col-section">{task.section || ''}</td>
               <td className="col-cat">{task.category}</td>
               <td className="col-task" title={task.name}>{task.name}</td>
               <td className="col-freq">{task.interval_days}d</td>

@@ -905,3 +905,122 @@ class TestImportPreview:
         data = self._post(client, content).json()
         assert data["detected_metadata_columns"]["name"] == "Task"
         assert data["row_count"] == 1
+
+    def test_detects_section_header(self, client):
+        data = self._post(client, self._csv_bytes([["Task", "Section"], ["Ex", "Health"]])).json()
+        assert data["detected_metadata_columns"]["section"] == "Section"
+
+    def test_detects_group_alias_for_section(self, client):
+        data = self._post(client, self._csv_bytes([["Task", "Group"], ["Ex", "Health"]])).json()
+        assert data["detected_metadata_columns"]["section"] == "Group"
+
+    def test_detects_area_alias_for_section(self, client):
+        data = self._post(client, self._csv_bytes([["Task", "Area"], ["Ex", "Health"]])).json()
+        assert data["detected_metadata_columns"]["section"] == "Area"
+
+
+# ---------------------------------------------------------------------------
+# Section support
+# ---------------------------------------------------------------------------
+
+class TestSection:
+    def _csv_bytes(self, rows):
+        buf = io.StringIO()
+        csv.writer(buf).writerows(rows)
+        return buf.getvalue().encode("utf-8")
+
+    def test_create_task_with_section_stores_it(self, client):
+        t = create_task(client, name="T", section="Health")
+        assert t["section"] == "Health"
+
+    def test_create_task_without_section_defaults_to_general(self, client):
+        t = create_task(client, name="T")
+        assert t["section"] == "General"
+
+    def test_patch_section(self, client):
+        t = create_task(client)
+        resp = client.patch(f"/tasks/{t['id']}", params={"section": "Career"})
+        assert resp.json()["section"] == "Career"
+
+    def test_patch_without_section_leaves_it_unchanged(self, client):
+        t = create_task(client, section="Music")
+        resp = client.patch(f"/tasks/{t['id']}", params={"notes": "blah"})
+        assert resp.json()["section"] == "Music"
+
+    def test_list_tasks_includes_section(self, client):
+        create_task(client, name="T", section="Projects")
+        tasks = client.get("/tasks").json()
+        assert "section" in tasks[0]
+        assert tasks[0]["section"] == "Projects"
+
+    def test_get_task_includes_section(self, client):
+        t = create_task(client, section="Music")
+        data = client.get(f"/tasks/{t['id']}").json()
+        assert data["section"] == "Music"
+
+    def test_csv_export_has_section_header(self, client):
+        resp = client.get("/export/sheet.csv", params={"start": TODAY, "end": TODAY})
+        header = resp.text.splitlines()[0]
+        assert "section" in header
+
+    def test_csv_export_section_value_in_row(self, client):
+        create_task(client, name="T", section="Career")
+        text = client.get("/export/sheet.csv", params={"start": TODAY, "end": TODAY}).text
+        assert "Career" in text
+
+    def test_backup_json_tasks_include_section(self, client):
+        create_task(client, name="T", section="Health")
+        data = client.get("/export/backup.json").json()
+        assert data["tasks"][0]["section"] == "Health"
+
+    def test_archive_snapshot_includes_section(self, client):
+        create_task(client, name="T", section="Projects")
+        resp = client.post("/archives", params={
+            "name": "Snap", "start_date": TODAY, "end_date": TODAY
+        })
+        snap = client.get(f"/archives/{resp.json()['id']}").json()
+        assert snap["snapshot_data_json"]["tasks"][0]["section"] == "Projects"
+
+    def test_archive_snapshot_missing_section_renders_gracefully(self, client):
+        # Simulate a pre-Ticket-9 snapshot by inserting one with no section in tasks.
+        # Verifies GET /archives/{id} does not crash on old snapshots.
+        import json as _json
+        old_snap = {"start_date": TODAY, "end_date": TODAY, "tasks": [
+            {"id": 99, "name": "Old Task", "urgency": 5.0, "days_since": 3,
+             "priority": 5, "interval_days": 7, "status": "active",
+             "category": "Health", "is_paused": 0, "completions": {}}
+            # no "section" key — simulates pre-migration snapshot
+        ]}
+        conn_path = client.app.state  # just verify the endpoint handles missing key
+        resp = client.post("/archives", params={
+            "name": "OldSnap", "start_date": TODAY, "end_date": TODAY
+        })
+        # Patch the stored JSON to remove section from the task
+        from backend.database import get_connection
+        aid = resp.json()["id"]
+        conn = get_connection()
+        conn.execute(
+            "UPDATE archive_snapshots SET snapshot_data_json = ? WHERE id = ?",
+            (_json.dumps(old_snap), aid)
+        )
+        conn.commit()
+        conn.close()
+        # Verify endpoint returns 200 and the old snapshot without crashing
+        detail = client.get(f"/archives/{aid}").json()
+        assert detail["snapshot_data_json"]["tasks"][0]["name"] == "Old Task"
+        assert "section" not in detail["snapshot_data_json"]["tasks"][0]
+
+    def test_import_preview_detects_section_alias(self, client):
+        content = self._csv_bytes([["Task", "Section"], ["Ex", "Health"]])
+        resp = client.post("/import/preview", files={"file": ("s.csv", content, "text/csv")})
+        assert resp.json()["detected_metadata_columns"]["section"] == "Section"
+
+    def test_import_preview_detects_grouping_alias(self, client):
+        content = self._csv_bytes([["Task", "Grouping"], ["Ex", "Health"]])
+        resp = client.post("/import/preview", files={"file": ("s.csv", content, "text/csv")})
+        assert resp.json()["detected_metadata_columns"]["section"] == "Grouping"
+
+    def test_import_preview_detects_major_category_alias(self, client):
+        content = self._csv_bytes([["Task", "Major Category"], ["Ex", "Career"]])
+        resp = client.post("/import/preview", files={"file": ("s.csv", content, "text/csv")})
+        assert resp.json()["detected_metadata_columns"]["section"] == "Major Category"

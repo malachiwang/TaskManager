@@ -183,6 +183,7 @@ export default function TaskGrid() {
               <th className="meta-col col-urg" title="Urgency">Urg</th>
               <th className="meta-col col-pri" title="Priority">P</th>
               <th className="meta-col col-status">Status</th>
+              <th className="meta-col col-section">Section</th>
               <th className="meta-col col-cat">Category</th>
               <th className="meta-col col-task">Task</th>
               <th className="meta-col col-sub">Subtask</th>
