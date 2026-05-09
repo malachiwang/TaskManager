@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import TaskGrid from './components/TaskGrid.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import Archive from './components/Archive.jsx';
@@ -7,6 +7,14 @@ import { buildExportBackupUrl } from './api.js';
 
 export default function App() {
   const [tab, setTab] = useState('grid');
+
+  // Apply saved theme on mount — reads before first paint would require an
+  // inline <script> in index.html; for a local-first app a one-frame flash
+  // is acceptable and this keeps the implementation self-contained.
+  useEffect(() => {
+    const saved = localStorage.getItem('taskos-theme') || 'sheets';
+    document.documentElement.dataset.theme = saved;
+  }, []);
 
   return (
     <div className="app">

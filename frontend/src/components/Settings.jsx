@@ -14,6 +14,7 @@ function loadSettings() {
 }
 
 export default function Settings() {
+  const [theme, setTheme] = useState(() => localStorage.getItem('taskos-theme') || 'sheets');
   const [defaultSection, setDefaultSection] = useState(() => loadSettings().defaultSection ?? 'General');
   const [defaultPriority, setDefaultPriority] = useState(() => loadSettings().defaultPriority ?? 5);
   const [defaultInterval, setDefaultInterval] = useState(() => loadSettings().defaultIntervalDays ?? 7);
@@ -33,6 +34,13 @@ export default function Settings() {
     } catch {}
   }
 
+  function handleThemeChange(e) {
+    const value = e.target.value;
+    setTheme(value);
+    document.documentElement.dataset.theme = value;
+    localStorage.setItem('taskos-theme', value);
+  }
+
   function handleResetColumns() {
     localStorage.removeItem(LS_COL_WIDTHS_KEY);
     setColResetMsg(true);
@@ -40,6 +48,25 @@ export default function Settings() {
 
   return (
     <div className="settings">
+
+      {/* Appearance */}
+      <section className="dash-section">
+        <div className="dash-section-title">Appearance</div>
+        <div className="settings-body">
+          <label className="settings-label">
+            Theme
+            <select
+              className="settings-input"
+              style={{ width: '180px' }}
+              value={theme}
+              onChange={handleThemeChange}
+            >
+              <option value="sheets">Sheets Classic</option>
+              <option value="paper">Paper Workstation</option>
+            </select>
+          </label>
+        </div>
+      </section>
 
       {/* Task Defaults */}
       <section className="dash-section">

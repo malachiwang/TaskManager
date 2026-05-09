@@ -67,6 +67,27 @@
   --font-serif: "IBM Plex Serif", Georgia, serif;
 }
 
+/* -------------------------------------------------------------------------
+   Theme presets (UI-10)
+   Token-only overrides — no layout, spacing, font-size, or column changes.
+   Applied via document.documentElement.dataset.theme (set by App.jsx).
+
+   Sheets Classic = :root defaults (no override block needed).
+   ---------------------------------------------------------------------- */
+
+/* Paper Workstation — warm paper/ink/rule palette.
+   Ink, accent, urgency, completion, and caution tokens are unchanged
+   so colour-coded data (urgency, completions, warnings) stays readable. */
+html[data-theme="paper"] {
+  --bg-app:       var(--paper);    /* #f4f1ea — warm page background     */
+  --bg-panel:     var(--panel);    /* #fbfaf6 — warm cell/card bg        */
+  --header-bg:    var(--panel-2);  /* #efece4 — warm thead/section title */
+  --grid-border:  var(--rule-2);   /* #e6e0d2 — warm cell borders        */
+  --rule:         var(--rule-2);
+  --paused-bg:    #f2efe8;         /* warm paused row tint               */
+  --row-hover-bg: #ece9e0;         /* warm row hover                     */
+}
+
 body {
   font-family: var(--font-mono);
   font-size: 13px;
