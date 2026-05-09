@@ -10,12 +10,13 @@ API docs:
 import csv
 import io
 import json
+import re
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
@@ -600,3 +601,153 @@ def export_sheet_csv(
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# Import preview
+# ---------------------------------------------------------------------------
+
+# Known metadata field aliases.
+# Detection uses exact match against the normalized (lowercased, stripped) header.
+# Order within each list is irrelevant — all are checked as exact matches.
+_IMPORT_ALIASES: dict[str, list[str]] = {
+    "name":                      ["task", "name", "task name"],
+    "category":                  ["category", "cat"],
+    "subtask":                   ["subtask", "sub"],
+    "priority":                  ["priority", "pri", "p"],
+    "interval_days":             ["freq", "frequency", "interval", "interval_days"],
+    "status":                    ["status"],
+    "notes":                     ["notes", "note"],
+    "manual_last_done_override": [
+        "manual", "last done", "manual last done",
+        "override", "manual last done override",
+    ],
+}
+
+_MONTH_ABBREVS: frozenset[str] = frozenset({
+    "jan", "feb", "mar", "apr", "may", "jun",
+    "jul", "aug", "sep", "oct", "nov", "dec",
+})
+
+
+def _is_iso_date(s: str) -> bool:
+    return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", s))
+
+
+def _looks_like_nonio_date(s: str) -> bool:
+    """Heuristic: header looks date-like but is not ISO format."""
+    # M/D/YYYY or MM/DD/YYYY style
+    if re.fullmatch(r"\d{1,2}/\d{1,2}/\d{2,4}", s):
+        return True
+    # "Jan 8", "May 1" style
+    parts = s.lower().split()
+    return len(parts) == 2 and parts[0] in _MONTH_ABBREVS and parts[1].isdigit()
+
+
+def _detect_field(norm: str) -> Optional[str]:
+    """Return the internal field name for a normalized header, or None."""
+    for field, aliases in _IMPORT_ALIASES.items():
+        if norm in aliases:
+            return field
+    return None
+
+
+@app.post("/import/preview")
+async def import_preview(file: UploadFile = File(...)):
+    """
+    Parse an uploaded CSV and return a column-detection preview.
+    Does not write anything to the database.
+    Encoding: UTF-8 with optional BOM (utf-8-sig).
+    First row is treated as headers; blank rows are skipped.
+    """
+    raw = await file.read()
+    text = raw.decode("utf-8-sig")
+    all_rows = list(csv.reader(io.StringIO(text)))
+
+    empty: dict = {
+        "row_count": 0,
+        "detected_metadata_columns": {f: None for f in _IMPORT_ALIASES},
+        "detected_date_columns": [],
+        "candidate_date_columns": [],
+        "unrecognized_columns": [],
+        "sample_rows": [],
+        "warnings": [],
+    }
+
+    if not all_rows:
+        empty["warnings"] = ["CSV is empty — no headers found."]
+        return empty
+
+    headers: list[str] = [h.strip() for h in all_rows[0]]
+    if not any(headers):
+        empty["warnings"] = ["CSV has no headers."]
+        return empty
+
+    data_rows = [r for r in all_rows[1:] if any(cell.strip() for cell in r)]
+
+    detected_meta: dict[str, Optional[str]] = {f: None for f in _IMPORT_ALIASES}
+    detected_dates: list[str] = []
+    candidate_dates: list[str] = []
+    unrecognized: list[str] = []
+    warnings: list[str] = []
+    header_to_field: dict[str, str] = {}  # original header → internal field
+
+    for header in headers:
+        norm = header.strip().lower()
+        if not norm:
+            continue
+
+        if _is_iso_date(norm):
+            detected_dates.append(header)
+            continue
+
+        if _looks_like_nonio_date(norm):
+            candidate_dates.append(header)
+            continue
+
+        field = _detect_field(norm)
+        if field:
+            if detected_meta[field] is None:
+                detected_meta[field] = header
+                header_to_field[header] = field
+            else:
+                warnings.append(
+                    f"Duplicate mapping for '{field}': '{detected_meta[field]}' and "
+                    f"'{header}' both match. Using '{detected_meta[field]}'."
+                )
+                unrecognized.append(header)
+        else:
+            unrecognized.append(header)
+
+    if detected_meta["name"] is None:
+        warnings.append(
+            "Required field 'name' not detected. "
+            "Expected a header named 'Task' or 'Name'."
+        )
+
+    if candidate_dates:
+        warnings.append(
+            f"{len(candidate_dates)} non-ISO date-like column(s) found but not imported: "
+            + ", ".join(f"'{c}'" for c in candidate_dates)
+            + ". Rename to YYYY-MM-DD format for date column detection."
+        )
+
+    sample_rows: list[dict] = []
+    for row in data_rows[:5]:
+        sample: dict = {}
+        for i, header in enumerate(headers):
+            field = header_to_field.get(header)
+            if field:
+                sample[field] = row[i] if i < len(row) else ""
+        if sample:
+            sample_rows.append(sample)
+
+    return {
+        "row_count": len(data_rows),
+        "detected_metadata_columns": detected_meta,
+        "detected_date_columns": detected_dates,
+        "candidate_date_columns": candidate_dates,
+        "unrecognized_columns": unrecognized,
+        "sample_rows": sample_rows,
+        "warnings": warnings,
+    }

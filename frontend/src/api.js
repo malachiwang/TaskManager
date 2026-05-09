@@ -87,3 +87,11 @@ export function buildExportSheetUrl(startDate, endDate) {
 export function buildExportBackupUrl() {
   return `${BASE}/export/backup.json`;
 }
+
+export async function previewImport(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch(`${BASE}/import/preview`, { method: 'POST', body: formData });
+  if (!res.ok) throw new Error(`previewImport failed: ${res.status}`);
+  return res.json();
+}

@@ -6,6 +6,8 @@ isolated SQLite database. No test shares state with any other test.
 
 Run with: pytest tests/test_api.py -v
 """
+import csv
+import io
 from datetime import date, timedelta
 
 
@@ -715,3 +717,191 @@ class TestExport:
         header = resp.text.splitlines()[0]
         assert YESTERDAY in header
         assert TODAY in header
+
+
+# ---------------------------------------------------------------------------
+# Import preview
+# ---------------------------------------------------------------------------
+
+class TestImportPreview:
+    def _csv_bytes(self, rows: list[list[str]]) -> bytes:
+        buf = io.StringIO()
+        csv.writer(buf).writerows(rows)
+        return buf.getvalue().encode("utf-8")
+
+    def _post(self, client, content: bytes, filename: str = "sheet.csv"):
+        return client.post(
+            "/import/preview",
+            files={"file": (filename, content, "text/csv")},
+        )
+
+    # --- basic response ---
+
+    def test_valid_csv_returns_200(self, client):
+        resp = self._post(client, self._csv_bytes([["Task", "Category"], ["Exercise", "Health"]]))
+        assert resp.status_code == 200
+
+    def test_no_file_returns_422(self, client):
+        assert client.post("/import/preview").status_code == 422
+
+    def test_empty_file_returns_row_count_zero(self, client):
+        data = self._post(client, b"").json()
+        assert data["row_count"] == 0
+
+    def test_header_only_returns_row_count_zero(self, client):
+        data = self._post(client, self._csv_bytes([["Task", "Category"]])).json()
+        assert data["row_count"] == 0
+
+    def test_response_has_all_required_keys(self, client):
+        data = self._post(client, self._csv_bytes([["Task"]])).json()
+        for key in ("row_count", "detected_metadata_columns", "detected_date_columns",
+                    "candidate_date_columns", "unrecognized_columns", "sample_rows", "warnings"):
+            assert key in data
+
+    # --- metadata column detection ---
+
+    def test_detects_name_from_task_header(self, client):
+        data = self._post(client, self._csv_bytes([["Task"], ["Exercise"]])).json()
+        assert data["detected_metadata_columns"]["name"] == "Task"
+
+    def test_detects_name_from_name_header(self, client):
+        data = self._post(client, self._csv_bytes([["Name"], ["Exercise"]])).json()
+        assert data["detected_metadata_columns"]["name"] == "Name"
+
+    def test_subtask_does_not_map_to_name(self, client):
+        data = self._post(client, self._csv_bytes([["Subtask"], ["detail"]])).json()
+        assert data["detected_metadata_columns"]["name"] is None
+        assert data["detected_metadata_columns"]["subtask"] == "Subtask"
+
+    def test_detects_category(self, client):
+        data = self._post(client, self._csv_bytes([["Task", "Category"], ["Ex", "Health"]])).json()
+        assert data["detected_metadata_columns"]["category"] == "Category"
+
+    def test_detects_category_from_cat(self, client):
+        data = self._post(client, self._csv_bytes([["Task", "Cat"], ["Ex", "Health"]])).json()
+        assert data["detected_metadata_columns"]["category"] == "Cat"
+
+    def test_detects_priority(self, client):
+        data = self._post(client, self._csv_bytes([["Task", "Priority"], ["Ex", "8"]])).json()
+        assert data["detected_metadata_columns"]["priority"] == "Priority"
+
+    def test_detects_priority_from_p(self, client):
+        data = self._post(client, self._csv_bytes([["Task", "P"], ["Ex", "8"]])).json()
+        assert data["detected_metadata_columns"]["priority"] == "P"
+
+    def test_detects_interval_from_freq(self, client):
+        data = self._post(client, self._csv_bytes([["Task", "Freq"], ["Ex", "7"]])).json()
+        assert data["detected_metadata_columns"]["interval_days"] == "Freq"
+
+    def test_detects_interval_from_frequency(self, client):
+        data = self._post(client, self._csv_bytes([["Task", "Frequency"], ["Ex", "7"]])).json()
+        assert data["detected_metadata_columns"]["interval_days"] == "Frequency"
+
+    def test_detects_status(self, client):
+        data = self._post(client, self._csv_bytes([["Task", "Status"], ["Ex", "active"]])).json()
+        assert data["detected_metadata_columns"]["status"] == "Status"
+
+    def test_detects_notes(self, client):
+        data = self._post(client, self._csv_bytes([["Task", "Notes"], ["Ex", "hi"]])).json()
+        assert data["detected_metadata_columns"]["notes"] == "Notes"
+
+    def test_detects_manual_override_from_manual(self, client):
+        data = self._post(client, self._csv_bytes([["Task", "Manual"], ["Ex", "2026-01-01"]])).json()
+        assert data["detected_metadata_columns"]["manual_last_done_override"] == "Manual"
+
+    # --- date column detection ---
+
+    def test_detects_iso_date_columns(self, client):
+        data = self._post(
+            client, self._csv_bytes([["Task", "2026-05-01", "2026-05-02"], ["Ex", "1", "2"]])
+        ).json()
+        assert "2026-05-01" in data["detected_date_columns"]
+        assert "2026-05-02" in data["detected_date_columns"]
+
+    def test_iso_date_not_in_candidate_or_unrecognized(self, client):
+        data = self._post(
+            client, self._csv_bytes([["Task", "2026-05-01"], ["Ex", "1"]])
+        ).json()
+        assert "2026-05-01" not in data["candidate_date_columns"]
+        assert "2026-05-01" not in data["unrecognized_columns"]
+
+    def test_mm_dd_yyyy_goes_to_candidate_date_columns(self, client):
+        data = self._post(
+            client, self._csv_bytes([["Task", "5/1/2026"], ["Ex", "1"]])
+        ).json()
+        assert "5/1/2026" in data["candidate_date_columns"]
+        assert "5/1/2026" not in data["detected_date_columns"]
+
+    def test_month_day_format_goes_to_candidate(self, client):
+        data = self._post(
+            client, self._csv_bytes([["Task", "May 1"], ["Ex", "1"]])
+        ).json()
+        assert "May 1" in data["candidate_date_columns"]
+
+    def test_candidate_dates_produce_warning(self, client):
+        data = self._post(
+            client, self._csv_bytes([["Task", "5/1/2026"], ["Ex", "1"]])
+        ).json()
+        assert any("non-ISO" in w or "not imported" in w for w in data["warnings"])
+
+    # --- unrecognized columns ---
+
+    def test_unrecognized_columns_reported(self, client):
+        data = self._post(
+            client, self._csv_bytes([["Task", "WeirdColumn"], ["Ex", "val"]])
+        ).json()
+        assert "WeirdColumn" in data["unrecognized_columns"]
+
+    # --- warnings ---
+
+    def test_missing_name_column_produces_warning(self, client):
+        data = self._post(
+            client, self._csv_bytes([["Category", "Priority"], ["Health", "8"]])
+        ).json()
+        assert any("name" in w.lower() for w in data["warnings"])
+
+    # --- row count ---
+
+    def test_row_count_excludes_blank_rows(self, client):
+        data = self._post(
+            client, self._csv_bytes([["Task"], ["Exercise"], [""], ["Dentist"]])
+        ).json()
+        assert data["row_count"] == 2
+
+    def test_row_count_matches_data_rows(self, client):
+        rows = [["Task"]] + [["Task " + str(i)] for i in range(7)]
+        data = self._post(client, self._csv_bytes(rows)).json()
+        assert data["row_count"] == 7
+
+    # --- sample rows ---
+
+    def test_sample_rows_capped_at_5(self, client):
+        rows = [["Task"]] + [[f"Task {i}"] for i in range(10)]
+        data = self._post(client, self._csv_bytes(rows)).json()
+        assert len(data["sample_rows"]) <= 5
+
+    def test_sample_rows_use_field_names_as_keys(self, client):
+        rows = [["Task", "Category"], ["Exercise", "Health"]]
+        data = self._post(client, self._csv_bytes(rows)).json()
+        assert "name" in data["sample_rows"][0]
+        assert data["sample_rows"][0]["name"] == "Exercise"
+
+    # --- no DB mutation ---
+
+    def test_preview_does_not_create_tasks(self, client):
+        self._post(client, self._csv_bytes([["Task", "Priority"], ["Exercise", "8"]]))
+        assert client.get("/tasks").json() == []
+
+    def test_preview_does_not_create_completions(self, client):
+        self._post(client, self._csv_bytes([["Task", "2026-05-01"], ["Exercise", "1"]]))
+        comps = client.get("/completions", params={"start": "2026-05-01", "end": "2026-05-01"}).json()
+        assert comps == []
+
+    # --- encoding ---
+
+    def test_csv_with_bom_parses_correctly(self, client):
+        # encode("utf-8-sig") prepends the BOM bytes \xef\xbb\xbf; backend strips them.
+        content = "Task,Category\nExercise,Health\n".encode("utf-8-sig")
+        data = self._post(client, content).json()
+        assert data["detected_metadata_columns"]["name"] == "Task"
+        assert data["row_count"] == 1

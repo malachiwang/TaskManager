@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchArchives, fetchArchive } from '../api.js';
+import { fetchArchives, fetchArchive, previewImport } from '../api.js';
 
 function buildDates(start, end) {
   const dates = [];
@@ -76,6 +76,136 @@ function ArchiveMiniGrid({ data }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Import preview
+// ---------------------------------------------------------------------------
+
+function PreviewResults({ preview }) {
+  const {
+    row_count, detected_metadata_columns, detected_date_columns,
+    candidate_date_columns, unrecognized_columns, sample_rows, warnings,
+  } = preview;
+
+  const detected = Object.entries(detected_metadata_columns).filter(([, v]) => v !== null);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '12px' }}>
+      <div><strong>Rows detected:</strong> {row_count}</div>
+
+      {warnings.length > 0 && (
+        <div>
+          <div style={{ fontWeight: 600, color: '#b36a00', marginBottom: '3px' }}>Warnings</div>
+          <ul style={{ margin: 0, paddingLeft: '18px', color: '#b36a00' }}>
+            {warnings.map((w, i) => <li key={i}>{w}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {detected.length > 0 && (
+        <div>
+          <div style={{ fontWeight: 600, marginBottom: '3px' }}>Detected metadata columns</div>
+          <table className="dash-table">
+            <thead><tr><th>Field</th><th>CSV Header</th></tr></thead>
+            <tbody>
+              {detected.map(([field, header]) => (
+                <tr key={field}><td>{field}</td><td>{header}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {detected_date_columns.length > 0 && (
+        <div>
+          <strong>Date columns ({detected_date_columns.length}):</strong>{' '}
+          {detected_date_columns.slice(0, 6).join(', ')}{detected_date_columns.length > 6 ? ' …' : ''}
+        </div>
+      )}
+
+      {candidate_date_columns.length > 0 && (
+        <div style={{ color: '#b36a00' }}>
+          <strong>Non-ISO date-like headers (not imported):</strong>{' '}
+          {candidate_date_columns.join(', ')}
+        </div>
+      )}
+
+      {unrecognized_columns.length > 0 && (
+        <div style={{ color: '#888' }}>
+          <strong>Unrecognized columns:</strong> {unrecognized_columns.join(', ')}
+        </div>
+      )}
+
+      {sample_rows.length > 0 && (
+        <div>
+          <div style={{ fontWeight: 600, marginBottom: '3px' }}>Sample rows (up to 5)</div>
+          <table className="dash-table">
+            <thead>
+              <tr>{Object.keys(sample_rows[0]).map((k) => <th key={k}>{k}</th>)}</tr>
+            </thead>
+            <tbody>
+              {sample_rows.map((row, i) => (
+                <tr key={i}>{Object.values(row).map((v, j) => <td key={j}>{String(v)}</td>)}</tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ImportPreview() {
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function handlePreview() {
+    if (!file) return;
+    setLoading(true);
+    setError(null);
+    try {
+      setPreview(await previewImport(file));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <section className="dash-section">
+      <div className="dash-section-title">Import Preview</div>
+      <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <p style={{ fontSize: '11px', color: '#888', fontStyle: 'italic', margin: 0 }}>
+          Preview only — no data will be imported.
+        </p>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <input
+            type="file"
+            accept=".csv"
+            style={{ fontSize: '12px' }}
+            onChange={(e) => { setFile(e.target.files[0] || null); setPreview(null); }}
+          />
+          <button
+            className="btn-archive-sheet"
+            onClick={handlePreview}
+            disabled={!file || loading}
+          >
+            {loading ? 'Parsing…' : 'Preview CSV'}
+          </button>
+        </div>
+        {error && <div className="grid-status error" style={{ padding: '4px 0' }}>Error: {error}</div>}
+        {preview && <PreviewResults preview={preview} />}
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Archive list + detail
+// ---------------------------------------------------------------------------
+
 export default function Archive() {
   const [archives, setArchives] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -103,6 +233,7 @@ export default function Archive() {
 
   return (
     <div className="archive">
+      <ImportPreview />
       <section className="dash-section">
         <div className="dash-section-title">Saved Snapshots</div>
         {archives.length === 0 ? (
