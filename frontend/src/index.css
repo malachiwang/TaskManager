@@ -140,19 +140,37 @@ body {
    ---------------------------------------------------------------------- */
 
 .task-grid {
-  border-collapse: collapse;
+  /* border-collapse: separate (not collapse) is required for position:sticky to
+     correctly composite frozen cells over scrolling content. With collapse, the
+     shared-border rendering model prevents proper sticky layer painting even when
+     z-index is correctly set. border-spacing: 0 keeps cells tightly packed. */
+  border-collapse: separate;
+  border-spacing: 0;
   /* Allow the table to be wider than its container so dates scroll */
   width: max-content;
   min-width: 100%;
 }
 
+/* With border-collapse:separate each cell owns its own borders.
+   Use right+bottom only so adjacent cells share a single 1px line.
+   First column and header row add left/top edges via rules below. */
 .task-grid th,
 .task-grid td {
-  border: 1px solid var(--grid-border);
+  border-right: 1px solid var(--grid-border);
+  border-bottom: 1px solid var(--grid-border);
   padding: 3px 6px;
   white-space: nowrap;
   vertical-align: middle;
   text-align: left;
+}
+
+.task-grid th:first-child,
+.task-grid td:first-child {
+  border-left: 1px solid var(--grid-border);
+}
+
+.task-grid thead th {
+  border-top: 1px solid var(--grid-border);
 }
 
 /* Header row sticks to the top when scrolling vertically */
@@ -219,9 +237,9 @@ thead .meta-col {
 .col-actions { left: 0;     text-align: center; padding: 0 2px; }
 .col-urg     { left: 28px;  text-align: center; }
 .col-pri     { left: 68px;  text-align: center; }
-.col-status  { left: 96px; }
-.col-section { left: 158px; }
-.col-cat     { left: 240px; }
+.col-status  { left: 96px;  overflow: hidden; text-overflow: ellipsis; }
+.col-section { left: 158px; overflow: hidden; text-overflow: ellipsis; }
+.col-cat     { left: 240px; overflow: hidden; text-overflow: ellipsis; }
 .col-task    { left: 322px; overflow: hidden; text-overflow: ellipsis; }
 .col-sub     { left: 472px; overflow: hidden; text-overflow: ellipsis;
                border-right: 2px solid #bbb; } /* last frozen col — visual separator */
