@@ -784,7 +784,7 @@ thead .meta-col {
 
 .dash-stat-label {
   font-size: 11px;
-  color: #666;
+  color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -796,7 +796,7 @@ thead .meta-col {
 
 .dash-table th,
 .dash-table td {
-  border: 1px solid #e8e8e8;
+  border: 1px solid var(--grid-border);
   padding: 3px 8px;
   text-align: left;
   font-size: 12px;
@@ -804,7 +804,7 @@ thead .meta-col {
 }
 
 .dash-table thead th {
-  background: #f7f7f7;
+  background: var(--bg-app);
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
@@ -819,7 +819,7 @@ thead .meta-col {
 .dash-empty {
   padding: 10px 12px;
   font-size: 12px;
-  color: #999;
+  color: var(--muted-2);
   font-style: italic;
 }
 

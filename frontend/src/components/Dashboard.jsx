@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react';
 import { fetchDashboard } from '../api.js';
 
+function urgencyClass(u) {
+  if (u >= 8) return 'urg-critical';
+  if (u >= 6) return 'urg-high';
+  if (u >= 3) return 'urg-noticeable';
+  return 'urg-low';
+}
+
 export default function Dashboard() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -57,7 +64,7 @@ export default function Dashboard() {
             <tbody>
               {top_5_urgent.map((t) => (
                 <tr key={t.id}>
-                  <td>{t.urgency}</td>
+                  <td className={urgencyClass(t.urgency)}>{t.urgency}</td>
                   <td>{t.name}</td>
                   <td>{t.category}</td>
                   <td>{t.days_since}</td>
@@ -92,7 +99,7 @@ export default function Dashboard() {
                     <td>{cat || '—'}</td>
                     <td>{s.count}</td>
                     <td>{s.avg_urgency.toFixed(1)}</td>
-                    <td>{s.max_urgency.toFixed(1)}</td>
+                    <td className={urgencyClass(s.max_urgency)}>{s.max_urgency.toFixed(1)}</td>
                   </tr>
                 ))}
             </tbody>
