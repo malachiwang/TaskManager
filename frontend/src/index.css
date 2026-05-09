@@ -127,6 +127,8 @@ body {
 .app-tabs {
   display: flex;
   gap: 2px;
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
+  padding-left: 16px;
 }
 
 .tab {
@@ -529,12 +531,12 @@ thead .meta-col {
   cursor: pointer;
   border: 1px solid var(--grid-border);
   background: var(--bg-panel);
-  color: #333;
+  color: var(--ink-2);
   border-radius: 2px;
 }
 
 .edit-bar-btn:hover:not(:disabled) {
-  background: #e8e8e8;
+  background: var(--header-bg);
 }
 
 .edit-bar-btn:disabled {
@@ -545,11 +547,11 @@ thead .meta-col {
 .edit-bar-btn.primary {
   background: var(--ink);
   color: #fff;
-  border-color: #333;
+  border-color: var(--ink-2);
 }
 
 .edit-bar-btn.primary:hover {
-  background: #333;
+  background: var(--ink-2);
 }
 
 .edit-bar-input {
@@ -744,6 +746,13 @@ thead .meta-col {
   min-height: 60px;
 }
 
+/* Horizontal rule between modal form groups */
+.modal-divider {
+  border: none;
+  border-top: 1px solid var(--grid-border);
+  margin: 2px 0;
+}
+
 /* -------------------------------------------------------------------------
    Modal action buttons
    ---------------------------------------------------------------------- */
@@ -842,21 +851,24 @@ thead .meta-col {
   border-bottom: 1px solid var(--grid-border);
 }
 
+/* Instrument panel stat strip — cells touch, separated by right borders */
 .dash-stats {
   display: flex;
-  gap: 24px;
-  padding: 10px 12px;
+  gap: 0;
+  padding: 0;
 }
 
 .dash-stat {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
+  padding: 12px 20px;
+  flex: 1;
+  border-right: 1px solid var(--grid-border);
 }
 
-.dash-stat + .dash-stat {
-  border-left: 1px solid var(--grid-border);
-  padding-left: 24px;
+.dash-stat:last-child {
+  border-right: none;
 }
 
 .dash-stat-value {
@@ -932,6 +944,7 @@ thead .meta-col {
 
 .archive-detail {
   border: 1px solid var(--grid-border);
+  border-left: 3px solid var(--accent);
   background: var(--bg-panel);
 }
 
@@ -1038,7 +1051,7 @@ thead .meta-col {
   font-size: 12px;
   padding: 3px 6px;
   border: 1px solid var(--grid-border);
-  background: var(--paused-bg);
+  background: var(--bg-app);
   color: var(--ink-2);
 }
 

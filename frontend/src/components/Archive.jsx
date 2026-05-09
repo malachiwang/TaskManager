@@ -335,6 +335,10 @@ export default function Archive() {
 
   return (
     <div className="archive">
+      <div className="dash-header">
+        <span className="dash-header-title">Archive</span>
+        <span className="dash-header-sub">Saved monthly snapshots — read only</span>
+      </div>
       <ImportPreview />
       <section className="dash-section">
         <div className="dash-section-title">Saved Snapshots</div>

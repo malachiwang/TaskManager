@@ -86,6 +86,8 @@ export default function TaskModal({ task, onSave, onClose }) {
             </label>
           </div>
 
+          <div className="modal-divider" />
+
           <div className="modal-row">
             <label>
               Subtask

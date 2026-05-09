@@ -49,6 +49,11 @@ export default function Settings() {
   return (
     <div className="settings">
 
+      <div className="dash-header">
+        <span className="dash-header-title">Settings</span>
+        <span className="dash-header-sub">Local preferences — stored in browser</span>
+      </div>
+
       {/* Appearance */}
       <section className="dash-section">
         <div className="dash-section-title">Appearance</div>
