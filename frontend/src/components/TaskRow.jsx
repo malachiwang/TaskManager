@@ -24,7 +24,7 @@ export default function TaskRow({
 
   return (
     <tr className={isPaused ? 'task-row paused' : 'task-row'}>
-      <td className="meta-col col-actions" style={cs('col-actions')}>
+      <td className="meta-col sticky-col col-actions" style={cs('col-actions')}>
         <button
           className="action-btn"
           onClick={() => onEdit(task)}
@@ -36,18 +36,18 @@ export default function TaskRow({
           title={isPaused ? 'Unpause' : 'Pause'}
         >{isPaused ? '▶' : '⏸'}</button>
       </td>
-      <td className={`meta-col col-urg ${isPaused ? '' : urgencyClass(task.urgency)}`} style={cs('col-urg')}>
+      <td className={`meta-col sticky-col col-urg ${isPaused ? '' : urgencyClass(task.urgency)}`} style={cs('col-urg')}>
         {isPaused ? '—' : task.urgency}
       </td>
-      <td className="meta-col col-pri" style={cs('col-pri')}>{task.priority}</td>
-      <td className="meta-col col-status" style={cs('col-status')}>{task.status}</td>
-      <td className="meta-col col-section" style={cs('col-section')}>{task.section || ''}</td>
-      <td className="meta-col col-cat" style={cs('col-cat')}>{task.category}</td>
-      <td className="meta-col col-task" title={task.name} style={cs('col-task')}>{task.name}</td>
-      <td className="meta-col col-sub" title={task.subtask} style={cs('col-sub')}>{task.subtask || ''}</td>
-      <td className="meta-col col-freq" style={cs('col-freq')}>{task.interval_days}d</td>
-      <td className="meta-col col-days" style={cs('col-days')}>{isPaused ? '—' : task.days_since}</td>
-      <td className="meta-col col-notes" title={task.notes} style={cs('col-notes')}>{task.notes || ''}</td>
+      <td className="meta-col sticky-col col-pri" style={cs('col-pri')}>{task.priority}</td>
+      <td className="meta-col sticky-col col-status" style={cs('col-status')}>{task.status}</td>
+      <td className="meta-col sticky-col col-section" style={cs('col-section')}>{task.section || ''}</td>
+      <td className="meta-col sticky-col col-cat" style={cs('col-cat')}>{task.category}</td>
+      <td className="meta-col sticky-col col-task" title={task.name} style={cs('col-task')}>{task.name}</td>
+      <td className="meta-col sticky-col col-sub" title={task.subtask} style={cs('col-sub')}>{task.subtask || ''}</td>
+      <td className="meta-col scroll-meta-col col-freq" style={cs('col-freq')}>{task.interval_days}d</td>
+      <td className="meta-col scroll-meta-col col-days" style={cs('col-days')}>{isPaused ? '—' : task.days_since}</td>
+      <td className="meta-col scroll-meta-col col-notes" title={task.notes} style={cs('col-notes')}>{task.notes || ''}</td>
       {dates.map((date) => {
         const isFuture = date > todayStr;
         const count = completions[`${task.id}:${date}`] || 0;

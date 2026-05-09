@@ -186,33 +186,51 @@ body {
 }
 
 /* -------------------------------------------------------------------------
-   Sticky metadata columns
-   Each column has an explicit left: value based on cumulative widths.
-   Approximate widths — close enough for MVP.
+   Metadata column base — background only, no sticky behaviour.
+   Sticky behaviour comes from .sticky-col; non-frozen scrolling columns
+   use .scroll-meta-col. Separating these two responsibilities means
+   .meta-col can safely be applied to ALL metadata columns without
+   accidentally granting sticky stacking to non-frozen ones.
    ---------------------------------------------------------------------- */
 
 .meta-col {
-  position: sticky;
   background: var(--row-bg);
+}
+
+/* All metadata column headers use the header background regardless of
+   whether they are frozen — keeps the header row visually uniform. */
+thead .meta-col {
+  background: var(--header-bg);
+}
+
+/* -------------------------------------------------------------------------
+   Frozen / sticky columns (.sticky-col)
+   Applied to Actions, Urgency, Priority, Status, Section, Category,
+   Task, Subtask — the eight frozen columns that stay pinned left.
+   left: values are set as inline styles by computeColLayout() in JS.
+   ---------------------------------------------------------------------- */
+
+/* Body frozen cells: paint above scrolling body cells and date cells. */
+.sticky-col {
+  position: sticky;
   z-index: 1;
 }
 
-/* thead meta cells need a higher z-index to stay above body sticky cells */
-thead .meta-col {
-  background: var(--header-bg);
+/* Frozen header cells: must paint above ALL scrolling header cells.
+   .task-grid thead th sets z-index:2 for all headers (specificity 0-1-2).
+   This rule uses specificity 0-2-2 to reliably win. */
+.task-grid thead th.sticky-col {
   z-index: 3;
 }
 
-/* col-freq, col-days, col-notes are vertically sticky header cells (top:0)
-   but are NOT frozen columns — they scroll horizontally after Subtask.
-   They inherit z-index:3 from thead .meta-col, which would let them paint
-   over frozen headers during horizontal scroll. Drop to z-index:2 so frozen
-   header cells (z-index:3) correctly paint over them. Date headers already
-   sit at z-index:2 via .task-grid thead th. */
-.task-grid thead th.col-freq,
-.task-grid thead th.col-days,
-.task-grid thead th.col-notes {
-  z-index: 2;
+/* -------------------------------------------------------------------------
+   Non-frozen metadata columns (.scroll-meta-col)
+   Applied to Frequency, Days, Notes — they share .meta-col background
+   styling but must scroll normally after Subtask without sticky stacking.
+   ---------------------------------------------------------------------- */
+
+.scroll-meta-col {
+  position: static;
 }
 
 /*
@@ -247,17 +265,8 @@ thead .meta-col {
 .col-days   { text-align: center; }
 .col-notes  { overflow: hidden; text-overflow: ellipsis; }
 
-/* col-freq, col-days, col-notes share .meta-col for background/width styling
-   but are NOT frozen columns — they should scroll normally after Subtask.
-   position:static overrides the position:sticky and z-index:1 inherited from
-   .meta-col, preventing them from creating a stacking context that paints over
-   the frozen pane during horizontal scroll. CSS custom property inheritance
-   (--row-bg) is unaffected by position:static. */
-.col-freq,
-.col-days,
-.col-notes {
-  position: static;
-}
+/* col-freq, col-days, col-notes scrolling behaviour is now controlled by
+   the .scroll-meta-col class rather than a per-column override. */
 
 /* Column resize handle — sits on the right edge of each resizable <th>.
    The <th> has position:sticky which serves as the containing block. */

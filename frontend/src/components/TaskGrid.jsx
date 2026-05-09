@@ -384,35 +384,35 @@ export default function TaskGrid() {
         <table className="task-grid">
           <thead>
             <tr>
-              <th className="meta-col col-actions" style={thStyle('col-actions')}></th>
-              <th className="meta-col col-urg" title="Urgency" style={thStyle('col-urg')}>
+              <th className="meta-col sticky-col col-actions" style={thStyle('col-actions')}></th>
+              <th className="meta-col sticky-col col-urg" title="Urgency" style={thStyle('col-urg')}>
                 Urg{rh('col-urg')}
               </th>
-              <th className="meta-col col-pri" title="Priority" style={thStyle('col-pri')}>
+              <th className="meta-col sticky-col col-pri" title="Priority" style={thStyle('col-pri')}>
                 P{rh('col-pri')}
               </th>
-              <th className="meta-col col-status" style={thStyle('col-status')}>
+              <th className="meta-col sticky-col col-status" style={thStyle('col-status')}>
                 Status{rh('col-status')}
               </th>
-              <th className="meta-col col-section" style={thStyle('col-section')}>
+              <th className="meta-col sticky-col col-section" style={thStyle('col-section')}>
                 Section{rh('col-section')}
               </th>
-              <th className="meta-col col-cat" style={thStyle('col-cat')}>
+              <th className="meta-col sticky-col col-cat" style={thStyle('col-cat')}>
                 Category{rh('col-cat')}
               </th>
-              <th className="meta-col col-task" style={thStyle('col-task')}>
+              <th className="meta-col sticky-col col-task" style={thStyle('col-task')}>
                 Task{rh('col-task')}
               </th>
-              <th className="meta-col col-sub" style={thStyle('col-sub')}>
+              <th className="meta-col sticky-col col-sub" style={thStyle('col-sub')}>
                 Subtask{rh('col-sub')}
               </th>
-              <th className="meta-col col-freq" title="Frequency (days)" style={thStyle('col-freq')}>
+              <th className="meta-col scroll-meta-col col-freq" title="Frequency (days)" style={thStyle('col-freq')}>
                 Freq{rh('col-freq')}
               </th>
-              <th className="meta-col col-days" title="Days since last done" style={thStyle('col-days')}>
+              <th className="meta-col scroll-meta-col col-days" title="Days since last done" style={thStyle('col-days')}>
                 Days{rh('col-days')}
               </th>
-              <th className="meta-col col-notes" style={thStyle('col-notes')}>
+              <th className="meta-col scroll-meta-col col-notes" style={thStyle('col-notes')}>
                 Notes{rh('col-notes')}
               </th>
               {dates.map((d) => (
