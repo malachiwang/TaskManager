@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
 import {
   fetchTasks,
   fetchCompletions,
@@ -372,8 +372,21 @@ export default function TaskGrid() {
     </div>
   );
 
+  // Group tasks by section for divider rows — preserves existing task order.
+  // Sections appear in the order they are first encountered in the task array.
+  const taskSections = (() => {
+    const map = new Map();
+    for (const task of tasks) {
+      const name = task.section?.trim() || '(no section)';
+      if (!map.has(name)) map.set(name, []);
+      map.get(name).push(task);
+    }
+    return Array.from(map.entries()); // [[sectionName, tasks[]], …]
+  })();
+
   return (
     <>
+      {/* ── Tier 1: Operations shelf — ink dark, primary actions only ── */}
       <div className="ws-grid-shelf">
         <div className="ws-shelf-left">
           <button className="ws-shelf-btn ws-shelf-btn--primary" onClick={openAdd}>+ Add Task</button>
@@ -385,23 +398,50 @@ export default function TaskGrid() {
           >Export CSV</a>
           <button className="ws-shelf-btn" onClick={resetColWidths}>Reset Cols</button>
         </div>
-        <div className="ws-shelf-right">
-          <button className="ws-shelf-nav" onClick={goToPrevMonth}>‹ Prev</button>
-          <button className="ws-shelf-nav ws-shelf-nav--today" onClick={goToCurrentMonth}>Today</button>
-          <span className="ws-shelf-range">{monthRangeLabel(viewMonth.year, viewMonth.month)}</span>
-          <button className="ws-shelf-nav" onClick={goToNextMonth}>Next ›</button>
+      </div>
+
+      {/* ── Tier 2: Sheet header — paper surface, identity + nav + status ── */}
+      <div className="ws-sheet-header">
+        <div className="ws-sheet-header-left">
+          <div className="ws-sheet-title">Task Sheet</div>
+          <div className="ws-sheet-meta">
+            <span>{tasks.filter(t => !t.is_paused).length} active</span>
+            <span className="ws-meta-sep">·</span>
+            <span>{tasks.filter(t => t.is_paused).length} paused</span>
+            <span className="ws-meta-sep">·</span>
+            <span>{tasks.length} total</span>
+          </div>
+        </div>
+        <div className="ws-sheet-header-nav">
+          <button className="ws-sheet-nav" onClick={goToPrevMonth}>‹</button>
+          <button className="ws-sheet-nav ws-sheet-nav--today" onClick={goToCurrentMonth}>Today</button>
+          <span className="ws-sheet-range">{monthRangeLabel(viewMonth.year, viewMonth.month)}</span>
+          <button className="ws-sheet-nav" onClick={goToNextMonth}>›</button>
+        </div>
+        <div className="ws-sheet-header-right">
+          <span className="ws-status-pill ws-status-pill--ok">local</span>
+          <span className="ws-status-pill ws-status-pill--ok">SQLite</span>
+          <span className="ws-status-pill ws-status-pill--dim">synced: never</span>
         </div>
       </div>
 
-      <EditBar
-        selectedCell={selectedCell}
-        tasks={tasks}
-        completions={completions}
-        todayStr={todayStr}
-        onIncrement={handleIncrement}
-        onClear={handleClear}
-        onSetCount={handleSetCount}
-      />
+      {/* ── Inspector strip — compositionally framed EditBar ── */}
+      <div className="ws-inspector-strip">
+        <div className="ws-inspector-badge">
+          {selectedCell ? '▸ cell' : '○ inspector'}
+        </div>
+        <div className="ws-inspector-body">
+          <EditBar
+            selectedCell={selectedCell}
+            tasks={tasks}
+            completions={completions}
+            todayStr={todayStr}
+            onIncrement={handleIncrement}
+            onClear={handleClear}
+            onSetCount={handleSetCount}
+          />
+        </div>
+      </div>
 
       <div className="ws-grid-canvas">
       <div className="grid-wrapper">
@@ -457,22 +497,47 @@ export default function TaskGrid() {
             </tr>
           </thead>
           <tbody>
-            {tasks.map((task) => (
-              <TaskRow
-                key={task.id}
-                task={task}
-                dates={dates}
-                todayStr={todayStr}
-                completions={completions}
-                selectedCell={selectedCell}
-                colLayout={colLayout}
-                onIncrement={handleIncrement}
-                onClear={handleClear}
-                onEdit={openEdit}
-                onTogglePause={handleTogglePause}
-                onSelect={handleSelect}
-              />
-            ))}
+            {taskSections.map(([sectionName, sectionTasks]) => {
+              const pausedCount = sectionTasks.filter(t => t.is_paused).length;
+              const urgencies = sectionTasks
+                .filter(t => !t.is_paused && typeof t.urgency === 'number')
+                .map(t => t.urgency);
+              const avgUrg = urgencies.length > 0
+                ? (urgencies.reduce((a, b) => a + b, 0) / urgencies.length).toFixed(1)
+                : null;
+              return (
+                <Fragment key={sectionName}>
+                  <tr className="ws-section-row">
+                    <td className="ws-section-cell" colSpan={11 + dates.length}>
+                      <div className="ws-section-inner">
+                        <span className="ws-section-title">{sectionName}</span>
+                        <span className="ws-section-meta">
+                          {sectionTasks.length} task{sectionTasks.length !== 1 ? 's' : ''}
+                          {pausedCount > 0 ? ` · ${pausedCount} paused` : ''}
+                          {avgUrg !== null ? ` · avg urg ${avgUrg}` : ''}
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                  {sectionTasks.map((task) => (
+                    <TaskRow
+                      key={task.id}
+                      task={task}
+                      dates={dates}
+                      todayStr={todayStr}
+                      completions={completions}
+                      selectedCell={selectedCell}
+                      colLayout={colLayout}
+                      onIncrement={handleIncrement}
+                      onClear={handleClear}
+                      onEdit={openEdit}
+                      onTogglePause={handleTogglePause}
+                      onSelect={handleSelect}
+                    />
+                  ))}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
 

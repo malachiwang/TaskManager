@@ -1928,3 +1928,249 @@ thead .meta-col {
 .app-main[data-tab='grid'] {
   background: var(--bg-app);
 }
+
+/* =========================================================================
+   UI-18B — Grid Paper Workstation: full composition
+   Sheet header · Inspector strip · Frozen column divider
+   ========================================================================= */
+
+/* ── Tier 2: Sheet header — warm paper surface ── */
+.ws-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 16px;
+  background: var(--bg-panel);
+  border-bottom: 2px solid var(--rule);
+  flex-shrink: 0;
+}
+
+.ws-sheet-header-left {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.ws-sheet-title {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 400;
+  color: var(--ink);
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+.ws-sheet-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.03em;
+}
+
+.ws-meta-sep {
+  color: var(--rule);
+}
+
+/* ── Sheet header center: month navigation ── */
+.ws-sheet-header-nav {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--rule);
+  flex-shrink: 0;
+}
+
+.ws-sheet-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--muted);
+  background: var(--bg-panel);
+  border: none;
+  border-right: 1px solid var(--rule);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.ws-sheet-nav:hover {
+  background: var(--header-bg);
+  color: var(--ink);
+}
+
+.ws-sheet-nav--today {
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  color: var(--muted);
+}
+
+.ws-sheet-range {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+  white-space: nowrap;
+  border-right: 1px solid var(--rule);
+  background: var(--header-bg);
+}
+
+/* ── Sheet header right: status pills ── */
+.ws-sheet-header-right {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.ws-status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  background: var(--bg-app);
+  white-space: nowrap;
+}
+
+.ws-status-pill--ok {
+  color: var(--good);
+  border-color: rgba(46, 125, 50, 0.25);
+  background: rgba(46, 125, 50, 0.04);
+}
+
+.ws-status-pill--dim {
+  color: var(--muted-2);
+  border-color: var(--rule);
+}
+
+/* ── Inspector strip — ink badge + EditBar body ── */
+.ws-inspector-strip {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--rule);
+  background: var(--bg-panel);
+  min-height: 34px;
+}
+
+.ws-inspector-badge {
+  display: flex;
+  align-items: center;
+  padding: 0 11px;
+  background: var(--ink);
+  color: rgba(255, 255, 255, 0.38);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  border-right: 2px solid var(--accent);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.ws-inspector-body {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+/* EditBar within inspector: override standalone styles */
+.ws-inspector-body .edit-bar {
+  flex: 1;
+  border: none;
+  border-left: 3px solid transparent;
+  background: var(--bg-panel);
+}
+
+.ws-inspector-body .edit-bar.edit-bar--active {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+}
+
+/* ── Grid canvas: remove accent top-border (inspector strip provides boundary) ── */
+.ws-grid-canvas {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: none;
+}
+
+/* ── Frozen column divider: strengthen col-sub right border ── */
+.task-grid th.col-sub,
+.task-grid td.col-sub {
+  border-right: 2px solid var(--ink-2);
+}
+
+/* =========================================================================
+   UI-18C — Sectioned Spreadsheet: section divider rows
+   ========================================================================= */
+
+/* Section row — structural band, not a data row */
+.ws-section-row {
+  /* No hover treatment; cursor default signals non-interactivity */
+}
+
+.ws-section-cell {
+  padding: 0;
+  background: var(--panel-2);
+  border-top: 2px solid var(--rule);
+  border-bottom: 1px solid var(--rule-2);
+  /* Override the standard cell right-border so the band reads as a full rule */
+  border-right: none;
+}
+
+/* Inner label — sticky so section name stays visible during horizontal scroll */
+.ws-section-inner {
+  position: sticky;
+  left: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 12px 5px 14px;
+  /* Natural content width — does not stretch to fill the colSpan td */
+  width: max-content;
+}
+
+/* Section name: uppercase mono, ink weight */
+.ws-section-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+/* Section metadata: task count · paused · avg urgency */
+.ws-section-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.03em;
+  font-weight: 400;
+}
+
+/* First section row does not need a top border — it follows the thead */
+.task-grid tbody tr.ws-section-row:first-child .ws-section-cell {
+  border-top: 1px solid var(--rule);
+}
