@@ -185,6 +185,18 @@ thead .meta-col {
   z-index: 3;
 }
 
+/* col-freq, col-days, col-notes are vertically sticky header cells (top:0)
+   but are NOT frozen columns — they scroll horizontally after Subtask.
+   They inherit z-index:3 from thead .meta-col, which would let them paint
+   over frozen headers during horizontal scroll. Drop to z-index:2 so frozen
+   header cells (z-index:3) correctly paint over them. Date headers already
+   sit at z-index:2 via .task-grid thead th. */
+.task-grid thead th.col-freq,
+.task-grid thead th.col-days,
+.task-grid thead th.col-notes {
+  z-index: 2;
+}
+
 /*
   Sticky column left offsets are computed in JS (computeColLayout) and applied
   as inline styles. The CSS left: values below are fallbacks for the default
