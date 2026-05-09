@@ -50,6 +50,9 @@
 
   /* Completion */
   --good:         #2e7d32;   /* completed cell text, edit-bar count         */
+
+  /* Row background — inherited by all cells in a row (sticky + scrolling) */
+  --row-bg:       var(--bg-panel);
 }
 
 body {
@@ -172,7 +175,7 @@ body {
 
 .meta-col {
   position: sticky;
-  background: var(--bg-panel);
+  background: var(--row-bg);
   z-index: 1;
 }
 
@@ -254,26 +257,24 @@ thead .meta-col {
    Task rows
    ---------------------------------------------------------------------- */
 
-.task-row:hover td {
-  background: var(--row-hover-bg);
-}
-
-.task-row:hover .meta-col {
-  background: var(--row-hover-bg);
-}
+/* Row-state background tokens — set once on <tr>, inherited by all cells.
+   Sticky cells use background: var(--row-bg) (see .meta-col), so they track
+   the same value as the rest of the row. Eliminates per-cell dual overrides. */
+.task-row             { --row-bg: var(--bg-panel); }
+.task-row.paused      { --row-bg: var(--paused-bg); }
+.task-row:hover       { --row-bg: var(--row-hover-bg); }
 
 /* Paused row: muted and italic.
-   Use explicit color instead of opacity so sticky cells stay opaque and
-   do not bleed content scrolling underneath. */
+   Background is driven by --row-bg set on <tr>.paused above — no per-cell
+   background override needed. Explicit color instead of opacity keeps sticky
+   cells fully opaque. */
 .task-row.paused td {
   color: #bbb;
   font-style: italic;
-  background: var(--paused-bg);
   cursor: default;
 }
 
 .task-row.paused .meta-col {
-  background: var(--paused-bg);
   color: #bbb;
 }
 
