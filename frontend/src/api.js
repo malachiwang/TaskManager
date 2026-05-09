@@ -53,3 +53,9 @@ export async function updateTask(id, fields) {
   if (!res.ok) throw new Error(`updateTask failed: ${res.status}`);
   return res.json();
 }
+
+export async function fetchDashboard() {
+  const res = await fetch(`${BASE}/dashboard`);
+  if (!res.ok) throw new Error(`fetchDashboard failed: ${res.status}`);
+  return res.json();
+}
