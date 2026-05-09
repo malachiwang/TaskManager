@@ -416,15 +416,21 @@ thead .meta-col {
   align-items: center;
   gap: 10px;
   padding: 4px 10px;
-  background: #f0f0f0;
+  background: var(--header-bg);
   border-bottom: 1px solid var(--grid-border);
   flex-shrink: 0;
   font-size: 12px;
   min-height: 28px;
 }
 
+/* Active edit bar — a cell is selected. */
+.edit-bar.edit-bar--active {
+  background: var(--accent-soft);
+  border-bottom-color: var(--accent);
+}
+
 .edit-bar-empty {
-  color: #bbb;
+  color: var(--muted-2);
   font-style: italic;
 }
 
@@ -438,6 +444,7 @@ thead .meta-col {
 
 .edit-bar-task {
   font-weight: 600;
+  color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -480,7 +487,7 @@ thead .meta-col {
   font-family: inherit;
   font-size: 11px;
   cursor: pointer;
-  border: 1px solid #aaa;
+  border: 1px solid var(--grid-border);
   background: var(--bg-panel);
   color: #333;
   border-radius: 2px;
@@ -510,7 +517,7 @@ thead .meta-col {
   font-family: inherit;
   font-size: 12px;
   padding: 2px 4px;
-  border: 1px solid #aaa;
+  border: 1px solid var(--grid-border);
 }
 
 /* -------------------------------------------------------------------------
@@ -891,6 +898,8 @@ thead .meta-col {
   display: flex;
   align-items: center;
   gap: 4px;
+  border-left: 1px solid var(--grid-border);
+  padding-left: 10px;
 }
 
 .range-btn {

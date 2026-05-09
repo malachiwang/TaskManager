@@ -44,7 +44,7 @@ export default function EditBar({ selectedCell, tasks, completions, todayStr, on
   }
 
   return (
-    <div className="edit-bar">
+    <div className="edit-bar edit-bar--active">
       <div className="edit-bar-info">
         <span className="edit-bar-task">{task ? task.name : `Task #${taskId}`}</span>
         <span className="edit-bar-sep">·</span>
