@@ -54,6 +54,11 @@
   /* Row background — inherited by all cells in a row (sticky + scrolling) */
   --row-bg:       var(--bg-panel);
 
+  /* Caution — import safety notice (amber) */
+  --caution-bg:     #fff8e1;
+  --caution-border: #f0c040;
+  --caution-text:   #7a5800;
+
   /* Typography — no external font dependencies.
      IBM Plex variants apply when locally installed; system fallbacks
      preserve today's exact rendering otherwise. */
@@ -947,6 +952,82 @@ thead .meta-col {
   border: 1px solid var(--grid-border);
   background: var(--paused-bg);
   color: var(--ink-2);
+}
+
+/* -------------------------------------------------------------------------
+   Import Preview / Apply (UI-08C)
+   Replaces repeated inline styles in ImportPreview, PreviewResults,
+   and ImportSummary with token-based classes.
+   ---------------------------------------------------------------------- */
+
+/* Section inner wrapper — same pattern as .settings-body. */
+.import-body {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+}
+
+/* Amber safety notice — "Before importing: export a backup…" */
+.import-warn-box {
+  background: var(--caution-bg);
+  border: 1px solid var(--caution-border);
+  border-radius: 4px;
+  padding: 8px 10px;
+  color: var(--caution-text);
+}
+
+/* File input + Preview button flex row. */
+.import-file-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Outer wrapper for PreviewResults / ImportSummary content. */
+.import-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Bold subheading within result sections. */
+.import-subhead {
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+
+/* Warning-colored text — warnings, duplicates. */
+.import-warn-text { color: var(--urg-mid); }
+
+/* Muted text — unrecognized columns. */
+.import-muted-text { color: var(--muted-2); }
+
+/* Success text — "Import complete". */
+.import-success-text { font-weight: 600; color: var(--good); }
+
+/* Error text. */
+.import-error-text { font-weight: 600; color: var(--urg-crit); }
+
+/* Warning / duplicate / error list. */
+.import-list { margin: 0; padding-left: 18px; }
+
+/* Apply confirmation section — checkbox + button stack. */
+.import-apply-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Checkbox label — inline with checkbox. */
+.import-confirm-label {
+  font-size: 12px;
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  cursor: pointer;
 }
 
 /* Export backup button in app header */

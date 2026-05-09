@@ -96,13 +96,13 @@ function PreviewResults({ preview }) {
   const detected = Object.entries(detected_metadata_columns).filter(([, v]) => v !== null);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '12px' }}>
+    <div className="import-result">
       <div><strong>Rows detected:</strong> {row_count}</div>
 
       {warnings.length > 0 && (
         <div>
-          <div style={{ fontWeight: 600, color: '#b36a00', marginBottom: '3px' }}>Warnings</div>
-          <ul style={{ margin: 0, paddingLeft: '18px', color: '#b36a00' }}>
+          <div className="import-subhead import-warn-text">Warnings</div>
+          <ul className="import-list import-warn-text">
             {warnings.map((w, i) => <li key={i}>{w}</li>)}
           </ul>
         </div>
@@ -110,7 +110,7 @@ function PreviewResults({ preview }) {
 
       {detected.length > 0 && (
         <div>
-          <div style={{ fontWeight: 600, marginBottom: '3px' }}>Detected metadata columns</div>
+          <div className="import-subhead">Detected metadata columns</div>
           <table className="dash-table">
             <thead><tr><th>Field</th><th>CSV Header</th></tr></thead>
             <tbody>
@@ -130,21 +130,21 @@ function PreviewResults({ preview }) {
       )}
 
       {candidate_date_columns.length > 0 && (
-        <div style={{ color: '#b36a00' }}>
+        <div className="import-warn-text">
           <strong>Non-ISO date-like headers (not imported):</strong>{' '}
           {candidate_date_columns.join(', ')}
         </div>
       )}
 
       {unrecognized_columns.length > 0 && (
-        <div style={{ color: '#888' }}>
+        <div className="import-muted-text">
           <strong>Unrecognized columns:</strong> {unrecognized_columns.join(', ')}
         </div>
       )}
 
       {sample_rows.length > 0 && (
         <div>
-          <div style={{ fontWeight: 600, marginBottom: '3px' }}>Sample rows (up to 5)</div>
+          <div className="import-subhead">Sample rows (up to 5)</div>
           <table className="dash-table">
             <thead>
               <tr>{Object.keys(sample_rows[0]).map((k) => <th key={k}>{k}</th>)}</tr>
@@ -164,33 +164,33 @@ function PreviewResults({ preview }) {
 function ImportSummary({ summary }) {
   const { tasks_created, completions_created, rows_skipped, potential_duplicates, warnings, errors } = summary;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px' }}>
-      <div style={{ fontWeight: 600, color: '#2a7a2a' }}>Import complete</div>
+    <div className="import-result">
+      <div className="import-success-text">Import complete</div>
       <div>Tasks created: <strong>{tasks_created}</strong></div>
       <div>Completions created: <strong>{completions_created}</strong></div>
       <div>Rows skipped: <strong>{rows_skipped}</strong></div>
       {potential_duplicates.length > 0 && (
         <div>
-          <div style={{ fontWeight: 600, color: '#b36a00', marginBottom: '3px' }}>
+          <div className="import-subhead import-warn-text">
             Potential duplicates skipped ({potential_duplicates.length})
           </div>
-          <ul style={{ margin: 0, paddingLeft: '18px', color: '#b36a00' }}>
+          <ul className="import-list import-warn-text">
             {potential_duplicates.map((d, i) => <li key={i}>{d}</li>)}
           </ul>
         </div>
       )}
       {warnings.length > 0 && (
         <div>
-          <div style={{ fontWeight: 600, color: '#b36a00', marginBottom: '3px' }}>Warnings</div>
-          <ul style={{ margin: 0, paddingLeft: '18px', color: '#b36a00' }}>
+          <div className="import-subhead import-warn-text">Warnings</div>
+          <ul className="import-list import-warn-text">
             {warnings.map((w, i) => <li key={i}>{w}</li>)}
           </ul>
         </div>
       )}
       {errors.length > 0 && (
         <div>
-          <div style={{ fontWeight: 600, color: '#b00000', marginBottom: '3px' }}>Errors</div>
-          <ul style={{ margin: 0, paddingLeft: '18px', color: '#b00000' }}>
+          <div className="import-subhead import-error-text">Errors</div>
+          <ul className="import-list import-error-text">
             {errors.map((e, i) => <li key={i}>{e}</li>)}
           </ul>
         </div>
@@ -244,19 +244,14 @@ function ImportPreview() {
   return (
     <section className="dash-section">
       <div className="dash-section-title">Import CSV</div>
-      <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <div
-          style={{
-            background: '#fff8e1', border: '1px solid #f0c040', borderRadius: '4px',
-            padding: '8px 10px', fontSize: '12px', color: '#7a5800',
-          }}
-        >
+      <div className="import-body">
+        <div className="import-warn-box">
           <strong>Before importing:</strong> export a backup via{' '}
           <em>Export Sheet CSV</em> or the backup JSON button so you can recover
           if something goes wrong. Import creates new tasks only — it never
           modifies or deletes existing data.
         </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div className="import-file-row">
           <input
             type="file"
             accept=".csv"
@@ -280,8 +275,8 @@ function ImportPreview() {
         {error && <div className="grid-status error" style={{ padding: '4px 0' }}>Error: {error}</div>}
         {preview && <PreviewResults preview={preview} />}
         {preview && previewHasName && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label style={{ fontSize: '12px', display: 'flex', gap: '6px', alignItems: 'flex-start', cursor: 'pointer' }}>
+          <div className="import-apply-row">
+            <label className="import-confirm-label">
               <input
                 type="checkbox"
                 checked={confirmed}
