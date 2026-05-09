@@ -377,7 +377,8 @@ export default function Archive() {
       {selected && !detailLoading && (
         <section className="dash-section archive-detail">
           <div className="dash-section-title">
-            {selected.name} — {selected.snapshot_data_json.start_date} to {selected.snapshot_data_json.end_date}
+            <span>{selected.name} — {selected.snapshot_data_json.start_date} to {selected.snapshot_data_json.end_date}</span>
+            <span className="read-only-badge">Read Only</span>
           </div>
           <ArchiveMiniGrid data={selected.snapshot_data_json} />
         </section>

@@ -694,7 +694,7 @@ thead .meta-col {
 .modal-form {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   padding: 14px;
 }
 
@@ -746,11 +746,44 @@ thead .meta-col {
   min-height: 60px;
 }
 
-/* Horizontal rule between modal form groups */
+/* Horizontal rule between modal form groups (kept for optional use) */
 .modal-divider {
   border: none;
   border-top: 1px solid var(--grid-border);
   margin: 2px 0;
+}
+
+/* -------------------------------------------------------------------------
+   Shared surface system (UI-16)
+   Reusable across Dashboard, Archive, Settings, Modal.
+   ---------------------------------------------------------------------- */
+
+/* Small uppercase label above a form group or panel zone */
+.section-kicker {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted-2);
+}
+
+/* Inline badge indicating a panel is read-only */
+.read-only-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted-2);
+  border: 1px solid var(--grid-border);
+  padding: 1px 5px;
+  font-family: var(--font-sans);
+}
+
+/* Modal form group — tight inner stack, outer gap handled by .modal-form */
+.modal-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 /* -------------------------------------------------------------------------
@@ -842,6 +875,9 @@ thead .meta-col {
 }
 
 .dash-section-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   padding: 5px 10px;
   background: var(--header-bg);
   font-size: 11px;
@@ -849,6 +885,7 @@ thead .meta-col {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   border-bottom: 1px solid var(--grid-border);
+  border-left: 2px solid var(--muted);
 }
 
 /* Instrument panel stat strip — cells touch, separated by right borders */
@@ -874,6 +911,7 @@ thead .meta-col {
 .dash-stat-value {
   font-size: 22px;
   font-weight: 700;
+  font-family: var(--font-mono);
   color: var(--ink);
 }
 
@@ -939,7 +977,11 @@ thead .meta-col {
 }
 
 .archive-row-selected td {
-  background: var(--today-bg);
+  background: var(--accent-soft);
+}
+
+.archive-row-selected td:first-child {
+  border-left: 3px solid var(--accent);
 }
 
 .archive-detail {
