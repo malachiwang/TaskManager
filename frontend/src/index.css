@@ -850,12 +850,17 @@ thead .meta-col {
 .archive-grid .col-urg,
 .archive-grid .col-pri,
 .archive-grid .col-status,
+.archive-grid .col-section,
 .archive-grid .col-cat,
 .archive-grid .col-task,
 .archive-grid .col-freq,
 .archive-grid .col-days {
   position: static;
 }
+
+/* Weekend tint in archive mini-grid — consistent with main grid UI-05. */
+.archive-grid .date-col-header.weekend { background: var(--weekend-bg); }
+.archive-grid .date-cell.weekend       { background: var(--weekend-bg); }
 
 /* -------------------------------------------------------------------------
    Settings page (UI-08A)

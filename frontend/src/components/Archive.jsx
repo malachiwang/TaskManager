@@ -24,6 +24,11 @@ function dateLabel(isoDate) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+function isWeekendDate(isoDate) {
+  const [y, m, day] = isoDate.split('-').map(Number);
+  return new Date(y, m - 1, day).getDay() % 6 === 0;
+}
+
 function ArchiveMiniGrid({ data }) {
   const { tasks, start_date, end_date } = data;
   const dates = buildDates(start_date, end_date);
@@ -42,7 +47,7 @@ function ArchiveMiniGrid({ data }) {
             <th className="col-freq" title="Frequency">Freq</th>
             <th className="col-days" title="Days since">Days</th>
             {dates.map((d) => (
-              <th key={d} className="date-col-header">{dateLabel(d)}</th>
+              <th key={d} className={`date-col-header${isWeekendDate(d) ? ' weekend' : ''}`}>{dateLabel(d)}</th>
             ))}
           </tr>
         </thead>
@@ -60,7 +65,7 @@ function ArchiveMiniGrid({ data }) {
               {dates.map((d) => {
                 const count = task.completions?.[d] || 0;
                 return (
-                  <td key={d} className={`date-cell${count ? ' has-count' : ''}`}>
+                  <td key={d} className={`date-cell${isWeekendDate(d) ? ' weekend' : ''}${count ? ' has-count' : ''}`}>
                     {cellDisplay(count)}
                   </td>
                 );
