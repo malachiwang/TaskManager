@@ -173,6 +173,16 @@ export default function TaskGrid() {
     loadData();
   }, [loadData]);
 
+  // Refresh only the tasks array after a completion mutation so that
+  // server-computed fields (days_since, urgency) update without a full reload.
+  // Completions state is already updated locally from the mutation response,
+  // so a full loadData() re-fetch is not needed here.
+  const refreshTasks = useCallback(() => {
+    fetchTasks()
+      .then(setTasks)
+      .catch((e) => console.error('refreshTasks failed:', e));
+  }, []);
+
   // ---------------------------------------------------------------------------
   // Completion handlers
   // ---------------------------------------------------------------------------
@@ -184,10 +194,11 @@ export default function TaskGrid() {
         ...prev,
         [`${taskId}:${date}`]: result.completion_count,
       }));
+      refreshTasks();
     } catch (e) {
       console.error('increment failed:', e);
     }
-  }, []);
+  }, [refreshTasks]);
 
   const handleClear = useCallback(async (taskId, date) => {
     try {
@@ -197,10 +208,11 @@ export default function TaskGrid() {
         delete next[`${taskId}:${date}`];
         return next;
       });
+      refreshTasks();
     } catch (e) {
       console.error('clear failed:', e);
     }
-  }, []);
+  }, [refreshTasks]);
 
   // ---------------------------------------------------------------------------
   // Task handlers
@@ -252,10 +264,11 @@ export default function TaskGrid() {
           [`${taskId}:${date}`]: result.completion_count,
         }));
       }
+      refreshTasks();
     } catch (e) {
       console.error('setCount failed:', e);
     }
-  }, []);
+  }, [refreshTasks]);
 
   // Archive is named by selected month (e.g. "2026-05") so it is stable
   // regardless of what day the button is clicked.
