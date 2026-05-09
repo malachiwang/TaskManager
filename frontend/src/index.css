@@ -385,6 +385,19 @@ thead .meta-col {
 .urg-critical   { color: var(--urg-crit); font-weight: 700; background: var(--crit-bg); }
 
 /* -------------------------------------------------------------------------
+   Grid cell text hierarchy (UI-04)
+   CSS-only; no layout, width, padding, or font-size changes.
+   ---------------------------------------------------------------------- */
+
+/* Task name: slight weight boost to read as primary content. */
+.task-grid tbody .col-task    { font-weight: 500; }
+
+/* Subtask, Section, Category: muted to recede behind task name. */
+.task-grid tbody .col-sub     { color: var(--muted); }
+.task-grid tbody .col-section { color: var(--muted); }
+.task-grid tbody .col-cat     { color: var(--muted); }
+
+/* -------------------------------------------------------------------------
    Edit bar (between toolbar and grid)
    ---------------------------------------------------------------------- */
 
