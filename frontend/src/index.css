@@ -816,6 +816,11 @@ thead .meta-col {
   gap: 2px;
 }
 
+.dash-stat + .dash-stat {
+  border-left: 1px solid var(--grid-border);
+  padding-left: 24px;
+}
+
 .dash-stat-value {
   font-size: 22px;
   font-weight: 700;
@@ -837,7 +842,7 @@ thead .meta-col {
 .dash-table th,
 .dash-table td {
   border: 1px solid var(--grid-border);
-  padding: 3px 8px;
+  padding: 4px 8px;
   text-align: left;
   font-size: 12px;
   white-space: nowrap;
@@ -850,6 +855,10 @@ thead .meta-col {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--muted);
+}
+
+.dash-table tbody tr:nth-child(even) td {
+  background: var(--bg-app);
 }
 
 .dash-table tbody tr:hover td {
