@@ -1,0 +1,265 @@
+/* Reset */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', monospace;
+  font-size: 13px;
+  background: #f5f5f5;
+  color: #222;
+}
+
+/* -------------------------------------------------------------------------
+   App shell
+   ---------------------------------------------------------------------- */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 6px 14px;
+  background: #1c1c1c;
+  color: #e0e0e0;
+  border-bottom: 2px solid #333;
+  flex-shrink: 0;
+}
+
+.app-title {
+  font-weight: bold;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: #fff;
+}
+
+.app-tabs {
+  display: flex;
+  gap: 2px;
+}
+
+.tab {
+  padding: 3px 12px;
+  background: transparent;
+  border: 1px solid #444;
+  color: #aaa;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  border-radius: 2px;
+}
+
+.tab.active {
+  background: #2d2d2d;
+  color: #fff;
+  border-color: #666;
+}
+
+.tab:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.app-main {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* -------------------------------------------------------------------------
+   Grid wrapper
+   ---------------------------------------------------------------------- */
+
+.grid-wrapper {
+  flex: 1;
+  overflow: auto;
+  background: #fff;
+}
+
+/* -------------------------------------------------------------------------
+   Task table
+   ---------------------------------------------------------------------- */
+
+.task-grid {
+  border-collapse: collapse;
+  /* Allow the table to be wider than its container so dates scroll */
+  width: max-content;
+  min-width: 100%;
+}
+
+.task-grid th,
+.task-grid td {
+  border: 1px solid #ddd;
+  padding: 3px 6px;
+  white-space: nowrap;
+  vertical-align: middle;
+  text-align: left;
+}
+
+/* Header row sticks to the top when scrolling vertically */
+.task-grid thead th {
+  background: #efefef;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+/* -------------------------------------------------------------------------
+   Sticky metadata columns
+   Each column has an explicit left: value based on cumulative widths.
+   Approximate widths — close enough for MVP.
+   ---------------------------------------------------------------------- */
+
+.meta-col {
+  position: sticky;
+  background: #fff;
+  z-index: 1;
+}
+
+/* thead meta cells need a higher z-index to stay above body sticky cells */
+thead .meta-col {
+  background: #efefef;
+  z-index: 3;
+}
+
+/*
+  Widths and cumulative left offsets:
+  col-urg:    40px  → left: 0
+  col-pri:    28px  → left: 40px
+  col-status: 62px  → left: 68px
+  col-cat:    82px  → left: 130px
+  col-task:  150px  → left: 212px   ← last sticky col, right border acts as separator
+  col-sub, col-freq, col-days, col-notes: not sticky (scroll with dates)
+*/
+
+.col-urg    { left: 0;     min-width: 40px;  max-width: 42px;  text-align: center; }
+.col-pri    { left: 40px;  min-width: 28px;  max-width: 30px;  text-align: center; }
+.col-status { left: 68px;  min-width: 62px; }
+.col-cat    { left: 130px; min-width: 82px; }
+.col-task   { left: 212px; min-width: 150px; max-width: 200px;
+              overflow: hidden; text-overflow: ellipsis;
+              border-right: 2px solid #bbb; } /* visual separator */
+.col-sub    { min-width: 80px;  max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.col-freq   { min-width: 38px;  text-align: center; }
+.col-days   { min-width: 38px;  text-align: center; }
+.col-notes  { min-width: 90px;  max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+
+/* -------------------------------------------------------------------------
+   Date column headers
+   ---------------------------------------------------------------------- */
+
+.date-col-header {
+  min-width: 50px;
+  text-align: center;
+  font-size: 11px;
+}
+
+.date-col-header.col-today {
+  background: #ddeeff;
+  color: #004499;
+}
+
+.date-col-header.col-future {
+  background: #f7f7f7;
+  color: #bbb;
+}
+
+/* -------------------------------------------------------------------------
+   Task rows
+   ---------------------------------------------------------------------- */
+
+.task-row:hover td {
+  background: #f9f9f9;
+}
+
+.task-row:hover .meta-col {
+  background: #f9f9f9;
+}
+
+/* Paused row: muted and italic */
+.task-row.paused td {
+  opacity: 0.38;
+  font-style: italic;
+  background: #fafafa;
+  cursor: default;
+}
+
+.task-row.paused .meta-col {
+  background: #fafafa;
+}
+
+/* -------------------------------------------------------------------------
+   Date cells
+   ---------------------------------------------------------------------- */
+
+.date-cell {
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  min-width: 50px;
+  font-size: 12px;
+}
+
+.date-cell:hover:not(.future) {
+  background: #eef4ff;
+}
+
+.date-cell.today {
+  background: #f0f7ff;
+}
+
+.date-cell.future {
+  background: #f8f8f8;
+  color: #ccc;
+  cursor: not-allowed;
+}
+
+/* Completed cell */
+.date-cell.has-count {
+  color: #2e7d32;
+  font-weight: 700;
+}
+
+/* -------------------------------------------------------------------------
+   Urgency color bands
+   ---------------------------------------------------------------------- */
+
+.urg-low        { color: #555; }
+.urg-noticeable { color: #b36a00; font-weight: 600; }
+.urg-high       { color: #c84800; font-weight: 700; }
+.urg-critical   { color: #b71c1c; font-weight: 700; background: #fff4f4; }
+
+/* -------------------------------------------------------------------------
+   Loading / error / empty states
+   ---------------------------------------------------------------------- */
+
+.grid-status {
+  padding: 32px 20px;
+  color: #666;
+  font-style: italic;
+  line-height: 1.6;
+}
+
+.grid-status.error {
+  color: #b71c1c;
+}
+
+.grid-status code {
+  background: #f0f0f0;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-style: normal;
+}

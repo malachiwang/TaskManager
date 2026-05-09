@@ -58,6 +58,42 @@ pytest tests/ -v
 
 ---
 
+## Frontend Setup
+
+### Requirements
+
+- Node 18+
+
+### Install frontend dependencies
+
+```bash
+cd frontend
+npm install
+```
+
+### Run the frontend (dev mode)
+
+Start the backend first, then in a separate terminal:
+
+```bash
+cd frontend
+npm run dev
+```
+
+Frontend available at: http://localhost:5173
+
+The Vite dev server proxies `/api/*` to `http://localhost:8000` automatically.
+No CORS configuration needed.
+
+### Build for production
+
+```bash
+cd frontend
+npm run build
+```
+
+---
+
 ## Project Structure
 
 ```
