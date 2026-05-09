@@ -587,3 +587,131 @@ class TestArchive:
         assert len(archives) == 2
         names = {a["name"] for a in archives}
         assert names == {"First", "Second"}
+
+
+# ---------------------------------------------------------------------------
+# Export
+# ---------------------------------------------------------------------------
+
+class TestExport:
+    # --- backup.json ---
+
+    def test_backup_returns_200(self, client):
+        resp = client.get("/export/backup.json")
+        assert resp.status_code == 200
+
+    def test_backup_content_type_is_json(self, client):
+        resp = client.get("/export/backup.json")
+        assert "application/json" in resp.headers["content-type"]
+
+    def test_backup_has_attachment_disposition(self, client):
+        resp = client.get("/export/backup.json")
+        assert "attachment" in resp.headers["content-disposition"]
+
+    def test_backup_has_required_keys(self, client):
+        data = client.get("/export/backup.json").json()
+        assert "exported_at" in data
+        assert "schema_version" in data
+        assert "tasks" in data
+        assert "completions" in data
+        assert "archive_snapshots" in data
+
+    def test_backup_empty_db_returns_valid_empty_arrays(self, client):
+        data = client.get("/export/backup.json").json()
+        assert data["tasks"] == []
+        assert data["completions"] == []
+        assert data["archive_snapshots"] == []
+
+    def test_backup_includes_tasks(self, client):
+        create_task(client, name="Task A")
+        data = client.get("/export/backup.json").json()
+        assert len(data["tasks"]) == 1
+        assert data["tasks"][0]["name"] == "Task A"
+
+    def test_backup_includes_completions(self, client):
+        t = create_task(client)
+        client.post("/completions", params={"task_id": t["id"], "completion_date": TODAY})
+        data = client.get("/export/backup.json").json()
+        assert len(data["completions"]) == 1
+        assert data["completions"][0]["completion_count"] == 1
+
+    def test_backup_includes_archive_snapshots(self, client):
+        client.post("/archives", params={"name": "Snap", "start_date": TODAY, "end_date": TODAY})
+        data = client.get("/export/backup.json").json()
+        assert len(data["archive_snapshots"]) == 1
+        assert data["archive_snapshots"][0]["name"] == "Snap"
+
+    def test_backup_does_not_mutate_tasks(self, client):
+        create_task(client, name="Intact")
+        client.get("/export/backup.json")
+        assert client.get("/tasks").json()[0]["name"] == "Intact"
+
+    # --- sheet.csv ---
+
+    def test_sheet_csv_returns_200(self, client):
+        resp = client.get("/export/sheet.csv", params={"start": TODAY, "end": TODAY})
+        assert resp.status_code == 200
+
+    def test_sheet_csv_content_type(self, client):
+        resp = client.get("/export/sheet.csv", params={"start": TODAY, "end": TODAY})
+        assert "text/csv" in resp.headers["content-type"]
+
+    def test_sheet_csv_has_attachment_disposition(self, client):
+        resp = client.get("/export/sheet.csv", params={"start": TODAY, "end": TODAY})
+        assert "attachment" in resp.headers["content-disposition"]
+
+    def test_sheet_csv_header_has_metadata_columns(self, client):
+        resp = client.get("/export/sheet.csv", params={"start": TODAY, "end": TODAY})
+        header = resp.text.splitlines()[0]
+        for col in ("name", "category", "urgency", "days_since", "priority"):
+            assert col in header
+
+    def test_sheet_csv_header_has_date_columns(self, client):
+        resp = client.get("/export/sheet.csv", params={"start": TODAY, "end": TODAY})
+        header = resp.text.splitlines()[0]
+        assert TODAY in header
+
+    def test_sheet_csv_one_row_per_active_task(self, client):
+        create_task(client, name="A")
+        create_task(client, name="B")
+        lines = [l for l in client.get(
+            "/export/sheet.csv", params={"start": TODAY, "end": TODAY}
+        ).text.splitlines() if l]
+        assert len(lines) == 3  # 1 header + 2 data rows
+
+    def test_sheet_csv_completion_count_in_date_cell(self, client):
+        t = create_task(client)
+        for _ in range(3):
+            client.post("/completions", params={"task_id": t["id"], "completion_date": TODAY})
+        text = client.get("/export/sheet.csv", params={"start": TODAY, "end": TODAY}).text
+        data_row = text.splitlines()[1]
+        assert "3" in data_row
+
+    def test_sheet_csv_blank_for_zero_completion(self, client):
+        create_task(client)
+        text = client.get("/export/sheet.csv", params={"start": TODAY, "end": TODAY}).text
+        # Data row's last field (the date cell) should be blank, not "0"
+        data_row = text.splitlines()[1]
+        assert data_row.endswith(",")  # trailing comma = empty last field
+
+    def test_sheet_csv_empty_db_returns_header_only(self, client):
+        lines = [l for l in client.get(
+            "/export/sheet.csv", params={"start": TODAY, "end": TODAY}
+        ).text.splitlines() if l]
+        assert len(lines) == 1
+
+    def test_sheet_csv_missing_start_returns_422(self, client):
+        assert client.get("/export/sheet.csv", params={"end": TODAY}).status_code == 422
+
+    def test_sheet_csv_missing_end_returns_422(self, client):
+        assert client.get("/export/sheet.csv", params={"start": TODAY}).status_code == 422
+
+    def test_sheet_csv_end_before_start_returns_400(self, client):
+        resp = client.get("/export/sheet.csv", params={"start": TODAY, "end": YESTERDAY})
+        assert resp.status_code == 400
+
+    def test_sheet_csv_multi_day_range_has_multiple_date_columns(self, client):
+        resp = client.get("/export/sheet.csv", params={"start": YESTERDAY, "end": TODAY})
+        header = resp.text.splitlines()[0]
+        assert YESTERDAY in header
+        assert TODAY in header

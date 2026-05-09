@@ -78,3 +78,12 @@ export async function fetchArchive(id) {
   if (!res.ok) throw new Error(`fetchArchive failed: ${res.status}`);
   return res.json();
 }
+
+// Export URL builders — used as href/window.open targets, not fetch calls.
+export function buildExportSheetUrl(startDate, endDate) {
+  return `${BASE}/export/sheet.csv?start=${startDate}&end=${endDate}`;
+}
+
+export function buildExportBackupUrl() {
+  return `${BASE}/export/backup.json`;
+}

@@ -7,6 +7,7 @@ import {
   createTask,
   updateTask,
   createArchive,
+  buildExportSheetUrl,
 } from '../api.js';
 import TaskRow from './TaskRow.jsx';
 import TaskModal from './TaskModal.jsx';
@@ -167,6 +168,11 @@ export default function TaskGrid() {
       <div className="grid-toolbar">
         <button className="btn-add-task" onClick={openAdd}>+ Add Task</button>
         <button className="btn-archive-sheet" onClick={handleArchive}>Archive Current Sheet</button>
+        <a
+          className="btn-archive-sheet"
+          href={buildExportSheetUrl(dates[0], dates[dates.length - 1])}
+          download
+        >Export Sheet CSV</a>
       </div>
 
       <div className="grid-wrapper">

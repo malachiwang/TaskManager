@@ -7,14 +7,17 @@ Run locally:
 API docs:
     http://localhost:8000/docs
 """
+import csv
+import io
 import json
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 
 from backend.database import get_connection, init_db
 from backend.logic import (
@@ -481,3 +484,119 @@ def get_archive(archive_id: int):
     result = dict(row)
     result["snapshot_data_json"] = json.loads(result["snapshot_data_json"])
     return result
+
+
+# ---------------------------------------------------------------------------
+# Export
+# ---------------------------------------------------------------------------
+
+@app.get("/export/backup.json")
+def export_backup():
+    """
+    Download all local data as a JSON file.
+    Includes all tasks (active and inactive), all completions, all archive
+    snapshots, and a schema version for future compatibility.
+    Does not mutate the database.
+    """
+    conn = get_connection()
+    tasks = [dict(r) for r in conn.execute("SELECT * FROM tasks").fetchall()]
+    completions = [dict(r) for r in conn.execute("SELECT * FROM completions").fetchall()]
+    archive_rows = conn.execute("SELECT * FROM archive_snapshots").fetchall()
+    archives = []
+    for r in archive_rows:
+        row = dict(r)
+        row["snapshot_data_json"] = json.loads(row["snapshot_data_json"])
+        archives.append(row)
+    conn.close()
+
+    payload = {
+        "schema_version": 1,
+        "exported_at": datetime.now().isoformat(),
+        "tasks": tasks,
+        "completions": completions,
+        "archive_snapshots": archives,
+    }
+    filename = f"taskos-backup-{date.today().isoformat()}.json"
+    return Response(
+        content=json.dumps(payload, indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/export/sheet.csv")
+def export_sheet_csv(
+    start: str = Query(..., description="Start date YYYY-MM-DD"),
+    end: str = Query(..., description="End date YYYY-MM-DD"),
+):
+    """
+    Download the visible grid date range as a CSV file.
+    Includes active tasks only.
+    Metadata columns + one column per date in [start, end].
+    Completion cells: blank = 0 completions, integer = completion count.
+    Does not mutate the database.
+    """
+    try:
+        start_date = date.fromisoformat(start)
+        end_date = date.fromisoformat(end)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid date format. Use YYYY-MM-DD.")
+    if end_date < start_date:
+        raise HTTPException(status_code=400, detail="end must not be before start")
+
+    today = date.today()
+    conn = get_connection()
+
+    rows = conn.execute(
+        """
+        SELECT t.*,
+               (SELECT MAX(completion_date)
+                FROM completions c
+                WHERE c.task_id = t.id) AS latest_completion
+        FROM tasks t
+        WHERE t.is_active = 1
+        ORDER BY t.display_order, t.id
+        """
+    ).fetchall()
+    tasks = [_enrich_task(dict(r), today) for r in rows]
+
+    comp_rows = conn.execute(
+        "SELECT task_id, completion_date, completion_count FROM completions "
+        "WHERE completion_date BETWEEN ? AND ?",
+        (start, end),
+    ).fetchall()
+    comp_map: dict[tuple, int] = {}
+    for c in comp_rows:
+        comp_map[(c["task_id"], c["completion_date"])] = c["completion_count"]
+    conn.close()
+
+    # Build ordered date list
+    dates: list[str] = []
+    d = start_date
+    while d <= end_date:
+        dates.append(d.isoformat())
+        d += timedelta(days=1)
+
+    meta_cols = ["name", "category", "subtask", "priority", "interval_days",
+                 "status", "urgency", "days_since", "notes"]
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(meta_cols + dates)
+    for t in tasks:
+        row = [
+            t["name"], t.get("category", ""), t.get("subtask", ""),
+            t["priority"], t["interval_days"], t["status"],
+            t["urgency"], t["days_since"], t.get("notes", ""),
+        ]
+        for iso in dates:
+            count = comp_map.get((t["id"], iso), 0)
+            row.append(count if count else "")  # blank for 0
+        writer.writerow(row)
+
+    filename = f"taskos-sheet-{start}-{end}.csv"
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

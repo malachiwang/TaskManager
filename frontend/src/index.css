@@ -578,6 +578,26 @@ thead .meta-col {
   position: static;
 }
 
+/* Export backup button in app header */
+.btn-export-backup {
+  margin-left: auto;
+  padding: 3px 10px;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  background: transparent;
+  color: #aaa;
+  border: 1px solid #444;
+  border-radius: 2px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.btn-export-backup:hover {
+  color: #fff;
+  border-color: #888;
+}
+
 /* Archive sheet button in grid toolbar */
 .btn-archive-sheet {
   padding: 4px 12px;

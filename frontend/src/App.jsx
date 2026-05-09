@@ -2,6 +2,7 @@ import { useState } from 'react';
 import TaskGrid from './components/TaskGrid.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import Archive from './components/Archive.jsx';
+import { buildExportBackupUrl } from './api.js';
 
 export default function App() {
   const [tab, setTab] = useState('grid');
@@ -16,6 +17,7 @@ export default function App() {
           <button className={`tab${tab === 'archive' ? ' active' : ''}`} onClick={() => setTab('archive')}>Archive</button>
           <button className="tab" disabled>Settings</button>
         </nav>
+        <a className="btn-export-backup" href={buildExportBackupUrl()} download>Export Backup JSON</a>
       </header>
       <main className="app-main">
         {tab === 'grid' && <TaskGrid />}
