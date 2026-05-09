@@ -374,24 +374,22 @@ export default function TaskGrid() {
 
   return (
     <>
-      <div className="grid-toolbar">
-        <div className="control-group">
-          <button className="btn-add-task" onClick={openAdd}>+ Add Task</button>
-        </div>
-        <div className="control-group control-group--actions">
-          <button className="btn-archive-sheet" onClick={handleArchive}>Archive Current Sheet</button>
+      <div className="ws-grid-shelf">
+        <div className="ws-shelf-left">
+          <button className="ws-shelf-btn ws-shelf-btn--primary" onClick={openAdd}>+ Add Task</button>
+          <button className="ws-shelf-btn" onClick={handleArchive}>Archive Sheet</button>
           <a
-            className="btn-archive-sheet"
+            className="ws-shelf-btn"
             href={buildExportSheetUrl(dates[0], dates[dates.length - 1])}
             download
-          >Export Sheet CSV</a>
-          <button className="btn-archive-sheet" onClick={resetColWidths}>Reset Columns</button>
+          >Export CSV</a>
+          <button className="ws-shelf-btn" onClick={resetColWidths}>Reset Cols</button>
         </div>
-        <div className="range-nav">
-          <button className="range-btn" onClick={goToPrevMonth}>← Prev</button>
-          <button className="range-btn" onClick={goToCurrentMonth}>Current</button>
-          <button className="range-btn" onClick={goToNextMonth}>Next →</button>
-          <span className="range-label">{monthRangeLabel(viewMonth.year, viewMonth.month)}</span>
+        <div className="ws-shelf-right">
+          <button className="ws-shelf-nav" onClick={goToPrevMonth}>‹ Prev</button>
+          <button className="ws-shelf-nav ws-shelf-nav--today" onClick={goToCurrentMonth}>Today</button>
+          <span className="ws-shelf-range">{monthRangeLabel(viewMonth.year, viewMonth.month)}</span>
+          <button className="ws-shelf-nav" onClick={goToNextMonth}>Next ›</button>
         </div>
       </div>
 
@@ -405,6 +403,7 @@ export default function TaskGrid() {
         onSetCount={handleSetCount}
       />
 
+      <div className="ws-grid-canvas">
       <div className="grid-wrapper">
         <table className="task-grid">
           <thead>
@@ -483,6 +482,7 @@ export default function TaskGrid() {
             <code>python -m backend.seed</code> to add sample data.
           </div>
         )}
+      </div>
       </div>
 
       {modalOpen && (

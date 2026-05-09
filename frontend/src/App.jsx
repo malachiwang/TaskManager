@@ -33,7 +33,7 @@ export default function App() {
           ⤓ <span className="pill-value">Export</span>
         </a>
       </header>
-      <main className="app-main">
+      <main className="app-main" data-tab={tab}>
         {tab === 'grid' && <TaskGrid />}
         {tab === 'dashboard' && <Dashboard />}
         {tab === 'archive' && <Archive />}
