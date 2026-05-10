@@ -306,10 +306,9 @@ thead .meta-col {
   col-urg:     40  → left: 28
   col-pri:     28  → left: 68
   col-status:  62  → left: 96
-  col-section: 82  → left: 158
-  col-cat:     82  → left: 240
-  col-task:   150  → left: 322
-  col-sub:    100  → left: 472  ← last frozen col, right border acts as separator
+  col-cat:     82  → left: 158  (col-section removed — UI-21B)
+  col-task:   150  → left: 240
+  col-sub:    100  → left: 390  ← last frozen col, right border acts as separator
   col-freq, col-days, col-notes: not frozen (scroll with dates)
 
   min-width and max-width are intentionally omitted — JS enforces MIN_COL_WIDTH.
@@ -319,10 +318,10 @@ thead .meta-col {
 .col-urg     { left: 28px;  text-align: center; }
 .col-pri     { left: 68px;  text-align: center; }
 .col-status  { left: 96px;  overflow: hidden; text-overflow: ellipsis; }
-.col-section { left: 158px; overflow: hidden; text-overflow: ellipsis; }
-.col-cat     { left: 240px; overflow: hidden; text-overflow: ellipsis; }
-.col-task    { left: 322px; overflow: hidden; text-overflow: ellipsis; }
-.col-sub     { left: 472px; overflow: hidden; text-overflow: ellipsis;
+.col-section { left: 158px; overflow: hidden; text-overflow: ellipsis; } /* kept for archive-grid compatibility */
+.col-cat     { left: 158px; overflow: hidden; text-overflow: ellipsis; }
+.col-task    { left: 240px; overflow: hidden; text-overflow: ellipsis; }
+.col-sub     { left: 390px; overflow: hidden; text-overflow: ellipsis;
                border-right: 2px solid #bbb; } /* last frozen col — visual separator */
 .col-freq   { text-align: center; }
 .col-days   { text-align: center; }
@@ -1959,6 +1958,25 @@ thead .meta-col {
   color: #fff;
 }
 
+/* Destructive confirm — Reset Column Widths confirm step */
+.ws-shelf-btn--confirm {
+  color: #ff9a9a;
+  border-right-color: rgba(255, 154, 154, 0.25);
+}
+
+.ws-shelf-btn--confirm:hover {
+  background: rgba(255, 80, 80, 0.15);
+  color: #ffbcbc;
+}
+
+.ws-shelf-confirm-text {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+  padding: 0 10px;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
 /* Primary action — Add Task */
 .ws-shelf-btn--primary {
   color: #fff;
@@ -2614,7 +2632,9 @@ select.task-modal-input {
 .task-modal-priority-meter {
   height: 4px;
   background: var(--rule);
-  width: 100%;
+  /* 8px margin each side = half of 16px thumb width.
+     Aligns fill boundaries with the slider thumb's center travel range. */
+  margin: 0 8px;
 }
 
 .task-modal-priority-fill {

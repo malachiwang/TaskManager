@@ -3,7 +3,6 @@ import TaskGrid from './components/TaskGrid.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import Archive from './components/Archive.jsx';
 import Settings from './components/Settings.jsx';
-import { buildExportBackupUrl } from './api.js';
 
 export default function App() {
   const [tab, setTab] = useState('grid');
@@ -21,7 +20,7 @@ export default function App() {
       <header className="app-header">
         <div className="app-identity">
           <span className="app-title">TaskManagementOS</span>
-          <span className="app-tagline">local-first · pressure tracker</span>
+          <span className="app-tagline">Task Manager · Productivity Tracker</span>
         </div>
         <nav className="app-tabs">
           <button className={`tab${tab === 'grid' ? ' active' : ''}`} onClick={() => setTab('grid')}>Grid</button>
@@ -29,9 +28,6 @@ export default function App() {
           <button className={`tab${tab === 'archive' ? ' active' : ''}`} onClick={() => setTab('archive')}>Archive</button>
           <button className={`tab${tab === 'settings' ? ' active' : ''}`} onClick={() => setTab('settings')}>Settings</button>
         </nav>
-        <a className="header-pill" href={buildExportBackupUrl()} download>
-          ⤓ <span className="pill-value">Export</span>
-        </a>
       </header>
       <main className="app-main" data-tab={tab}>
         {tab === 'grid' && <TaskGrid />}

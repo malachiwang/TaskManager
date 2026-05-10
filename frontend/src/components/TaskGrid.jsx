@@ -69,7 +69,6 @@ export const DEFAULT_WIDTHS = {
   'col-urg':     40,
   'col-pri':     28,
   'col-status':  62,
-  'col-section': 82,
   'col-cat':     82,
   'col-task':   150,
   'col-sub':    100,
@@ -81,7 +80,7 @@ export const DEFAULT_WIDTHS = {
 // These columns are position:sticky and need cumulative left offsets.
 // col-sub (Subtask) is the last frozen column — content scrolls after it.
 const STICKY_COLS = [
-  'col-actions', 'col-urg', 'col-pri', 'col-status', 'col-section', 'col-cat', 'col-task', 'col-sub',
+  'col-actions', 'col-urg', 'col-pri', 'col-status', 'col-cat', 'col-task', 'col-sub',
 ];
 
 // Non-sticky metadata columns — resizable width only, no left offset.
@@ -130,6 +129,7 @@ export default function TaskGrid() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [selectedCell, setSelectedCell] = useState(null);
+  const [confirmReset, setConfirmReset] = useState(false);
 
   // Column widths — stored as user overrides; missing keys fall back to DEFAULT_WIDTHS.
   const [colWidths, setColWidths] = useState(() => {
@@ -396,7 +396,15 @@ export default function TaskGrid() {
             href={buildExportSheetUrl(dates[0], dates[dates.length - 1])}
             download
           >Export CSV</a>
-          <button className="ws-shelf-btn" onClick={resetColWidths}>Reset Cols</button>
+          {confirmReset ? (
+            <>
+              <span className="ws-shelf-confirm-text">Reset column widths? Task data is unchanged.</span>
+              <button className="ws-shelf-btn ws-shelf-btn--confirm" onClick={() => { resetColWidths(); setConfirmReset(false); }}>Confirm reset</button>
+              <button className="ws-shelf-btn" onClick={() => setConfirmReset(false)}>Cancel</button>
+            </>
+          ) : (
+            <button className="ws-shelf-btn" onClick={() => setConfirmReset(true)}>Reset Column Widths</button>
+          )}
         </div>
       </div>
 
@@ -458,9 +466,6 @@ export default function TaskGrid() {
               <th className="meta-col sticky-col col-status" style={thStyle('col-status')}>
                 Status{rh('col-status')}
               </th>
-              <th className="meta-col sticky-col col-section" style={thStyle('col-section')}>
-                Section{rh('col-section')}
-              </th>
               <th className="meta-col sticky-col col-cat" style={thStyle('col-cat')}>
                 Category{rh('col-cat')}
               </th>
@@ -511,7 +516,7 @@ export default function TaskGrid() {
                     {/* Frozen td: sticky left, spans all 8 frozen columns.
                         Uses the same position:sticky mechanism as TaskRow sticky cells —
                         directly on the <td>, not a child element. Avoids jank. */}
-                    <td className="ws-section-frozen" colSpan={8}>
+                    <td className="ws-section-frozen" colSpan={7}>
                       <span className="ws-section-title">{sectionName}</span>
                       <span className="ws-section-meta">
                         {sectionTasks.length} task{sectionTasks.length !== 1 ? 's' : ''}

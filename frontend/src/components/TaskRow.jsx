@@ -48,7 +48,6 @@ export default function TaskRow({
       </td>
       <td className="meta-col sticky-col col-pri" style={cs('col-pri')}>{task.priority}</td>
       <td className="meta-col sticky-col col-status" style={cs('col-status')}>{task.status}</td>
-      <td className="meta-col sticky-col col-section" style={cs('col-section')}>{task.section || ''}</td>
       <td className="meta-col sticky-col col-cat" style={cs('col-cat')}>{task.category}</td>
       <td className="meta-col sticky-col col-task" title={task.name} style={cs('col-task')}>{task.name}</td>
       <td className="meta-col sticky-col col-sub" title={task.subtask} style={cs('col-sub')}>{task.subtask || ''}</td>

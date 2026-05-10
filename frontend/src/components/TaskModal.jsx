@@ -12,10 +12,10 @@ function loadTaskDefaults() {
 }
 
 function priorityFillColor(p) {
-  if (p >= 9) return 'var(--urg-crit)';
-  if (p >= 7) return 'var(--urg-hi)';
-  if (p >= 4) return 'var(--accent)';
-  return 'var(--muted)';
+  if (p >= 8) return 'var(--urg-crit)';   /* 8–10: red */
+  if (p >= 5) return 'var(--urg-mid)';    /* 5–7:  amber/orange */
+  if (p >= 2) return 'var(--good)';       /* 2–4:  green */
+  return 'var(--accent)';                 /* 1:    blue */
 }
 
 export default function TaskModal({ task, onSave, onClose }) {
@@ -45,7 +45,9 @@ export default function TaskModal({ task, onSave, onClose }) {
     onSave(form);
   }
 
-  const priorityPct = `${(Math.min(10, Math.max(1, form.priority)) / 10) * 100}%`;
+  // (p-1)/9 maps [1..10] → [0%..100%], matching the slider thumb's actual travel range.
+  const p = Math.min(10, Math.max(1, form.priority));
+  const priorityPct = `${((p - 1) / 9) * 100}%`;
 
   return (
     <div className="task-modal-overlay" onClick={onClose}>
