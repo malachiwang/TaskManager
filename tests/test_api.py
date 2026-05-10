@@ -1486,3 +1486,166 @@ class TestActiveFrom:
         assert resp.status_code == 200
         task = client.get("/tasks").json()[0]
         assert task["active_from"] == "2025-05-01"
+
+
+# ---------------------------------------------------------------------------
+# Archive rename / delete  (UI-23)
+# ---------------------------------------------------------------------------
+
+class TestArchiveRenameDelete:
+    """PATCH /archives/{id} and DELETE /archives/{id} endpoints."""
+
+    def _create_archive(self, client, name="2026-05"):
+        resp = client.post("/archives", params={
+            "name": name, "start_date": "2026-05-01", "end_date": "2026-05-31",
+        })
+        assert resp.status_code == 201, resp.text
+        return resp.json()
+
+    # --- rename ---
+
+    def test_rename_archive_succeeds(self, client):
+        a = self._create_archive(client)
+        resp = client.patch(f"/archives/{a['id']}", params={"name": "May 2026"})
+        assert resp.status_code == 200
+        assert resp.json()["name"] == "May 2026"
+
+    def test_rename_archive_persists_in_list(self, client):
+        a = self._create_archive(client)
+        client.patch(f"/archives/{a['id']}", params={"name": "Renamed"})
+        listing = client.get("/archives").json()
+        assert any(x["name"] == "Renamed" for x in listing)
+
+    def test_rename_archive_persists_in_detail(self, client):
+        a = self._create_archive(client)
+        client.patch(f"/archives/{a['id']}", params={"name": "Detail Check"})
+        detail = client.get(f"/archives/{a['id']}").json()
+        assert detail["name"] == "Detail Check"
+
+    def test_rename_missing_archive_returns_404(self, client):
+        resp = client.patch("/archives/9999", params={"name": "X"})
+        assert resp.status_code == 404
+
+    def test_rename_blank_name_returns_400(self, client):
+        a = self._create_archive(client)
+        resp = client.patch(f"/archives/{a['id']}", params={"name": "   "})
+        assert resp.status_code == 400
+
+    def test_rename_does_not_alter_snapshot_data(self, client):
+        a = self._create_archive(client)
+        client.patch(f"/archives/{a['id']}", params={"name": "New Name"})
+        detail = client.get(f"/archives/{a['id']}").json()
+        assert detail["snapshot_data_json"]["start_date"] == "2026-05-01"
+        assert detail["snapshot_data_json"]["end_date"] == "2026-05-31"
+
+    # --- delete ---
+
+    def test_delete_archive_succeeds(self, client):
+        a = self._create_archive(client)
+        resp = client.delete(f"/archives/{a['id']}")
+        assert resp.status_code == 200
+        assert resp.json()["deleted"] == a["id"]
+
+    def test_delete_missing_archive_returns_404(self, client):
+        resp = client.delete("/archives/9999")
+        assert resp.status_code == 404
+
+    def test_delete_archive_removes_from_list(self, client):
+        a = self._create_archive(client)
+        client.delete(f"/archives/{a['id']}")
+        listing = client.get("/archives").json()
+        assert all(x["id"] != a["id"] for x in listing)
+
+    def test_delete_archive_does_not_delete_tasks(self, client):
+        create_task(client, name="Keep This Task")
+        a = self._create_archive(client)
+        client.delete(f"/archives/{a['id']}")
+        tasks = client.get("/tasks").json()
+        assert len(tasks) == 1
+        assert tasks[0]["name"] == "Keep This Task"
+
+    def test_delete_archive_does_not_affect_other_archives(self, client):
+        a1 = self._create_archive(client, name="April")
+        a2 = self._create_archive(client, name="May")
+        client.delete(f"/archives/{a1['id']}")
+        listing = client.get("/archives").json()
+        assert any(x["id"] == a2["id"] for x in listing)
+        assert all(x["id"] != a1["id"] for x in listing)
+
+    def test_deleted_archive_detail_returns_404(self, client):
+        a = self._create_archive(client)
+        client.delete(f"/archives/{a['id']}")
+        resp = client.get(f"/archives/{a['id']}")
+        assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# manual_last_done_override date normalization  (emergency fix)
+# ---------------------------------------------------------------------------
+
+class TestManualOverrideNormalization:
+    """US-format dates in manual_last_done_override must not crash GET /tasks."""
+
+    def _import_with_override(self, client, override_value):
+        """Import a task via CSV with the given manual_last_done_override value."""
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(["Task", "manual last done override"])
+        writer.writerow(["Exercise", override_value])
+        csv_bytes = buf.getvalue().encode("utf-8")
+        resp = client.post("/import/apply", files={"file": ("import.csv", csv_bytes, "text/csv")})
+        assert resp.status_code == 200, resp.text
+
+    def test_us_short_date_does_not_crash_get_tasks(self, client):
+        # "3/28/26" is the format that caused the 500 in production.
+        self._import_with_override(client, "3/28/26")
+        resp = client.get("/tasks")
+        assert resp.status_code == 200
+
+    def test_us_short_date_normalizes_to_iso(self, client):
+        self._import_with_override(client, "3/28/26")
+        task = client.get("/tasks").json()[0]
+        assert task["manual_last_done_override"] == "2026-03-28"
+
+    def test_us_long_date_normalizes_to_iso(self, client):
+        self._import_with_override(client, "03/28/2026")
+        task = client.get("/tasks").json()[0]
+        assert task["manual_last_done_override"] == "2026-03-28"
+
+    def test_iso_date_passes_through_unchanged(self, client):
+        self._import_with_override(client, "2026-03-28")
+        task = client.get("/tasks").json()[0]
+        assert task["manual_last_done_override"] == "2026-03-28"
+
+    def test_invalid_date_does_not_crash_get_tasks(self, client):
+        # Completely unrecognized formats should be silently discarded.
+        self._import_with_override(client, "not-a-date")
+        resp = client.get("/tasks")
+        assert resp.status_code == 200
+
+    def test_invalid_date_stored_as_null(self, client):
+        self._import_with_override(client, "not-a-date")
+        task = client.get("/tasks").json()[0]
+        assert task["manual_last_done_override"] is None
+
+    def test_create_task_with_us_date_normalizes(self, client):
+        resp = client.post("/tasks", params={
+            "name": "Test", "manual_last_done_override": "1/5/25",
+        })
+        assert resp.status_code == 201
+        assert resp.json()["manual_last_done_override"] == "2025-01-05"
+
+    def test_update_task_with_us_date_normalizes(self, client):
+        task = create_task(client)
+        resp = client.patch(f"/tasks/{task['id']}", params={
+            "manual_last_done_override": "12/31/26",
+        })
+        assert resp.status_code == 200
+        assert resp.json()["manual_last_done_override"] == "2026-12-31"
+
+    def test_existing_iso_date_unaffected_by_normalization(self, client):
+        task = create_task(client, manual_last_done_override="2025-06-15")
+        assert task["manual_last_done_override"] == "2025-06-15"
+        resp = client.get("/tasks")
+        assert resp.status_code == 200
+        assert resp.json()[0]["manual_last_done_override"] == "2025-06-15"

@@ -5,6 +5,7 @@ The database file lives at the project root as taskos.db.
 taskos.db is excluded from git via .gitignore.
 """
 import sqlite3
+from datetime import date as _date
 from pathlib import Path
 
 DB_PATH = Path(__file__).parent.parent / "taskos.db"
@@ -110,5 +111,40 @@ def init_db() -> None:
             SET is_paused = 0, paused_at = NULL
             WHERE status = 'active' AND is_paused = 1
         """)
+
+    # ── Migration 4: normalize manual_last_done_override to ISO YYYY-MM-DD ──
+    # Handles values like "3/28/26" that were stored from US-format CSV imports.
+    # Unrecognized values are set to NULL (safe — treated as no override).
+    try:
+        rows = conn.execute(
+            "SELECT id, manual_last_done_override FROM tasks "
+            "WHERE manual_last_done_override IS NOT NULL AND manual_last_done_override != ''"
+        ).fetchall()
+        for task_id, raw in rows:
+            # Check if already valid ISO YYYY-MM-DD
+            try:
+                _date.fromisoformat(raw)
+                continue  # already clean
+            except ValueError:
+                pass
+            # Try US slash format M/D/YY or M/D/YYYY
+            normalized = None
+            if '/' in raw:
+                parts = raw.split('/')
+                if len(parts) == 3:
+                    try:
+                        m, d, y = int(parts[0]), int(parts[1]), int(parts[2])
+                        if y < 100:
+                            y += 2000
+                        normalized = _date(y, m, d).isoformat()
+                    except (ValueError, TypeError):
+                        pass
+            conn.execute(
+                "UPDATE tasks SET manual_last_done_override = ? WHERE id = ?",
+                (normalized, task_id),
+            )
+        conn.commit()
+    except Exception:
+        pass  # Never crash startup — _enrich_task is also safe now
 
     conn.close()

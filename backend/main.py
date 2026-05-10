@@ -42,6 +42,45 @@ def _normalize_status(raw: str) -> str:
     return 'hiatus' if raw.strip().lower() in _HIATUS_STATUSES else 'active'
 
 
+def _normalize_date_override(value: Optional[str]) -> Optional[str]:
+    """
+    Normalize manual_last_done_override to ISO YYYY-MM-DD, or return None.
+
+    Accepted formats:
+      - None / "" / whitespace-only  → None
+      - "YYYY-MM-DD"                 → same (validated)
+      - "M/D/YY", "MM/DD/YY",
+        "M/D/YYYY", "MM/DD/YYYY"    → converted to "YYYY-MM-DD"
+        2-digit year: interpreted as 2000+YY (26 → 2026).
+
+    Unrecognized format → None (never raises).
+    """
+    if not value:
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    # Already ISO YYYY-MM-DD
+    if len(value) == 10 and value[4] == '-' and value[7] == '-':
+        try:
+            date.fromisoformat(value)
+            return value
+        except ValueError:
+            return None
+    # US slash format: M/D/YY, M/D/YYYY, MM/DD/YY, MM/DD/YYYY
+    if '/' in value:
+        parts = value.split('/')
+        if len(parts) == 3:
+            try:
+                m, d, y = int(parts[0]), int(parts[1]), int(parts[2])
+                if y < 100:
+                    y += 2000
+                return date(y, m, d).isoformat()
+            except (ValueError, TypeError):
+                return None
+    return None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
@@ -66,11 +105,8 @@ def _enrich_task(row: dict, today: date) -> dict:
     """Add computed fields (effective_last_done, days_since, urgency) to a task row."""
     t = dict(row)
     created = date.fromisoformat(t["created_at"])
-    manual = (
-        date.fromisoformat(t["manual_last_done_override"])
-        if t.get("manual_last_done_override")
-        else None
-    )
+    manual_iso = _normalize_date_override(t.get("manual_last_done_override"))
+    manual = date.fromisoformat(manual_iso) if manual_iso else None
     latest = (
         date.fromisoformat(t["latest_completion"])
         if t.get("latest_completion")
@@ -161,6 +197,7 @@ def create_task(
     is_paused_val = 1 if norm_status == 'hiatus' else 0
     paused_at_val = datetime.now().isoformat() if is_paused_val else None
     active_from_val = active_from.strip() if active_from and active_from.strip() else None
+    manual_override_val = _normalize_date_override(manual_last_done_override)
 
     conn = get_connection()
     today_str = date.today().isoformat()
@@ -176,7 +213,7 @@ def create_task(
             (
                 name, section, category, subtask, priority, interval_days,
                 norm_status, notes, today_str, is_paused_val, paused_at_val,
-                manual_last_done_override, display_order, active_from_val,
+                manual_override_val, display_order, active_from_val,
             ),
         )
         task_id = cursor.lastrowid
@@ -250,7 +287,7 @@ def update_task(
     if notes is not None:
         updates["notes"] = notes
     if manual_last_done_override is not None:
-        updates["manual_last_done_override"] = manual_last_done_override
+        updates["manual_last_done_override"] = _normalize_date_override(manual_last_done_override)
     if priority is not None:
         updates["priority"] = priority
     if interval_days is not None:
@@ -583,6 +620,47 @@ def get_archive(archive_id: int):
     result = dict(row)
     result["snapshot_data_json"] = json.loads(result["snapshot_data_json"])
     return result
+
+
+@app.patch("/archives/{archive_id}")
+def rename_archive(archive_id: int, name: str):
+    """Rename an archived snapshot. Does not touch snapshot data."""
+    name = name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Archive name cannot be blank")
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT id FROM archive_snapshots WHERE id = ?", (archive_id,)
+    ).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Archive not found")
+    with conn:
+        conn.execute(
+            "UPDATE archive_snapshots SET name = ? WHERE id = ?", (name, archive_id)
+        )
+    updated = conn.execute(
+        "SELECT id, name, start_date, end_date, archived_at FROM archive_snapshots WHERE id = ?",
+        (archive_id,),
+    ).fetchone()
+    conn.close()
+    return dict(updated)
+
+
+@app.delete("/archives/{archive_id}")
+def delete_archive(archive_id: int):
+    """Delete an archived snapshot. Does not touch tasks or completion data."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT id FROM archive_snapshots WHERE id = ?", (archive_id,)
+    ).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Archive not found")
+    with conn:
+        conn.execute("DELETE FROM archive_snapshots WHERE id = ?", (archive_id,))
+    conn.close()
+    return {"deleted": archive_id}
 
 
 # ---------------------------------------------------------------------------
@@ -1006,7 +1084,7 @@ async def import_apply(file: UploadFile = File(...)):
             active_from_raw = fv("active_from")
             active_from_val = active_from_raw.strip() if active_from_raw and active_from_raw.strip() else None
             notes = fv("notes") or ""
-            manual_override = fv("manual_last_done_override")
+            manual_override = _normalize_date_override(fv("manual_last_done_override"))
 
             priority = 5
             priority_str = fv("priority")
