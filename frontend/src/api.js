@@ -60,6 +60,12 @@ export async function fetchDashboard() {
   return res.json();
 }
 
+export async function deleteTask(id) {
+  const res = await fetch(`${BASE}/tasks/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`deleteTask failed: ${res.status}`);
+  return res.json();
+}
+
 export async function fetchArchives() {
   const res = await fetch(`${BASE}/archives`);
   if (!res.ok) throw new Error(`fetchArchives failed: ${res.status}`);
@@ -76,6 +82,19 @@ export async function createArchive(name, startDate, endDate) {
 export async function fetchArchive(id) {
   const res = await fetch(`${BASE}/archives/${id}`);
   if (!res.ok) throw new Error(`fetchArchive failed: ${res.status}`);
+  return res.json();
+}
+
+export async function renameArchive(id, name) {
+  const params = new URLSearchParams({ name });
+  const res = await fetch(`${BASE}/archives/${id}?${params}`, { method: 'PATCH' });
+  if (!res.ok) throw new Error(`renameArchive failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteArchive(id) {
+  const res = await fetch(`${BASE}/archives/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`deleteArchive failed: ${res.status}`);
   return res.json();
 }
 

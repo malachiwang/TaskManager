@@ -7,6 +7,7 @@ import {
   setCompletionCount,
   createTask,
   updateTask,
+  deleteTask,
   createArchive,
   buildExportSheetUrl,
 } from '../api.js';
@@ -234,6 +235,19 @@ export default function TaskGrid() {
       await loadData();
     } catch (e) {
       console.error('save failed:', e);
+    }
+  }
+
+  async function handleDelete(taskId) {
+    try {
+      await deleteTask(taskId);
+    } catch (e) {
+      console.error('delete failed:', e);
+    } finally {
+      // Clear selection and close modal regardless of outcome
+      setSelectedCell(null);
+      closeModal();
+      await loadData();
     }
   }
 
@@ -557,6 +571,7 @@ export default function TaskGrid() {
         <TaskModal
           task={editingTask}
           onSave={handleSave}
+          onDelete={handleDelete}
           onClose={closeModal}
         />
       )}

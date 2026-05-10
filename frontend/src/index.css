@@ -1765,6 +1765,112 @@ thead .meta-col {
   color: var(--muted);
 }
 
+/* ── Archive: action button row inside snapshot items ── */
+.ws-snap-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-top: 2px;
+}
+
+/* Small utility buttons for rename/delete/save/cancel in archive list */
+.ws-snap-btn {
+  padding: 2px 7px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--rule);
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 2px;
+  white-space: nowrap;
+  line-height: 1.6;
+}
+
+.ws-snap-btn:hover {
+  background: var(--header-bg);
+  color: var(--ink-2);
+}
+
+.ws-snap-btn--rename {
+  color: var(--muted);
+}
+
+.ws-snap-btn--delete {
+  color: var(--urg-hi);
+  border-color: var(--urg-hi);
+}
+
+.ws-snap-btn--delete:hover,
+.ws-snap-btn--delete-active {
+  background: #fff4f0;
+  color: var(--urg-crit);
+  border-color: var(--urg-crit);
+}
+
+.ws-snap-btn--save {
+  color: var(--good);
+  border-color: var(--good);
+}
+
+.ws-snap-btn--save:hover {
+  background: #f0f7f0;
+}
+
+.ws-snap-btn--confirm-delete {
+  color: #fff;
+  background: var(--urg-crit);
+  border-color: var(--urg-crit);
+  font-weight: 700;
+}
+
+.ws-snap-btn--confirm-delete:hover {
+  background: #8b0000;
+  border-color: #8b0000;
+}
+
+/* Rename inline row — spans both grid columns */
+.ws-snap-rename-row {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 2px 0;
+}
+
+.ws-snap-rename-input {
+  flex: 1;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  border: 1px solid var(--accent);
+  background: var(--bg-panel);
+  color: var(--ink-2);
+  padding: 3px 6px;
+  outline: none;
+  border-radius: 2px;
+}
+
+/* Delete confirmation strip — spans both grid columns */
+.ws-snap-confirm-strip {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 0 2px;
+  border-top: 1px solid var(--rule-2);
+  margin-top: 4px;
+}
+
+.ws-snap-confirm-text {
+  flex: 1;
+  font-size: 11px;
+  color: var(--urg-hi);
+  font-family: var(--font-sans);
+}
+
 /* -------------------------------------------------------------------------
    Import banner — design report .ban pattern (§09)
    ---------------------------------------------------------------------- */
@@ -2709,6 +2815,68 @@ select.task-modal-input {
 .task-modal-save:hover {
   background: var(--ink-2);
   border-color: var(--ink-2);
+}
+
+/* Delete Task trigger — low-prominence, far-left in footer */
+.task-modal-delete-btn {
+  padding: 5px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted-2);
+  cursor: pointer;
+  border-radius: 0;
+}
+
+.task-modal-delete-btn:hover {
+  color: var(--urg-hi);
+  border-color: var(--urg-hi);
+}
+
+/* Confirm zone — replaces the normal footer when delete is pending */
+.task-modal-confirm-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.task-modal-confirm-copy {
+  font-size: 11px;
+  color: var(--urg-hi);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+}
+
+.task-modal-confirm-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Confirm Delete — red destructive button */
+.task-modal-confirm-delete {
+  padding: 6px 18px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: 1px solid var(--urg-crit);
+  background: var(--urg-crit);
+  color: #fff;
+  cursor: pointer;
+  border-radius: 0;
+}
+
+.task-modal-confirm-delete:hover {
+  background: #8b0000;
+  border-color: #8b0000;
 }
 
 /* Narrow viewport: single column */

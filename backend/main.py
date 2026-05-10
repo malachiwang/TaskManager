@@ -317,6 +317,26 @@ def update_task(
     return _enrich_task(dict(row), date.today())
 
 
+@app.delete("/tasks/{task_id}")
+def delete_task(task_id: int):
+    """Soft-delete a task by setting is_active=0.
+
+    Completion history is preserved. Archive snapshots are unaffected.
+    Returns 404 if the task does not exist or is already inactive.
+    """
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT id FROM tasks WHERE id = ? AND is_active = 1", (task_id,)
+    ).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Task not found")
+    with conn:
+        conn.execute("UPDATE tasks SET is_active = 0 WHERE id = ?", (task_id,))
+    conn.close()
+    return {"deleted": task_id}
+
+
 # ---------------------------------------------------------------------------
 # Completions
 # ---------------------------------------------------------------------------

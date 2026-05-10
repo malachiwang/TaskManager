@@ -18,8 +18,10 @@ function priorityFillColor(p) {
   return 'var(--accent)';                 /* 1:    blue */
 }
 
-export default function TaskModal({ task, onSave, onClose }) {
+export default function TaskModal({ task, onSave, onDelete, onClose }) {
   const isEdit = task != null;
+
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const [form, setForm] = useState(() => {
     const d = isEdit ? {} : loadTaskDefaults();
@@ -219,17 +221,57 @@ export default function TaskModal({ task, onSave, onClose }) {
 
           {/* Footer command bar */}
           <div className="task-modal-footer">
-            <span className="task-modal-footer-note">
-              Changes save to local SQLite task record
-            </span>
-            <div className="task-modal-actions">
-              <button type="button" className="task-modal-cancel" onClick={onClose}>
-                Cancel
-              </button>
-              <button type="submit" className="task-modal-save">
-                {isEdit ? 'Save Changes' : 'Add Task'}
-              </button>
-            </div>
+            {confirmDelete ? (
+              /* ── Delete confirmation zone ── */
+              <div className="task-modal-confirm-zone">
+                <span className="task-modal-confirm-copy">
+                  This removes the task from the grid and dashboard.
+                  Completion history is preserved and will remain in any existing archive snapshots.
+                </span>
+                <div className="task-modal-confirm-actions">
+                  <button
+                    type="button"
+                    className="task-modal-cancel"
+                    onClick={() => setConfirmDelete(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="task-modal-confirm-delete"
+                    onClick={() => onDelete(task.id)}
+                  >
+                    Confirm Delete
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* ── Normal footer ── */
+              <>
+                {isEdit && (
+                  <button
+                    type="button"
+                    className="task-modal-delete-btn"
+                    onClick={() => setConfirmDelete(true)}
+                  >
+                    Delete Task
+                  </button>
+                )}
+                {!isEdit && (
+                  <span className="task-modal-footer-note">
+                    Changes save to local SQLite task record
+                  </span>
+                )}
+                <div className="task-modal-actions">
+                  <button type="button" className="task-modal-cancel" onClick={onClose}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="task-modal-save">
+                    {isEdit ? 'Save Changes' : 'Add Task'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
 
         </form>

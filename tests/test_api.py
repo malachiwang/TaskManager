@@ -1649,3 +1649,89 @@ class TestManualOverrideNormalization:
         resp = client.get("/tasks")
         assert resp.status_code == 200
         assert resp.json()[0]["manual_last_done_override"] == "2025-06-15"
+
+
+# ---------------------------------------------------------------------------
+# DELETE /tasks/{id} — soft delete  (UI-25)
+# ---------------------------------------------------------------------------
+
+class TestDeleteTask:
+    """Soft-delete sets is_active=0; preserves completions and archives."""
+
+    def test_delete_returns_200(self, client):
+        task = create_task(client)
+        resp = client.delete(f"/tasks/{task['id']}")
+        assert resp.status_code == 200
+        assert resp.json()["deleted"] == task["id"]
+
+    def test_deleted_task_absent_from_list(self, client):
+        task = create_task(client)
+        client.delete(f"/tasks/{task['id']}")
+        ids = [t["id"] for t in client.get("/tasks").json()]
+        assert task["id"] not in ids
+
+    def test_delete_nonexistent_returns_404(self, client):
+        resp = client.delete("/tasks/9999")
+        assert resp.status_code == 404
+
+    def test_delete_already_deleted_returns_404(self, client):
+        task = create_task(client)
+        client.delete(f"/tasks/{task['id']}")
+        resp = client.delete(f"/tasks/{task['id']}")
+        assert resp.status_code == 404
+
+    def test_delete_does_not_affect_other_tasks(self, client):
+        t1 = create_task(client, name="Keep")
+        t2 = create_task(client, name="Delete Me")
+        client.delete(f"/tasks/{t2['id']}")
+        ids = [t["id"] for t in client.get("/tasks").json()]
+        assert t1["id"] in ids
+        assert t2["id"] not in ids
+
+    def test_delete_preserves_completions_in_backup(self, client):
+        # Completions for a soft-deleted task must not be cascade-deleted.
+        task = create_task(client)
+        client.post("/completions", params={"task_id": task["id"], "completion_date": TODAY})
+        client.delete(f"/tasks/{task['id']}")
+        # Backup export includes all tasks (no is_active filter) and their completions
+        backup = client.get("/export/backup.json").json()
+        deleted_task = next((t for t in backup["tasks"] if t["id"] == task["id"]), None)
+        assert deleted_task is not None, "soft-deleted task must appear in backup"
+
+    def test_delete_does_not_affect_archive_snapshots(self, client):
+        task = create_task(client)
+        archive_resp = client.post("/archives", params={
+            "name": "test", "start_date": TODAY, "end_date": TODAY,
+        })
+        assert archive_resp.status_code == 201
+        archive_id = archive_resp.json()["id"]
+        client.delete(f"/tasks/{task['id']}")
+        detail = client.get(f"/archives/{archive_id}").json()
+        task_ids_in_snap = [t["id"] for t in detail["snapshot_data_json"]["tasks"]]
+        assert task["id"] in task_ids_in_snap
+
+    def test_delete_reduces_active_task_count(self, client):
+        create_task(client, name="A")
+        create_task(client, name="B")
+        before = len(client.get("/tasks").json())
+        task = create_task(client, name="C")
+        client.delete(f"/tasks/{task['id']}")
+        after = len(client.get("/tasks").json())
+        assert after == before
+
+    def test_deleted_task_not_in_csv_export(self, client):
+        task = create_task(client, name="Gone")
+        client.delete(f"/tasks/{task['id']}")
+        text = client.get("/export/sheet.csv", params={"start": TODAY, "end": TODAY}).text
+        assert "Gone" not in text
+
+    def test_delete_hiatus_task_succeeds(self, client):
+        task = create_task(client, status="hiatus")
+        resp = client.delete(f"/tasks/{task['id']}")
+        assert resp.status_code == 200
+
+    def test_delete_task_with_active_from_succeeds(self, client):
+        task = create_task(client, active_from="2025-01-01")
+        resp = client.delete(f"/tasks/{task['id']}")
+        assert resp.status_code == 200
+        assert task["id"] not in [t["id"] for t in client.get("/tasks").json()]
