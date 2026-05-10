@@ -1242,6 +1242,12 @@ thead .meta-col {
   gap: 3px;
 }
 
+.settings-label-hint {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
 /* Settings form inputs — width set inline per field. */
 .settings-input {
   font-family: inherit;
@@ -1950,6 +1956,11 @@ thead .meta-col {
 
 .ws-settings-item:last-child {
   border-bottom: none;
+}
+
+/* Explain-only rows — no interactive control, align content to top */
+.ws-settings-item--explain {
+  align-items: start;
 }
 
 /* Name — design report .stl .nm */
@@ -2900,5 +2911,219 @@ select.task-modal-input {
   .task-modal-seg-btn {
     flex: 0 0 33.333%;
     border-bottom: 1px solid var(--rule);
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   Settings – structural redesign (UI-26B)
+   ═══════════════════════════════════════════════ */
+
+/* Summary strip */
+.ws-settings-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  margin-bottom: 20px;
+  background: var(--surface-2, var(--bg-header));
+  overflow: hidden;
+}
+
+.ws-settings-summary-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 14px;
+  border-right: 1px solid var(--grid-border);
+}
+
+.ws-settings-summary-cell:last-child {
+  border-right: none;
+}
+
+.ws-settings-summary-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.ws-settings-summary-value {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+/* Two-column layout */
+.ws-settings-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.ws-settings-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Panel kicker — small number above title */
+.ws-frame-kicker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  display: block;
+  margin-bottom: 1px;
+}
+
+/* Ctrl rows — consistent label+desc left, control right */
+.ws-ctrl-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--rule-2);
+}
+
+.ws-ctrl-row:last-child {
+  border-bottom: none;
+}
+
+.ws-ctrl-row--action {
+  background: var(--surface-2, var(--bg-header));
+  padding: 8px 14px;
+}
+
+.ws-ctrl-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ws-ctrl-label {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.ws-ctrl-desc {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.ws-ctrl-action {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Data & Backup — primary export row */
+.ws-backup-primary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--rule-2);
+  background: var(--surface-2, var(--bg-header));
+}
+
+.ws-backup-primary .ws-ctrl-info {
+  flex: 1;
+}
+
+.ws-backup-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* State rows — for System Behavior reference card */
+.ws-state-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--rule-2);
+}
+
+.ws-state-row:last-child {
+  border-bottom: none;
+}
+
+/* State badge pill */
+.ws-state-badge {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  border: 1px solid var(--grid-border);
+  color: var(--muted);
+  background: transparent;
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+.ws-state-badge--on {
+  color: var(--good);
+  border-color: var(--good);
+}
+
+.ws-state-badge--off {
+  color: var(--muted);
+  border-color: var(--rule-2);
+}
+
+/* Formula block */
+.ws-formula-block {
+  padding: 10px 14px 12px;
+  border-bottom: 1px solid var(--rule-2);
+}
+
+.ws-formula-note {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 8px;
+  line-height: 1.45;
+}
+
+/* Collapse to single column on narrow screens */
+@media (max-width: 860px) {
+  .ws-settings-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .ws-settings-summary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .ws-settings-summary-cell:nth-child(2) {
+    border-right: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .ws-settings-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .ws-settings-summary-cell {
+    border-right: none;
+    border-bottom: 1px solid var(--grid-border);
+  }
+
+  .ws-settings-summary-cell:last-child {
+    border-bottom: none;
   }
 }
