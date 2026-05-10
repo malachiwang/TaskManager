@@ -2317,3 +2317,395 @@ thead .meta-col {
 .task-grid tbody tr.ws-section-row:first-child td {
   border-top: 1px solid var(--rule);
 }
+
+/* =========================================================================
+   UI-20 — Task Modal Paper Workstation
+   ========================================================================= */
+
+/* Overlay — full-screen scrim */
+/* ── UI-20B: Task Modal Paper Workstation ── */
+
+.task-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+/* Modal shell */
+.task-modal-shell {
+  font-family: var(--font-sans);
+  background: var(--bg-panel);
+  border: 1px solid var(--rule);
+  width: 560px;
+  max-width: 96vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.32), 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+/* Dark ink header */
+.task-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 14px 16px 13px;
+  background: var(--ink);
+  flex-shrink: 0;
+  border-bottom: 2px solid rgba(0, 0, 0, 0.35);
+  gap: 12px;
+}
+
+.task-modal-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+}
+
+/* Mode label — mono uppercase, muted white */
+.task-modal-kicker {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+  line-height: 1;
+  margin-bottom: 5px;
+}
+
+/* Task name / "New task record" — strong white */
+.task-modal-title {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 440px;
+  margin-bottom: 4px;
+}
+
+/* Compact meta subtitle */
+.task-modal-subtitle {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.3);
+  letter-spacing: 0.04em;
+}
+
+/* Close button */
+.task-modal-close {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 22px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+
+.task-modal-close:hover {
+  color: #fff;
+}
+
+/* Scrollable form body */
+.task-modal-body {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  background: var(--bg-app);
+}
+
+/* Section zone */
+.task-modal-section {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--bg-panel);
+}
+
+/* Section label — mono uppercase, no inner border */
+.task-modal-section-title {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 1px;
+}
+
+/* Two-column field grid */
+.task-modal-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* Single field container */
+.task-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* Full-width override */
+.task-modal-field--full {
+  width: 100%;
+}
+
+/* Mono uppercase micro-label */
+.task-modal-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: default;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+/* All form inputs — ruled bottom, open feel */
+.task-modal-input {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  border-bottom: 1.5px solid var(--rule);
+  padding: 4px 2px;
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 0;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.task-modal-input:focus {
+  outline: none;
+  border-bottom: 2px solid var(--accent);
+  background: transparent;
+}
+
+/* Preserve native select arrow */
+select.task-modal-input {
+  appearance: auto;
+  -webkit-appearance: auto;
+  padding: 4px 4px;
+}
+
+/* Range slider for priority */
+.task-modal-input--priority {
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+  height: 16px;
+}
+
+.task-modal-input--priority:focus {
+  border: none;
+}
+
+/* Textarea */
+.task-modal-textarea {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--bg-app);
+  border: 1px solid var(--rule);
+  border-bottom: 1.5px solid var(--rule);
+  padding: 7px 8px;
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  box-sizing: border-box;
+  border-radius: 0;
+}
+
+.task-modal-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--bg-panel);
+}
+
+/* ── Segmented status buttons ── */
+.task-modal-seg {
+  display: flex;
+  border: 1px solid var(--rule);
+  overflow: hidden;
+}
+
+.task-modal-seg-btn {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--bg-app);
+  border: none;
+  border-right: 1px solid var(--rule);
+  padding: 7px 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  text-align: center;
+  transition: background 0.08s, color 0.08s;
+}
+
+.task-modal-seg-btn:last-child {
+  border-right: none;
+}
+
+.task-modal-seg-btn:hover:not(.task-modal-seg-btn--active) {
+  background: var(--bg-panel);
+  color: var(--ink);
+}
+
+.task-modal-seg-btn--active {
+  background: var(--ink);
+  color: #fff;
+}
+
+/* ── Priority meter ── */
+.task-modal-priority-val {
+  font-family: var(--font-serif);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.task-modal-priority-max {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.task-modal-priority-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.task-modal-priority-meter {
+  height: 4px;
+  background: var(--rule);
+  width: 100%;
+}
+
+.task-modal-priority-fill {
+  height: 100%;
+  transition: width 0.1s, background 0.1s;
+}
+
+/* ── Footer command bar ── */
+.task-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--bg-panel);
+  border-top: 2px solid var(--rule);
+  flex-shrink: 0;
+}
+
+/* Helper note on the left */
+.task-modal-footer-note {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted-2);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+/* Action buttons cluster */
+.task-modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Cancel — ghost */
+.task-modal-cancel {
+  padding: 5px 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--rule);
+  cursor: pointer;
+  border-radius: 0;
+}
+
+.task-modal-cancel:hover {
+  color: var(--ink);
+  border-color: var(--grid-border);
+}
+
+/* Save — primary ink fill */
+.task-modal-save {
+  padding: 6px 20px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--ink);
+  border: 1px solid var(--ink);
+  cursor: pointer;
+  border-radius: 0;
+}
+
+.task-modal-save:hover {
+  background: var(--ink-2);
+  border-color: var(--ink-2);
+}
+
+/* Narrow viewport: single column */
+@media (max-width: 520px) {
+  .task-modal-shell {
+    width: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    margin: 0;
+    border: none;
+  }
+
+  .task-modal-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .task-modal-seg {
+    flex-wrap: wrap;
+  }
+
+  .task-modal-seg-btn {
+    flex: 0 0 33.333%;
+    border-bottom: 1px solid var(--rule);
+  }
+}

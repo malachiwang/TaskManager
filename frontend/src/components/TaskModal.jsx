@@ -11,20 +11,27 @@ function loadTaskDefaults() {
   }
 }
 
+function priorityFillColor(p) {
+  if (p >= 9) return 'var(--urg-crit)';
+  if (p >= 7) return 'var(--urg-hi)';
+  if (p >= 4) return 'var(--accent)';
+  return 'var(--muted)';
+}
+
 export default function TaskModal({ task, onSave, onClose }) {
   const isEdit = task != null;
 
   const [form, setForm] = useState(() => {
     const d = isEdit ? {} : loadTaskDefaults();
     return {
-      name: task?.name ?? '',
-      section: task?.section ?? d.defaultSection ?? 'General',
-      category: task?.category ?? '',
-      status: task?.status ?? 'active',
-      subtask: task?.subtask ?? '',
-      priority: task?.priority ?? d.defaultPriority ?? 5,
-      interval_days: task?.interval_days ?? d.defaultIntervalDays ?? 7,
-      notes: task?.notes ?? '',
+      name:                      task?.name                      ?? '',
+      section:                   task?.section                   ?? d.defaultSection      ?? 'General',
+      category:                  task?.category                  ?? '',
+      status:                    task?.status                    ?? 'active',
+      subtask:                   task?.subtask                   ?? '',
+      priority:                  task?.priority                  ?? d.defaultPriority     ?? 5,
+      interval_days:             task?.interval_days             ?? d.defaultIntervalDays ?? 7,
+      notes:                     task?.notes                     ?? '',
       manual_last_done_override: task?.manual_last_done_override ?? '',
     };
   });
@@ -38,117 +45,178 @@ export default function TaskModal({ task, onSave, onClose }) {
     onSave(form);
   }
 
+  const priorityPct = `${(Math.min(10, Math.max(1, form.priority)) / 10) * 100}%`;
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <span>{isEdit ? 'Edit Task' : 'Add Task'}</span>
-          <button className="modal-close" type="button" onClick={onClose}>×</button>
+    <div className="task-modal-overlay" onClick={onClose}>
+      <div className="task-modal-shell" onClick={(e) => e.stopPropagation()}>
+
+        {/* ── Dark ink header ── */}
+        <div className="task-modal-header">
+          <div className="task-modal-header-left">
+            <div className="task-modal-kicker">
+              {isEdit ? 'Edit Task' : 'Add Task'}
+            </div>
+            <div className="task-modal-title">
+              {isEdit ? (task.name || 'Untitled') : 'New task record'}
+            </div>
+            <div className="task-modal-subtitle">
+              {isEdit ? 'spreadsheet row editor' : 'local task record · SQLite'}
+            </div>
+          </div>
+          <button className="task-modal-close" type="button" onClick={onClose} aria-label="Close">×</button>
         </div>
 
-        <form className="modal-form" onSubmit={handleSubmit}>
+        {/* ── Paper form body ── */}
+        <form className="task-modal-body" onSubmit={handleSubmit}>
 
-          <div className="modal-group">
-            <div className="section-kicker">Identity</div>
-            <div className="modal-row full-width">
-              <label>
-                Name
-                <input
-                  required
-                  value={form.name}
-                  onChange={(e) => set('name', e.target.value)}
-                />
-              </label>
+          {/* Identity */}
+          <div className="task-modal-section">
+            <div className="task-modal-section-title">Identity</div>
+            <div className="task-modal-field task-modal-field--full">
+              <label className="task-modal-label" htmlFor="tm-name">Name</label>
+              <input
+                id="tm-name"
+                className="task-modal-input"
+                required
+                value={form.name}
+                onChange={(e) => set('name', e.target.value)}
+              />
+            </div>
+            <div className="task-modal-field task-modal-field--full">
+              <label className="task-modal-label" htmlFor="tm-subtask">Subtask</label>
+              <input
+                id="tm-subtask"
+                className="task-modal-input"
+                value={form.subtask}
+                onChange={(e) => set('subtask', e.target.value)}
+              />
             </div>
           </div>
 
-          <div className="modal-group">
-            <div className="section-kicker">Classification</div>
-            <div className="modal-row">
-              <label>
-                Section
+          {/* Classification */}
+          <div className="task-modal-section">
+            <div className="task-modal-section-title">Classification</div>
+
+            {/* Section + Category */}
+            <div className="task-modal-grid">
+              <div className="task-modal-field">
+                <label className="task-modal-label" htmlFor="tm-section">Section</label>
                 <input
+                  id="tm-section"
+                  className="task-modal-input"
                   value={form.section}
                   onChange={(e) => set('section', e.target.value)}
                   placeholder="General"
                 />
-              </label>
-              <label>
-                Category
+              </div>
+              <div className="task-modal-field">
+                <label className="task-modal-label" htmlFor="tm-category">Category</label>
                 <input
+                  id="tm-category"
+                  className="task-modal-input"
                   value={form.category}
                   onChange={(e) => set('category', e.target.value)}
                 />
-              </label>
+              </div>
             </div>
-            <div className="modal-row full-width">
-              <label>
-                Status
-                <select value={form.status} onChange={(e) => set('status', e.target.value)}>
-                  {STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}
-                </select>
-              </label>
-            </div>
-          </div>
 
-          <div className="modal-group">
-            <div className="section-kicker">Scheduling</div>
-            <div className="modal-row">
-              <label>
-                Subtask
-                <input
-                  value={form.subtask}
-                  onChange={(e) => set('subtask', e.target.value)}
-                />
+            {/* Status — segmented buttons */}
+            <div className="task-modal-field task-modal-field--full">
+              <label className="task-modal-label">Status</label>
+              <div className="task-modal-seg" role="group" aria-label="Status">
+                {STATUS_OPTIONS.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    className={`task-modal-seg-btn${form.status === s ? ' task-modal-seg-btn--active' : ''}`}
+                    onClick={() => set('status', s)}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Priority — number + visual meter */}
+            <div className="task-modal-field task-modal-field--full">
+              <label className="task-modal-label" htmlFor="tm-priority">
+                Priority <span className="task-modal-priority-val">{form.priority}<span className="task-modal-priority-max">/10</span></span>
               </label>
-              <label>
-                Priority (1–10)
+              <div className="task-modal-priority-wrap">
+                <div className="task-modal-priority-meter">
+                  <div
+                    className="task-modal-priority-fill"
+                    style={{ width: priorityPct, background: priorityFillColor(form.priority) }}
+                  />
+                </div>
                 <input
-                  type="number"
+                  id="tm-priority"
+                  className="task-modal-input task-modal-input--priority"
+                  type="range"
                   min="1"
                   max="10"
                   value={form.priority}
                   onChange={(e) => set('priority', Number(e.target.value))}
                 />
-              </label>
+              </div>
             </div>
-            <div className="modal-row">
-              <label>
-                Interval (days)
+          </div>
+
+          {/* Scheduling */}
+          <div className="task-modal-section">
+            <div className="task-modal-section-title">Scheduling</div>
+            <div className="task-modal-grid">
+              <div className="task-modal-field">
+                <label className="task-modal-label" htmlFor="tm-interval">Interval (days)</label>
                 <input
+                  id="tm-interval"
+                  className="task-modal-input"
                   type="number"
                   min="1"
                   value={form.interval_days}
                   onChange={(e) => set('interval_days', Number(e.target.value))}
                 />
-              </label>
-              <label>
-                Manual last done
+              </div>
+              <div className="task-modal-field">
+                <label className="task-modal-label" htmlFor="tm-lastdone">Manual last done</label>
                 <input
+                  id="tm-lastdone"
+                  className="task-modal-input"
                   type="date"
                   value={form.manual_last_done_override}
                   onChange={(e) => set('manual_last_done_override', e.target.value)}
                 />
-              </label>
+              </div>
             </div>
           </div>
 
-          <div className="modal-group">
-            <div className="section-kicker">Notes</div>
-            <div className="modal-row full-width">
-              <label>
-                Notes
-                <textarea
-                  value={form.notes}
-                  onChange={(e) => set('notes', e.target.value)}
-                />
-              </label>
+          {/* Notes */}
+          <div className="task-modal-section">
+            <div className="task-modal-section-title">Notes</div>
+            <div className="task-modal-field task-modal-field--full">
+              <textarea
+                id="tm-notes"
+                className="task-modal-textarea"
+                value={form.notes}
+                onChange={(e) => set('notes', e.target.value)}
+              />
             </div>
           </div>
 
-          <div className="modal-row full-width modal-actions">
-            <button type="submit" className="button-primary">{isEdit ? 'Save Changes' : 'Add Task'}</button>
-            <button type="button" className="btn-cancel" onClick={onClose}>Cancel</button>
+          {/* Footer command bar */}
+          <div className="task-modal-footer">
+            <span className="task-modal-footer-note">
+              Changes save to local SQLite task record
+            </span>
+            <div className="task-modal-actions">
+              <button type="button" className="task-modal-cancel" onClick={onClose}>
+                Cancel
+              </button>
+              <button type="submit" className="task-modal-save">
+                {isEdit ? 'Save Changes' : 'Add Task'}
+              </button>
+            </div>
           </div>
 
         </form>
