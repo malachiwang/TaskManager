@@ -59,12 +59,13 @@
   --caution-border: #f0c040;
   --caution-text:   #7a5800;
 
-  /* Typography — no external font dependencies.
-     IBM Plex variants apply when locally installed; system fallbacks
-     preserve today's exact rendering otherwise. */
-  --font-mono:  "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
-  --font-sans:  "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-serif: "IBM Plex Serif", Georgia, serif;
+  /* Typography — one primary UI font family.
+     Hierarchy via font-weight, font-size, text-transform, letter-spacing,
+     font-variant-numeric, color, and spacing. No serif or monospace stacks. */
+  --font-ui:    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-sans:  var(--font-ui);   /* alias — kept for selector compatibility */
+  --font-mono:  var(--font-ui);   /* alias — use tabular-nums for numeric display */
+  --font-serif: var(--font-ui);   /* alias — use font-weight for display hierarchy */
 }
 
 /* -------------------------------------------------------------------------
@@ -89,7 +90,7 @@ html[data-theme="paper"] {
 }
 
 body {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 13px;
   background: var(--bg-app);
   color: var(--ink-2);
@@ -1071,6 +1072,7 @@ thead .meta-col {
 .dash-metric-value {
   font-family: var(--font-serif);
   font-size: 36px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--ink);
   line-height: 1;
@@ -1534,11 +1536,11 @@ thead .meta-col {
   gap: 4px;
 }
 
-/* Plex Serif title — design report .dh .ttl */
+/* Dashboard title — weight-driven display */
 .ws-dash-title {
   font-family: var(--font-serif);
   font-size: 20px;
-  font-weight: 400;
+  font-weight: 600;
   color: var(--ink);
   line-height: 1.1;
 }
@@ -1592,10 +1594,11 @@ thead .meta-col {
   text-transform: uppercase;
 }
 
-/* Plex Serif numeral — design report .ds .val */
+/* Stat strip numeral — tabular-nums + weight for display distinction */
 .ws-stat-value {
   font-family: var(--font-serif);
   font-size: 24px;
+  font-weight: 600;
   line-height: 1.1;
   margin-top: 3px;
   font-variant-numeric: tabular-nums;
@@ -2090,7 +2093,7 @@ thead .meta-col {
 .ws-sheet-title {
   font-family: var(--font-serif);
   font-size: 18px;
-  font-weight: 400;
+  font-weight: 600;
   color: var(--ink);
   line-height: 1.1;
   letter-spacing: -0.01em;
