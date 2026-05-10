@@ -10,7 +10,7 @@ function urgencyClass(urgency) {
 
 export default function TaskRow({
   task, dates, todayStr, completions, selectedCell, colLayout,
-  onIncrement, onClear, onEdit, onTogglePause, onSelect,
+  onIncrement, onClear, onEdit, onSelect,
 }) {
   const isPaused = task.is_paused === 1;
   const isOverdue =
@@ -37,17 +37,13 @@ export default function TaskRow({
           onClick={() => onEdit(task)}
           title="Edit task"
         >✏</button>
-        <button
-          className="action-btn"
-          onClick={() => onTogglePause(task)}
-          title={isPaused ? 'Unpause' : 'Pause'}
-        >{isPaused ? '▶' : '⏸'}</button>
       </td>
       <td className={`meta-col sticky-col col-urg ${isPaused ? '' : urgencyClass(task.urgency)}`} style={cs('col-urg')}>
         {isPaused ? '—' : task.urgency}
       </td>
       <td className="meta-col sticky-col col-pri" style={cs('col-pri')}>{task.priority}</td>
       <td className="meta-col sticky-col col-status" style={cs('col-status')}>{task.status}</td>
+      <td className="meta-col sticky-col col-active-from" style={cs('col-active-from')}>{task.active_from || ''}</td>
       <td className="meta-col sticky-col col-cat" style={cs('col-cat')}>{task.category}</td>
       <td className="meta-col sticky-col col-task" title={task.name} style={cs('col-task')}>{task.name}</td>
       <td className="meta-col sticky-col col-sub" title={task.subtask} style={cs('col-sub')}>{task.subtask || ''}</td>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-const STATUS_OPTIONS = ['active', 'focus', 'background', 'passive', 'on-hold', 'someday'];
+const STATUS_OPTIONS = ['active', 'hiatus'];
 
 function loadTaskDefaults() {
   try {
@@ -33,6 +33,7 @@ export default function TaskModal({ task, onSave, onClose }) {
       interval_days:             task?.interval_days             ?? d.defaultIntervalDays ?? 7,
       notes:                     task?.notes                     ?? '',
       manual_last_done_override: task?.manual_last_done_override ?? '',
+      active_from:               task?.active_from               ?? '',
     };
   });
 
@@ -188,6 +189,16 @@ export default function TaskModal({ task, onSave, onClose }) {
                   type="date"
                   value={form.manual_last_done_override}
                   onChange={(e) => set('manual_last_done_override', e.target.value)}
+                />
+              </div>
+              <div className="task-modal-field">
+                <label className="task-modal-label" htmlFor="tm-active-from">Active from</label>
+                <input
+                  id="tm-active-from"
+                  className="task-modal-input"
+                  type="date"
+                  value={form.active_from}
+                  onChange={(e) => set('active_from', e.target.value)}
                 />
               </div>
             </div>

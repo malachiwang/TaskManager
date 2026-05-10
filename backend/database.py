@@ -39,6 +39,7 @@ def init_db() -> None:
                 is_paused                INTEGER NOT NULL DEFAULT 0,
                 manual_last_done_override TEXT            DEFAULT NULL,
                 display_order            INTEGER NOT NULL DEFAULT 0,
+                active_from              TEXT             DEFAULT NULL,
                 CHECK (priority >= 1 AND priority <= 10),
                 CHECK (interval_days > 0),
                 CHECK (is_active IN (0, 1)),
@@ -65,13 +66,49 @@ def init_db() -> None:
                 snapshot_data_json TEXT    NOT NULL
             );
         """)
-    # Migrate existing databases: add section column if not present.
-    # ALTER TABLE ADD COLUMN is safe with NOT NULL DEFAULT on SQLite.
+    # ── Migration 1: add section column (original migration) ──────────────
     try:
         conn.execute(
             "ALTER TABLE tasks ADD COLUMN section TEXT NOT NULL DEFAULT 'General'"
         )
         conn.commit()
     except Exception:
-        pass  # Column already exists — no action needed.
+        pass  # Column already exists.
+
+    # ── Migration 2: add active_from column ───────────────────────────────
+    try:
+        conn.execute("ALTER TABLE tasks ADD COLUMN active_from TEXT DEFAULT NULL")
+        conn.commit()
+    except Exception:
+        pass  # Column already exists.
+
+    # ── Migration 3: normalize status to active/hiatus, sync is_paused ───
+    # Idempotent: all four UPDATE statements are no-ops once data is clean.
+    with conn:
+        # Step A: map all hiatus-type legacy statuses → 'hiatus'
+        conn.execute("""
+            UPDATE tasks SET status = 'hiatus'
+            WHERE LOWER(TRIM(status)) IN
+                ('on-hold', 'someday', 'paused', 'pause', 'hold',
+                 'idea', 'temp hiatus', 'hiatus')
+        """)
+        # Step B: map all other non-standard statuses → 'active'
+        conn.execute("""
+            UPDATE tasks SET status = 'active'
+            WHERE status NOT IN ('active', 'hiatus')
+        """)
+        # Step C: sync is_paused=1 for hiatus tasks that still show 0 (mismatch fix)
+        conn.execute("""
+            UPDATE tasks
+            SET is_paused = 1,
+                paused_at = COALESCE(paused_at, datetime('now'))
+            WHERE status = 'hiatus' AND is_paused = 0
+        """)
+        # Step D: sync is_paused=0 for active tasks that still show 1 (mismatch fix)
+        conn.execute("""
+            UPDATE tasks
+            SET is_paused = 0, paused_at = NULL
+            WHERE status = 'active' AND is_paused = 1
+        """)
+
     conn.close()

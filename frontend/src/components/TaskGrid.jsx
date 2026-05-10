@@ -65,22 +65,23 @@ const MIN_COL_WIDTH = 24;
 
 // Default widths (px) matching the original CSS layout.
 export const DEFAULT_WIDTHS = {
-  'col-actions': 28,
-  'col-urg':     40,
-  'col-pri':     28,
-  'col-status':  62,
-  'col-cat':     82,
-  'col-task':   150,
-  'col-sub':    100,
-  'col-freq':    44,
-  'col-days':    44,
-  'col-notes':  100,
+  'col-actions':     28,
+  'col-urg':         40,
+  'col-pri':         28,
+  'col-status':      62,
+  'col-active-from': 72,
+  'col-cat':         82,
+  'col-task':       150,
+  'col-sub':        100,
+  'col-freq':        44,
+  'col-days':        44,
+  'col-notes':      100,
 };
 
 // These columns are position:sticky and need cumulative left offsets.
 // col-sub (Subtask) is the last frozen column — content scrolls after it.
 const STICKY_COLS = [
-  'col-actions', 'col-urg', 'col-pri', 'col-status', 'col-cat', 'col-task', 'col-sub',
+  'col-actions', 'col-urg', 'col-pri', 'col-status', 'col-active-from', 'col-cat', 'col-task', 'col-sub',
 ];
 
 // Non-sticky metadata columns — resizable width only, no left offset.
@@ -233,15 +234,6 @@ export default function TaskGrid() {
       await loadData();
     } catch (e) {
       console.error('save failed:', e);
-    }
-  }
-
-  async function handleTogglePause(task) {
-    try {
-      await updateTask(task.id, { is_paused: !task.is_paused });
-      await loadData();
-    } catch (e) {
-      console.error('pause toggle failed:', e);
     }
   }
 
@@ -466,6 +458,9 @@ export default function TaskGrid() {
               <th className="meta-col sticky-col col-status" style={thStyle('col-status')}>
                 Status{rh('col-status')}
               </th>
+              <th className="meta-col sticky-col col-active-from" title="Active from date" style={thStyle('col-active-from')}>
+                From{rh('col-active-from')}
+              </th>
               <th className="meta-col sticky-col col-cat" style={thStyle('col-cat')}>
                 Category{rh('col-cat')}
               </th>
@@ -516,7 +511,7 @@ export default function TaskGrid() {
                     {/* Frozen td: sticky left, spans all 8 frozen columns.
                         Uses the same position:sticky mechanism as TaskRow sticky cells —
                         directly on the <td>, not a child element. Avoids jank. */}
-                    <td className="ws-section-frozen" colSpan={7}>
+                    <td className="ws-section-frozen" colSpan={8}>
                       <span className="ws-section-title">{sectionName}</span>
                       <span className="ws-section-meta">
                         {sectionTasks.length} task{sectionTasks.length !== 1 ? 's' : ''}
@@ -540,7 +535,6 @@ export default function TaskGrid() {
                       onIncrement={handleIncrement}
                       onClear={handleClear}
                       onEdit={openEdit}
-                      onTogglePause={handleTogglePause}
                       onSelect={handleSelect}
                     />
                   ))}

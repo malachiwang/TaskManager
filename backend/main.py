@@ -27,6 +27,20 @@ from backend.logic import (
     calculate_urgency,
 )
 
+# ---------------------------------------------------------------------------
+# Status normalization
+# ---------------------------------------------------------------------------
+
+_HIATUS_STATUSES: frozenset[str] = frozenset({
+    'hiatus', 'on-hold', 'someday', 'paused', 'pause',
+    'hold', 'idea', 'temp hiatus',
+})
+
+
+def _normalize_status(raw: str) -> str:
+    """Map any status string to canonical 'active' or 'hiatus'."""
+    return 'hiatus' if raw.strip().lower() in _HIATUS_STATUSES else 'active'
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -136,11 +150,17 @@ def create_task(
     notes: str = "",
     manual_last_done_override: Optional[str] = None,
     display_order: int = 0,
+    active_from: Optional[str] = None,
 ):
     if not 1 <= priority <= 10:
         raise HTTPException(status_code=422, detail="Priority must be between 1 and 10")
     if interval_days < 1:
         raise HTTPException(status_code=422, detail="interval_days must be >= 1")
+
+    norm_status = _normalize_status(status)
+    is_paused_val = 1 if norm_status == 'hiatus' else 0
+    paused_at_val = datetime.now().isoformat() if is_paused_val else None
+    active_from_val = active_from.strip() if active_from and active_from.strip() else None
 
     conn = get_connection()
     today_str = date.today().isoformat()
@@ -149,13 +169,14 @@ def create_task(
             """
             INSERT INTO tasks (
                 name, section, category, subtask, priority, interval_days,
-                status, notes, created_at, is_active, is_paused,
-                manual_last_done_override, display_order
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
+                status, notes, created_at, is_active, is_paused, paused_at,
+                manual_last_done_override, display_order, active_from
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
             """,
             (
                 name, section, category, subtask, priority, interval_days,
-                status, notes, today_str, manual_last_done_override, display_order,
+                norm_status, notes, today_str, is_paused_val, paused_at_val,
+                manual_last_done_override, display_order, active_from_val,
             ),
         )
         task_id = cursor.lastrowid
@@ -181,8 +202,15 @@ def update_task(
     manual_last_done_override: Optional[str] = None,
     priority: Optional[int] = None,
     interval_days: Optional[int] = None,
+    active_from: Optional[str] = None,
 ):
-    """Update mutable task fields. Only provided fields are changed."""
+    """Update mutable task fields. Only provided fields are changed.
+
+    status and is_paused are always kept in sync:
+    - Setting status drives is_paused (status='hiatus' → is_paused=1, status='active' → is_paused=0).
+    - Setting is_paused drives status (True → status='hiatus', False → status='active').
+    - If both are provided in the same request, status takes priority.
+    """
     conn = get_connection()
     existing = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
     if not existing:
@@ -206,11 +234,19 @@ def update_task(
         updates["category"] = category
     if subtask is not None:
         updates["subtask"] = subtask
+
+    # status and is_paused are bidirectionally synced.
+    # status takes priority when both are provided in the same request.
     if status is not None:
-        updates["status"] = status
-    if is_paused is not None:
+        norm = _normalize_status(status)
+        updates["status"] = norm
+        updates["is_paused"] = 1 if norm == 'hiatus' else 0
+        updates["paused_at"] = datetime.now().isoformat() if norm == 'hiatus' else None
+    elif is_paused is not None:
         updates["is_paused"] = int(is_paused)
+        updates["status"] = 'hiatus' if is_paused else 'active'
         updates["paused_at"] = datetime.now().isoformat() if is_paused else None
+
     if notes is not None:
         updates["notes"] = notes
     if manual_last_done_override is not None:
@@ -219,6 +255,8 @@ def update_task(
         updates["priority"] = priority
     if interval_days is not None:
         updates["interval_days"] = interval_days
+    if active_from is not None:
+        updates["active_from"] = active_from.strip() if active_from.strip() else None
 
     if updates:
         # Column names are hardcoded above — not from user input — so this is safe
@@ -639,7 +677,7 @@ def export_sheet_csv(
         d += timedelta(days=1)
 
     meta_cols = ["name", "section", "category", "subtask", "priority", "interval_days",
-                 "status", "urgency", "days_since", "notes"]
+                 "status", "active_from", "urgency", "days_since", "notes"]
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -648,7 +686,7 @@ def export_sheet_csv(
         row = [
             t["name"], t.get("section", "General"), t.get("category", ""),
             t.get("subtask", ""), t["priority"], t["interval_days"], t["status"],
-            t["urgency"], t["days_since"], t.get("notes", ""),
+            t.get("active_from") or "", t["urgency"], t["days_since"], t.get("notes", ""),
         ]
         for iso in dates:
             count = comp_map.get((t["id"], iso), 0)
@@ -677,6 +715,7 @@ _IMPORT_ALIASES: dict[str, list[str]] = {
     "priority":                  ["priority", "pri", "p"],
     "interval_days":             ["freq", "frequency", "interval", "interval_days"],
     "status":                    ["status"],
+    "active_from":               ["active_from", "active from", "relevant from", "starts"],
     "notes":                     ["notes", "note"],
     "manual_last_done_override": [
         "manual", "last done", "manual last done",
@@ -961,7 +1000,11 @@ async def import_apply(file: UploadFile = File(...)):
             section = fv("section") or "General"
             category = fv("category") or ""
             subtask = fv("subtask") or ""
-            status = fv("status") or "active"
+            status = _normalize_status(fv("status") or "active")
+            is_paused_val = 1 if status == 'hiatus' else 0
+            paused_at_val = now if is_paused_val else None
+            active_from_raw = fv("active_from")
+            active_from_val = active_from_raw.strip() if active_from_raw and active_from_raw.strip() else None
             notes = fv("notes") or ""
             manual_override = fv("manual_last_done_override")
 
@@ -998,13 +1041,14 @@ async def import_apply(file: UploadFile = File(...)):
                 """
                 INSERT INTO tasks (
                     name, section, category, subtask, priority, interval_days,
-                    status, notes, created_at, is_active, is_paused,
-                    manual_last_done_override, display_order
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, 0)
+                    status, notes, created_at, is_active, is_paused, paused_at,
+                    manual_last_done_override, display_order, active_from
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 0, ?)
                 """,
                 (
                     name_val, section, category, subtask, priority, interval_days,
-                    status, notes, today_str, manual_override,
+                    status, notes, today_str, is_paused_val, paused_at_val,
+                    manual_override, active_from_val,
                 ),
             )
             task_id = cursor.lastrowid

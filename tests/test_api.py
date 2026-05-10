@@ -1309,3 +1309,180 @@ class TestImportApply:
         assert data["tasks_created"] == 0
         assert data["completions_created"] == 0
         assert data["errors"] == []
+
+
+# ---------------------------------------------------------------------------
+# Status / hiatus unification  (UI-22)
+# ---------------------------------------------------------------------------
+
+class TestStatusHiatus:
+    """status and is_paused must stay fully in sync at all times."""
+
+    # --- create_task ---
+
+    def test_create_with_status_hiatus_sets_is_paused(self, client):
+        task = create_task(client, status="hiatus")
+        assert task["status"] == "hiatus"
+        assert task["is_paused"] == 1
+
+    def test_create_with_status_active_clears_is_paused(self, client):
+        task = create_task(client, status="active")
+        assert task["status"] == "active"
+        assert task["is_paused"] == 0
+
+    def test_create_default_status_is_active(self, client):
+        task = create_task(client)
+        assert task["status"] == "active"
+        assert task["is_paused"] == 0
+
+    def test_create_legacy_status_on_hold_normalizes_to_hiatus(self, client):
+        task = create_task(client, status="on-hold")
+        assert task["status"] == "hiatus"
+        assert task["is_paused"] == 1
+
+    def test_create_legacy_status_someday_normalizes_to_hiatus(self, client):
+        task = create_task(client, status="someday")
+        assert task["status"] == "hiatus"
+        assert task["is_paused"] == 1
+
+    def test_create_unknown_status_normalizes_to_active(self, client):
+        task = create_task(client, status="focus")
+        assert task["status"] == "active"
+        assert task["is_paused"] == 0
+
+    # --- update_task via status ---
+
+    def test_update_status_to_hiatus_sets_is_paused(self, client):
+        task = create_task(client)
+        tid = task["id"]
+        resp = client.patch(f"/tasks/{tid}", params={"status": "hiatus"})
+        assert resp.status_code == 200
+        updated = resp.json()
+        assert updated["status"] == "hiatus"
+        assert updated["is_paused"] == 1
+
+    def test_update_status_to_active_clears_is_paused(self, client):
+        task = create_task(client, status="hiatus")
+        tid = task["id"]
+        resp = client.patch(f"/tasks/{tid}", params={"status": "active"})
+        assert resp.status_code == 200
+        updated = resp.json()
+        assert updated["status"] == "active"
+        assert updated["is_paused"] == 0
+
+    # --- update_task via is_paused ---
+
+    def test_update_is_paused_true_sets_status_hiatus(self, client):
+        task = create_task(client)
+        tid = task["id"]
+        resp = client.patch(f"/tasks/{tid}", params={"is_paused": "true"})
+        assert resp.status_code == 200
+        updated = resp.json()
+        assert updated["status"] == "hiatus"
+        assert updated["is_paused"] == 1
+
+    def test_update_is_paused_false_sets_status_active(self, client):
+        task = create_task(client, status="hiatus")
+        tid = task["id"]
+        resp = client.patch(f"/tasks/{tid}", params={"is_paused": "false"})
+        assert resp.status_code == 200
+        updated = resp.json()
+        assert updated["status"] == "active"
+        assert updated["is_paused"] == 0
+
+    # --- status wins when both are provided ---
+
+    def test_update_status_takes_priority_over_is_paused(self, client):
+        # Providing status=active and is_paused=true simultaneously:
+        # status wins → active, is_paused=0
+        task = create_task(client, status="hiatus")
+        tid = task["id"]
+        resp = client.patch(f"/tasks/{tid}", params={"status": "active", "is_paused": "true"})
+        assert resp.status_code == 200
+        updated = resp.json()
+        assert updated["status"] == "active"
+        assert updated["is_paused"] == 0
+
+
+# ---------------------------------------------------------------------------
+# active_from field  (UI-22)
+# ---------------------------------------------------------------------------
+
+class TestActiveFrom:
+    """active_from is stored, returned, and included in CSV export."""
+
+    def test_create_without_active_from_defaults_to_null(self, client):
+        task = create_task(client)
+        assert task.get("active_from") is None
+
+    def test_create_with_active_from_stores_value(self, client):
+        task = create_task(client, active_from="2025-06-01")
+        assert task["active_from"] == "2025-06-01"
+
+    def test_update_active_from(self, client):
+        task = create_task(client)
+        tid = task["id"]
+        resp = client.patch(f"/tasks/{tid}", params={"active_from": "2025-09-01"})
+        assert resp.status_code == 200
+        assert resp.json()["active_from"] == "2025-09-01"
+
+    def test_update_clear_active_from(self, client):
+        task = create_task(client, active_from="2025-06-01")
+        tid = task["id"]
+        resp = client.patch(f"/tasks/{tid}", params={"active_from": ""})
+        assert resp.status_code == 200
+        result = resp.json()
+        assert result.get("active_from") in (None, "")
+
+    def test_active_from_in_task_list(self, client):
+        create_task(client, active_from="2025-03-15")
+        tasks = client.get("/tasks").json()
+        assert tasks[0]["active_from"] == "2025-03-15"
+
+    def test_csv_export_includes_active_from(self, client):
+        create_task(client, name="Stretching", active_from="2025-01-01")
+        resp = client.get("/export/sheet.csv", params={"start": TODAY, "end": TODAY})
+        assert resp.status_code == 200
+        text = resp.text
+        reader = csv.reader(io.StringIO(text))
+        headers = next(reader)
+        assert "active_from" in headers
+        row = next(reader)
+        row_dict = dict(zip(headers, row))
+        assert row_dict["active_from"] == "2025-01-01"
+
+    def test_csv_export_active_from_null_is_empty_string(self, client):
+        create_task(client, name="Stretching")
+        resp = client.get("/export/sheet.csv", params={"start": TODAY, "end": TODAY})
+        text = resp.text
+        reader = csv.reader(io.StringIO(text))
+        headers = next(reader)
+        row = next(reader)
+        row_dict = dict(zip(headers, row))
+        assert row_dict.get("active_from", "") == ""
+
+    def test_csv_import_without_active_from_column_still_works(self, client):
+        """Old CSV files without active_from column import cleanly."""
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(["Task", "Priority", TODAY])
+        writer.writerow(["Exercise", "6", "1"])
+        csv_bytes = buf.getvalue().encode("utf-8")
+        resp = client.post("/import/apply", files={"file": ("import.csv", csv_bytes, "text/csv")})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["tasks_created"] == 1
+        assert data["errors"] == []
+        task = client.get("/tasks").json()[0]
+        assert task.get("active_from") is None
+
+    def test_csv_import_with_active_from_column_stores_value(self, client):
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(["Task", "active_from"])
+        writer.writerow(["Exercise", "2025-05-01"])
+        csv_bytes = buf.getvalue().encode("utf-8")
+        resp = client.post("/import/apply", files={"file": ("import.csv", csv_bytes, "text/csv")})
+        assert resp.status_code == 200
+        task = client.get("/tasks").json()[0]
+        assert task["active_from"] == "2025-05-01"
