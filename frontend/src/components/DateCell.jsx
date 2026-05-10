@@ -6,9 +6,11 @@
 //   future or paused → disabled, no interaction
 //
 // Display:
-//   count 0  → blank
-//   count 1  → ✓
-//   count 2+ → number
+//   count 0, active   → dc-box--empty  (15×15 border outline)
+//   count 0, disabled → blank
+//   count 1           → dc-box--filled (neutral ink, white ✓, 15×15)
+//   count 2+          → dc-box--filled (neutral ink, white number, 15×15)
+//   paused + count    → dc-box--filled dc-box--muted (same size, muted color)
 
 export default function DateCell({
   taskId,
@@ -28,10 +30,22 @@ export default function DateCell({
   const [wy, wm, wd] = date.split('-').map(Number);
   const isWeekend = new Date(wy, wm - 1, wd).getDay() % 6 === 0;
 
-  function display() {
-    if (count === 0) return '';
-    if (count === 1) return '✓';
-    return String(count);
+  function renderContent() {
+    if (isFuture) return null;
+    if (isPaused) {
+      if (count === 0) return null;
+      return (
+        <span className="dc-box dc-box--filled dc-box--muted">
+          {count === 1 ? '✓' : count}
+        </span>
+      );
+    }
+    if (count === 0) return <span className="dc-box dc-box--empty" />;
+    return (
+      <span className="dc-box dc-box--filled">
+        {count === 1 ? '✓' : count}
+      </span>
+    );
   }
 
   function handleClick(e) {
@@ -46,7 +60,8 @@ export default function DateCell({
 
   const classes = [
     'date-cell',
-    isFuture ? 'future' : '',
+    isFuture  ? 'future'  : '',
+    isPaused  ? 'paused'  : '',
     isToday && !isFuture ? 'today' : '',
     isWeekend ? 'weekend' : '',
     count > 0 && !isPaused ? 'has-count' : '',
@@ -61,7 +76,9 @@ export default function DateCell({
       onClick={handleClick}
       title={isDisabled ? (isFuture ? 'Future date — not available' : 'Task is paused') : date}
     >
-      {display()}
+      <span className="dc-cell-center">
+        {renderContent()}
+      </span>
     </td>
   );
 }

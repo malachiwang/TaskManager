@@ -227,6 +227,13 @@ body {
   text-align: left;
 }
 
+/* Date cells: override base td padding/align — specificity (0,2,0,1) beats (0,1,0,1) */
+.task-grid td.date-cell {
+  padding: 0;
+  text-align: center;
+  vertical-align: middle;
+}
+
 .task-grid th:first-child,
 .task-grid td:first-child {
   border-left: 1px solid var(--grid-border);
@@ -403,14 +410,16 @@ thead .meta-col {
    ---------------------------------------------------------------------- */
 
 .date-cell {
+  /* Never set display:flex on td — breaks table row height.
+     Use text-align + vertical-align for centering within table-cell. */
   text-align: center;
+  vertical-align: middle;
   cursor: pointer;
   user-select: none;
   min-width: 50px;
-  font-size: 12px;
 }
 
-.date-cell:hover:not(.future) {
+.date-cell:hover:not(.future):not(.paused) {
   background: var(--accent-soft);
 }
 
@@ -429,10 +438,59 @@ thead .meta-col {
   background: var(--weekend-bg);
 }
 
-/* Completed cell */
-.date-cell.has-count {
-  color: var(--good);
+/* Paused cell — not interactive, no hover affordance */
+.date-cell.paused {
+  cursor: default;
+}
+
+/* Completed cell — visual state now entirely on inner .dc-box spans */
+.date-cell.has-count {}
+
+/* ── DateCell centering wrapper + indicator box (UI-27C) ──────────────
+   dc-cell-center fills the zero-padded td and grid-centers the box.
+   dc-box is a fixed 15×15 indicator; flex only on the span, never the td.
+   ──────────────────────────────────────────────────────────────────── */
+
+/* Full-cell centering wrapper inside the <td> */
+.dc-cell-center {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 100%;
+}
+
+.dc-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  box-sizing: border-box;
+  border-radius: 2px;
+  font-size: 9px;
   font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* Empty affordance — subtle border outline, no fill */
+.dc-box--empty {
+  border: 1.5px solid var(--rule-2);
+}
+
+.date-cell:hover:not(.future):not(.paused) .dc-box--empty {
+  border-color: var(--muted-2);
+}
+
+/* Filled — neutral ink, not green. Used for ✓ and count > 1. */
+.dc-box--filled {
+  background: var(--ink-2);
+  color: #fff;
+}
+
+/* Muted — paused task with existing completions */
+.dc-box--muted {
+  background: var(--muted-2);
 }
 
 /* Selected cell (EditBar selection) — must come after other .date-cell.* rules */
