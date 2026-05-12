@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
+import { useState, useEffect, useCallback, useMemo, Fragment, useRef } from 'react';
 import {
   fetchTasks,
   fetchCompletions,
@@ -14,6 +14,7 @@ import {
 import TaskRow from './TaskRow.jsx';
 import TaskModal from './TaskModal.jsx';
 import EditBar from './EditBar.jsx';
+import { KBD_LEGEND } from '../keybinds.js';
 
 // ---------------------------------------------------------------------------
 // Date helpers
@@ -312,6 +313,128 @@ export default function TaskGrid() {
   }
 
   // ---------------------------------------------------------------------------
+  // Keyboard workflow — Phase 1
+  // Refs let the single window listener always read current values without
+  // re-registering on every render. Assigned synchronously each render cycle.
+  // ---------------------------------------------------------------------------
+
+  const selectedCellRef = useRef(null);
+  const tasksRef        = useRef([]);
+  const datesRef        = useRef([]);
+  const completionsRef  = useRef({});
+  const modalOpenRef    = useRef(false);
+  const handlersRef     = useRef({});
+
+  // Sync refs — runs during render, always current before any async event fires.
+  selectedCellRef.current = selectedCell;
+  tasksRef.current        = tasks;
+  datesRef.current        = dates;
+  completionsRef.current  = completions;
+  modalOpenRef.current    = modalOpen;
+  handlersRef.current     = { handleIncrement, handleClear, handleSetCount, openAdd, openEdit, setSelectedCell };
+
+  // Register once on mount; TaskGrid only mounts on the Grid tab, so the
+  // handler is automatically removed when the user switches to another tab.
+  useEffect(() => {
+    function onKeyDown(e) {
+      // Guard 1: ignore while typing in any focusable form element
+      const tag = document.activeElement?.tagName?.toLowerCase();
+      if (['input', 'textarea', 'select'].includes(tag)) return;
+      if (document.activeElement?.isContentEditable) return;
+
+      // Guard 2: ignore while the task modal is open
+      if (modalOpenRef.current) return;
+
+      const {
+        handleIncrement, handleClear, handleSetCount,
+        openAdd, openEdit, setSelectedCell,
+      } = handlersRef.current;
+      const sel   = selectedCellRef.current;
+      const tasks = tasksRef.current;
+      const dates = datesRef.current;
+
+      // Esc — clear grid selection only (modal closing is handled by the modal itself)
+      if (e.key === 'Escape' && !e.shiftKey) {
+        if (sel) setSelectedCell(null);
+        return;
+      }
+
+      // N — open Add Task modal (no selection required)
+      if (e.key.toLowerCase() === 'n' && !e.shiftKey) {
+        openAdd();
+        return;
+      }
+
+      // E — open Edit Task modal for the selected task
+      if (e.key.toLowerCase() === 'e' && !e.shiftKey) {
+        if (!sel) return;
+        const task = tasks.find((t) => t.id === sel.taskId);
+        if (task) openEdit(task);
+        return;
+      }
+
+      // Arrow navigation — only when a cell is selected
+      if (!sel) return;
+
+      const rowIdx  = tasks.findIndex((t) => t.id === sel.taskId);
+      const dateIdx = dates.indexOf(sel.date);
+
+      if (e.key === 'ArrowLeft' && !e.shiftKey) {
+        e.preventDefault();
+        const next = Math.max(0, dateIdx - 1);
+        setSelectedCell({ taskId: sel.taskId, date: dates[next] });
+        return;
+      }
+      if (e.key === 'ArrowRight' && !e.shiftKey) {
+        e.preventDefault();
+        const next = Math.min(dates.length - 1, dateIdx + 1);
+        setSelectedCell({ taskId: sel.taskId, date: dates[next] });
+        return;
+      }
+      if (e.key === 'ArrowUp' && !e.shiftKey) {
+        e.preventDefault();
+        if (rowIdx < 0) return;
+        const next = Math.max(0, rowIdx - 1);
+        setSelectedCell({ taskId: tasks[next].id, date: sel.date });
+        return;
+      }
+      if (e.key === 'ArrowDown' && !e.shiftKey) {
+        e.preventDefault();
+        if (rowIdx < 0) return;
+        const next = Math.min(tasks.length - 1, rowIdx + 1);
+        setSelectedCell({ taskId: tasks[next].id, date: sel.date });
+        return;
+      }
+
+      // Enter — increment (plain) or decrement (shift)
+      // True decrement reuses the existing setCompletionCount API path
+      // (PATCH /completions/{taskId}/{date}?count=N), same path used by EditBar.
+      if (e.key === 'Enter') {
+        const task = tasks.find((t) => t.id === sel.taskId);
+        if (!task) return;
+        if (task.is_paused === 1) return;
+        if (sel.date > toLocalDate(new Date())) return; // no-op on future dates
+
+        if (e.shiftKey) {
+          const count = completionsRef.current[`${sel.taskId}:${sel.date}`] || 0;
+          if (count === 0) return;
+          if (count === 1) {
+            handleClear(sel.taskId, sel.date);       // DELETE — removes the row
+          } else {
+            handleSetCount(sel.taskId, sel.date, count - 1); // PATCH with count−1
+          }
+        } else {
+          handleIncrement(sel.taskId, sel.date);
+        }
+        return;
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentionally reads from refs
+
+  // ---------------------------------------------------------------------------
   // Column resize
   // ---------------------------------------------------------------------------
 
@@ -436,6 +559,7 @@ export default function TaskGrid() {
           <span className="ws-status-pill ws-status-pill--ok">local</span>
           <span className="ws-status-pill ws-status-pill--ok">SQLite</span>
           <span className="ws-status-pill ws-status-pill--dim">synced: never</span>
+          <span className="ws-kbd-legend">{KBD_LEGEND}</span>
         </div>
       </div>
 

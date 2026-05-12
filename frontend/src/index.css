@@ -2367,6 +2367,17 @@ thead .meta-col {
   flex-shrink: 0;
 }
 
+/* Keyboard legend — compact hint line in sheet header */
+.ws-kbd-legend {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted-2);
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  margin-left: 6px;
+  opacity: 0.75;
+}
+
 .ws-status-pill {
   display: inline-flex;
   align-items: center;
