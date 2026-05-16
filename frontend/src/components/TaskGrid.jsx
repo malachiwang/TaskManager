@@ -107,6 +107,23 @@ function computeColLayout(colWidths) {
   return { widths, offsets };
 }
 
+// Returns the best default keyboard cell when no cell is selected.
+// Fallback order: first active task + today > first active task + last non-future date >
+// first active task + first visible date > first task + first date > null.
+function getDefaultKeyboardCell(tasks, dates) {
+  if (!tasks.length || !dates.length) return null;
+  const todayStr = toLocalDate(new Date());
+  const task = tasks.find((t) => t.is_paused !== 1) ?? tasks[0];
+  let date;
+  if (dates.includes(todayStr)) {
+    date = todayStr;
+  } else {
+    const nonFuture = dates.filter((d) => d <= todayStr);
+    date = nonFuture.length > 0 ? nonFuture[nonFuture.length - 1] : dates[0];
+  }
+  return { taskId: task.id, date };
+}
+
 export default function TaskGrid() {
   // Real today — always fixed regardless of which month is displayed.
   const todayStr = toLocalDate(new Date());
@@ -313,7 +330,7 @@ export default function TaskGrid() {
   }
 
   // ---------------------------------------------------------------------------
-  // Keyboard workflow — Phase 1
+  // Keyboard workflow — Phase 1.1
   // Refs let the single window listener always read current values without
   // re-registering on every render. Assigned synchronously each render cycle.
   // ---------------------------------------------------------------------------
@@ -325,39 +342,51 @@ export default function TaskGrid() {
   const modalOpenRef    = useRef(false);
   const handlersRef     = useRef({});
 
-  // Sync refs — runs during render, always current before any async event fires.
+  // Sync refs each render — always current before any async event fires.
   selectedCellRef.current = selectedCell;
   tasksRef.current        = tasks;
   datesRef.current        = dates;
   completionsRef.current  = completions;
   modalOpenRef.current    = modalOpen;
-  handlersRef.current     = { handleIncrement, handleClear, handleSetCount, openAdd, openEdit, setSelectedCell };
+  handlersRef.current     = { handleIncrement, handleClear, handleSetCount, openAdd, openEdit, setSelectedCell, closeModal };
+
+  // Feature 3: clear selectedCell when the selected task disappears from tasks[]
+  // (covers soft-delete, external changes; handleDelete already calls setSelectedCell(null)
+  // but this guards the general case without duplicating the check there).
+  useEffect(() => {
+    if (selectedCellRef.current && !tasks.find((t) => t.id === selectedCellRef.current.taskId)) {
+      setSelectedCell(null);
+    }
+  }, [tasks]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Register once on mount; TaskGrid only mounts on the Grid tab, so the
   // handler is automatically removed when the user switches to another tab.
   useEffect(() => {
     function onKeyDown(e) {
-      // Guard 1: ignore while typing in any focusable form element
-      const tag = document.activeElement?.tagName?.toLowerCase();
-      if (['input', 'textarea', 'select'].includes(tag)) return;
-      if (document.activeElement?.isContentEditable) return;
-
-      // Guard 2: ignore while the task modal is open
-      if (modalOpenRef.current) return;
-
       const {
         handleIncrement, handleClear, handleSetCount,
-        openAdd, openEdit, setSelectedCell,
+        openAdd, openEdit, setSelectedCell, closeModal,
       } = handlersRef.current;
       const sel   = selectedCellRef.current;
       const tasks = tasksRef.current;
       const dates = datesRef.current;
 
-      // Esc — clear grid selection only (modal closing is handled by the modal itself)
+      // Feature 1: Escape is handled before typing/modal guards.
+      // Priority: close modal → clear selection → no-op.
       if (e.key === 'Escape' && !e.shiftKey) {
-        if (sel) setSelectedCell(null);
+        if (modalOpenRef.current) {
+          closeModal();
+        } else if (sel) {
+          setSelectedCell(null);
+        }
         return;
       }
+
+      // For all non-Escape keys: ignore while typing or modal is open.
+      const tag = document.activeElement?.tagName?.toLowerCase();
+      if (['input', 'textarea', 'select'].includes(tag)) return;
+      if (document.activeElement?.isContentEditable) return;
+      if (modalOpenRef.current) return;
 
       // N — open Add Task modal (no selection required)
       if (e.key.toLowerCase() === 'n' && !e.shiftKey) {
@@ -365,7 +394,7 @@ export default function TaskGrid() {
         return;
       }
 
-      // E — open Edit Task modal for the selected task
+      // E — open Edit Task modal (requires selection; no auto-edit on bootstrap)
       if (e.key.toLowerCase() === 'e' && !e.shiftKey) {
         if (!sel) return;
         const task = tasks.find((t) => t.id === sel.taskId);
@@ -373,7 +402,16 @@ export default function TaskGrid() {
         return;
       }
 
-      // Arrow navigation — only when a cell is selected
+      // Feature 2: Arrow / Enter / Shift+Enter bootstrap selection when no cell is selected.
+      const isNavKey = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter'].includes(e.key);
+      if (!sel && isNavKey) {
+        e.preventDefault();
+        const defaultCell = getDefaultKeyboardCell(tasks, dates);
+        if (defaultCell) setSelectedCell(defaultCell);
+        // Do not apply movement or mutation on the bootstrap keypress — just select.
+        return;
+      }
+
       if (!sel) return;
 
       const rowIdx  = tasks.findIndex((t) => t.id === sel.taskId);
@@ -406,9 +444,8 @@ export default function TaskGrid() {
         return;
       }
 
-      // Enter — increment (plain) or decrement (shift)
-      // True decrement reuses the existing setCompletionCount API path
-      // (PATCH /completions/{taskId}/{date}?count=N), same path used by EditBar.
+      // Enter — increment (plain) or true decrement (shift).
+      // Reuses existing setCompletionCount (PATCH) and deleteCompletion (DELETE) paths.
       if (e.key === 'Enter') {
         const task = tasks.find((t) => t.id === sel.taskId);
         if (!task) return;
@@ -419,9 +456,9 @@ export default function TaskGrid() {
           const count = completionsRef.current[`${sel.taskId}:${sel.date}`] || 0;
           if (count === 0) return;
           if (count === 1) {
-            handleClear(sel.taskId, sel.date);       // DELETE — removes the row
+            handleClear(sel.taskId, sel.date);
           } else {
-            handleSetCount(sel.taskId, sel.date, count - 1); // PATCH with count−1
+            handleSetCount(sel.taskId, sel.date, count - 1);
           }
         } else {
           handleIncrement(sel.taskId, sel.date);
