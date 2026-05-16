@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchArchives, fetchArchive, previewImport, applyImport } from '../api.js';
+import { fetchArchives, fetchArchive, deleteArchive, previewImport, applyImport } from '../api.js';
 
 function buildDates(start, end) {
   const dates = [];
@@ -314,18 +314,23 @@ function ImportPreviewBody() {
 // ---------------------------------------------------------------------------
 
 export default function Archive() {
-  const [archives, setArchives]         = useState([]);
-  const [loading, setLoading]           = useState(true);
-  const [error, setError]               = useState(null);
-  const [selected, setSelected]         = useState(null);
+  const [archives, setArchives]           = useState([]);
+  const [loading, setLoading]             = useState(true);
+  const [error, setError]                 = useState(null);
+  const [selected, setSelected]           = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  // id of the archive pending delete confirmation, or null
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+
+  function loadArchives() {
+    return fetchArchives()
+      .then(setArchives)
+      .catch((e) => setError(e.message));
+  }
 
   useEffect(() => {
-    fetchArchives()
-      .then(setArchives)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
+    loadArchives().finally(() => setLoading(false));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleView(id) {
     setDetailLoading(true);
@@ -333,6 +338,18 @@ export default function Archive() {
       .then(setSelected)
       .catch((e) => setError(e.message))
       .finally(() => setDetailLoading(false));
+  }
+
+  async function handleDelete(id) {
+    try {
+      await deleteArchive(id);
+      // Clear detail pane if the deleted snapshot was open.
+      if (selected?.id === id) setSelected(null);
+      setDeleteConfirm(null);
+      await loadArchives();
+    } catch (e) {
+      setError(e.message);
+    }
   }
 
   if (loading) return <div className="grid-status">Loading…</div>;
@@ -391,6 +408,30 @@ export default function Archive() {
                   >
                     View →
                   </button>
+                  {deleteConfirm === a.id ? (
+                    <>
+                      <span className="ws-snap-delete-confirm">Delete?</span>
+                      <button
+                        className="action-btn action-btn--danger"
+                        onClick={(e) => { e.stopPropagation(); handleDelete(a.id); }}
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        className="action-btn"
+                        onClick={(e) => { e.stopPropagation(); setDeleteConfirm(null); }}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      className="action-btn"
+                      onClick={(e) => { e.stopPropagation(); setDeleteConfirm(a.id); }}
+                    >
+                      Delete
+                    </button>
+                  )}
                 </div>
               </li>
             ))}

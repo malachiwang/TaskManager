@@ -717,6 +717,20 @@ thead .meta-col {
   color: var(--muted-2);
 }
 
+.action-btn--danger {
+  color: var(--urg-crit);
+}
+
+.action-btn--danger:hover {
+  color: var(--urg-crit);
+  opacity: 0.75;
+}
+
+.ws-snap-delete-confirm {
+  font-size: 11px;
+  color: var(--urg-crit);
+}
+
 /* -------------------------------------------------------------------------
    Modal overlay and card
    ---------------------------------------------------------------------- */
