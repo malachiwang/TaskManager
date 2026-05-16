@@ -15,6 +15,7 @@ import TaskRow from './TaskRow.jsx';
 import TaskModal from './TaskModal.jsx';
 import EditBar from './EditBar.jsx';
 import { KBD_LEGEND } from '../keybinds.js';
+import { FILTERS, FILTER_LABELS, taskPassesFilter } from '../filters.js';
 
 // ---------------------------------------------------------------------------
 // Date helpers
@@ -151,6 +152,10 @@ export default function TaskGrid() {
   const [selectedCell, setSelectedCell] = useState(null);
   const [confirmReset, setConfirmReset] = useState(false);
 
+  // Filtering / search state — Phase 1.
+  const [activeFilter, setActiveFilter] = useState(FILTERS.ALL);
+  const [searchQuery, setSearchQuery] = useState('');
+
   // Column widths — stored as user overrides; missing keys fall back to DEFAULT_WIDTHS.
   const [colWidths, setColWidths] = useState(() => {
     try {
@@ -168,6 +173,40 @@ export default function TaskGrid() {
 
   // Derive computed layout (widths + sticky offsets) from overrides.
   const colLayout = useMemo(() => computeColLayout(colWidths), [colWidths]);
+
+  // ---------------------------------------------------------------------------
+  // Filtering — applied client-side over the full tasks array.
+  // filteredTasks is the source of truth for the rendered grid and keyboard nav.
+  // ---------------------------------------------------------------------------
+
+  const filteredTasks = useMemo(() => {
+    let result = tasks;
+    if (activeFilter !== FILTERS.ALL) {
+      result = result.filter((t) => taskPassesFilter(t, activeFilter));
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      result = result.filter(
+        (t) =>
+          (t.name    && t.name.toLowerCase().includes(q)) ||
+          (t.subtask && t.subtask.toLowerCase().includes(q)) ||
+          (t.category && t.category.toLowerCase().includes(q)) ||
+          (t.notes   && t.notes.toLowerCase().includes(q)),
+      );
+    }
+    return result;
+  }, [tasks, activeFilter, searchQuery]);
+
+  // Group filtered tasks by section — empty sections are hidden automatically.
+  const taskSections = useMemo(() => {
+    const map = new Map();
+    for (const task of filteredTasks) {
+      const name = task.section?.trim() || '(no section)';
+      if (!map.has(name)) map.set(name, []);
+      map.get(name).push(task);
+    }
+    return Array.from(map.entries()); // [[sectionName, tasks[]], …]
+  }, [filteredTasks]);
 
   // ---------------------------------------------------------------------------
   // Data fetching — reruns when month changes (dates reference changes)
@@ -343,21 +382,27 @@ export default function TaskGrid() {
   const handlersRef     = useRef({});
 
   // Sync refs each render — always current before any async event fires.
+  // tasksRef uses filteredTasks so keyboard nav stays within the visible set.
   selectedCellRef.current = selectedCell;
-  tasksRef.current        = tasks;
+  tasksRef.current        = filteredTasks;
   datesRef.current        = dates;
   completionsRef.current  = completions;
   modalOpenRef.current    = modalOpen;
   handlersRef.current     = { handleIncrement, handleClear, handleSetCount, openAdd, openEdit, setSelectedCell, closeModal };
 
-  // Feature 3: clear selectedCell when the selected task disappears from tasks[]
-  // (covers soft-delete, external changes; handleDelete already calls setSelectedCell(null)
-  // but this guards the general case without duplicating the check there).
+  // Clear selectedCell when the selected task is no longer visible in filteredTasks.
+  // Covers: soft-delete, activeFilter change hiding the row, search hiding the row.
   useEffect(() => {
-    if (selectedCellRef.current && !tasks.find((t) => t.id === selectedCellRef.current.taskId)) {
+    if (selectedCellRef.current && !filteredTasks.find((t) => t.id === selectedCellRef.current.taskId)) {
       setSelectedCell(null);
     }
-  }, [tasks]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filteredTasks]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Also clear selectedCell immediately when the active filter changes,
+  // since the new filter may show a completely different task set.
+  useEffect(() => {
+    setSelectedCell(null);
+  }, [activeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Register once on mount; TaskGrid only mounts on the Grid tab, so the
   // handler is automatically removed when the user switches to another tab.
@@ -538,18 +583,6 @@ export default function TaskGrid() {
     </div>
   );
 
-  // Group tasks by section for divider rows — preserves existing task order.
-  // Sections appear in the order they are first encountered in the task array.
-  const taskSections = (() => {
-    const map = new Map();
-    for (const task of tasks) {
-      const name = task.section?.trim() || '(no section)';
-      if (!map.has(name)) map.set(name, []);
-      map.get(name).push(task);
-    }
-    return Array.from(map.entries()); // [[sectionName, tasks[]], …]
-  })();
-
   return (
     <>
       {/* ── Tier 1: Operations shelf — ink dark, primary actions only ── */}
@@ -598,6 +631,33 @@ export default function TaskGrid() {
           <span className="ws-status-pill ws-status-pill--dim">synced: never</span>
           <span className="ws-kbd-legend">{KBD_LEGEND}</span>
         </div>
+      </div>
+
+      {/* ── Filter bar — pills + search, sits between header and inspector ── */}
+      <div className="ws-filter-bar">
+        <div className="ws-filter-pills">
+          {Object.values(FILTERS).map((f) => (
+            <button
+              key={f}
+              className={`ws-filter-pill${activeFilter === f ? ' ws-filter-pill--active' : ''}`}
+              onClick={() => setActiveFilter(f)}
+            >
+              {FILTER_LABELS[f]}
+            </button>
+          ))}
+        </div>
+        <input
+          className="ws-filter-input"
+          type="search"
+          placeholder="Search tasks…"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+        {filteredTasks.length !== tasks.length && (
+          <span className="ws-filter-count">
+            {filteredTasks.length} of {tasks.length}
+          </span>
+        )}
       </div>
 
       {/* ── Inspector strip — compositionally framed EditBar ── */}
@@ -724,6 +784,9 @@ export default function TaskGrid() {
             No tasks found. Click <strong>+ Add Task</strong> or run{' '}
             <code>python -m backend.seed</code> to add sample data.
           </div>
+        )}
+        {tasks.length > 0 && filteredTasks.length === 0 && (
+          <div className="grid-status">No tasks match the current filter.</div>
         )}
       </div>
       </div>
