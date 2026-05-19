@@ -3258,6 +3258,37 @@ select.task-modal-input {
   margin-left: 2px;
 }
 
+/* Group by selector — Grouping Modes Phase 3 */
+.ws-group-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted-2);
+  white-space: nowrap;
+  margin-left: 6px;
+  cursor: default;
+  user-select: none;
+}
+
+.ws-group-select {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-2);
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 1px 4px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.ws-group-select:focus {
+  outline: none;
+  border-color: var(--ink-3);
+}
+
 /* Collapse to single column on narrow screens */
 @media (max-width: 860px) {
   .ws-settings-layout {

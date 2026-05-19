@@ -16,6 +16,7 @@ import TaskModal from './TaskModal.jsx';
 import EditBar from './EditBar.jsx';
 import { KBD_LEGEND } from '../keybinds.js';
 import { FILTERS, FILTER_LABELS, taskPassesFilter } from '../filters.js';
+import { GROUP_MODES, GROUP_MODE_LABELS, groupTasks } from '../grouping.js';
 
 // ---------------------------------------------------------------------------
 // Date helpers
@@ -156,6 +157,11 @@ export default function TaskGrid() {
   const [activeFilter, setActiveFilter] = useState(FILTERS.ALL);
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Grouping mode — Phase 3. Persisted to localStorage.
+  const [groupMode, setGroupMode] = useState(
+    () => localStorage.getItem('taskos-group-mode') || GROUP_MODES.SECTION,
+  );
+
   // Column widths — stored as user overrides; missing keys fall back to DEFAULT_WIDTHS.
   const [colWidths, setColWidths] = useState(() => {
     try {
@@ -170,6 +176,11 @@ export default function TaskGrid() {
   useEffect(() => {
     localStorage.setItem(LS_KEY, JSON.stringify(colWidths));
   }, [colWidths]);
+
+  // Persist groupMode to localStorage.
+  useEffect(() => {
+    localStorage.setItem('taskos-group-mode', groupMode);
+  }, [groupMode]);
 
   // Derive computed layout (widths + sticky offsets) from overrides.
   const colLayout = useMemo(() => computeColLayout(colWidths), [colWidths]);
@@ -197,16 +208,19 @@ export default function TaskGrid() {
     return result;
   }, [tasks, activeFilter, searchQuery]);
 
-  // Group filtered tasks by section — empty sections are hidden automatically.
-  const taskSections = useMemo(() => {
-    const map = new Map();
-    for (const task of filteredTasks) {
-      const name = task.section?.trim() || '(no section)';
-      if (!map.has(name)) map.set(name, []);
-      map.get(name).push(task);
-    }
-    return Array.from(map.entries()); // [[sectionName, tasks[]], …]
-  }, [filteredTasks]);
+  // Group filtered tasks by the current groupMode.
+  // groupTasks() suppresses empty groups automatically and computes metadata.
+  const groupedTasks = useMemo(
+    () => groupTasks(filteredTasks, groupMode),
+    [filteredTasks, groupMode],
+  );
+
+  // Flat task list in visual render order — used for keyboard navigation.
+  // CRITICAL: tasksRef.current must point here, not at filteredTasks.
+  const flatGroupedTasks = useMemo(
+    () => groupedTasks.flatMap((g) => g.tasks),
+    [groupedTasks],
+  );
 
   // ---------------------------------------------------------------------------
   // Data fetching — reruns when month changes (dates reference changes)
@@ -382,27 +396,32 @@ export default function TaskGrid() {
   const handlersRef     = useRef({});
 
   // Sync refs each render — always current before any async event fires.
-  // tasksRef uses filteredTasks so keyboard nav stays within the visible set.
+  // tasksRef uses flatGroupedTasks so keyboard nav follows visual render order.
   selectedCellRef.current = selectedCell;
-  tasksRef.current        = filteredTasks;
+  tasksRef.current        = flatGroupedTasks;
   datesRef.current        = dates;
   completionsRef.current  = completions;
   modalOpenRef.current    = modalOpen;
   handlersRef.current     = { handleIncrement, handleClear, handleSetCount, openAdd, openEdit, setSelectedCell, closeModal };
 
-  // Clear selectedCell when the selected task is no longer visible in filteredTasks.
-  // Covers: soft-delete, activeFilter change hiding the row, search hiding the row.
+  // Clear selectedCell when the selected task is no longer in the flat grouped list.
+  // Covers: soft-delete, filter change hiding the row, search hiding the row.
   useEffect(() => {
-    if (selectedCellRef.current && !filteredTasks.find((t) => t.id === selectedCellRef.current.taskId)) {
+    if (selectedCellRef.current && !flatGroupedTasks.find((t) => t.id === selectedCellRef.current.taskId)) {
       setSelectedCell(null);
     }
-  }, [filteredTasks]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [flatGroupedTasks]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Also clear selectedCell immediately when the active filter changes,
   // since the new filter may show a completely different task set.
   useEffect(() => {
     setSelectedCell(null);
   }, [activeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Clear selectedCell when groupMode changes — render order may change completely.
+  useEffect(() => {
+    setSelectedCell(null);
+  }, [groupMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Register once on mount; TaskGrid only mounts on the Grid tab, so the
   // handler is automatically removed when the user switches to another tab.
@@ -658,6 +677,18 @@ export default function TaskGrid() {
             {filteredTasks.length} of {tasks.length}
           </span>
         )}
+        <label className="ws-group-label">
+          <span>Group</span>
+          <select
+            className="ws-group-select"
+            value={groupMode}
+            onChange={(e) => setGroupMode(e.target.value)}
+          >
+            {Object.values(GROUP_MODES).map((mode) => (
+              <option key={mode} value={mode}>{GROUP_MODE_LABELS[mode]}</option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {/* ── Inspector strip — compositionally framed EditBar ── */}
@@ -732,50 +763,43 @@ export default function TaskGrid() {
             </tr>
           </thead>
           <tbody>
-            {taskSections.map(([sectionName, sectionTasks]) => {
-              const pausedCount = sectionTasks.filter(t => t.is_paused).length;
-              const urgencies = sectionTasks
-                .filter(t => !t.is_paused && typeof t.urgency === 'number')
-                .map(t => t.urgency);
-              const avgUrg = urgencies.length > 0
-                ? (urgencies.reduce((a, b) => a + b, 0) / urgencies.length).toFixed(1)
-                : null;
-              return (
-                <Fragment key={sectionName}>
+            {groupedTasks.map((group) => (
+              <Fragment key={group.key}>
+                {group.label !== null && (
                   <tr className="ws-section-row">
                     {/* Frozen td: sticky left, spans all 8 frozen columns.
                         Uses the same position:sticky mechanism as TaskRow sticky cells —
                         directly on the <td>, not a child element. Avoids jank. */}
                     <td className="ws-section-frozen" colSpan={8}>
-                      <span className="ws-section-title">{sectionName}</span>
+                      <span className="ws-section-title">{group.label}</span>
                       <span className="ws-section-meta">
-                        {sectionTasks.length} task{sectionTasks.length !== 1 ? 's' : ''}
-                        {pausedCount > 0 ? ` · ${pausedCount} paused` : ''}
-                        {avgUrg !== null ? ` · avg urg ${avgUrg}` : ''}
+                        {group.tasks.length} task{group.tasks.length !== 1 ? 's' : ''}
+                        {group.pausedCount > 0 ? ` · ${group.pausedCount} paused` : ''}
+                        {group.avgUrgency !== null ? ` · avg urg ${group.avgUrgency}` : ''}
                       </span>
                     </td>
                     {/* Overflow td: spans the 3 non-sticky meta cols + all date cols,
                         provides background colour across the full row width. */}
                     <td className="ws-section-overflow" colSpan={3 + dates.length}></td>
                   </tr>
-                  {sectionTasks.map((task) => (
-                    <TaskRow
-                      key={task.id}
-                      task={task}
-                      dates={dates}
-                      todayStr={todayStr}
-                      completions={completions}
-                      selectedCell={selectedCell}
-                      colLayout={colLayout}
-                      onIncrement={handleIncrement}
-                      onClear={handleClear}
-                      onEdit={openEdit}
-                      onSelect={handleSelect}
-                    />
-                  ))}
-                </Fragment>
-              );
-            })}
+                )}
+                {group.tasks.map((task) => (
+                  <TaskRow
+                    key={task.id}
+                    task={task}
+                    dates={dates}
+                    todayStr={todayStr}
+                    completions={completions}
+                    selectedCell={selectedCell}
+                    colLayout={colLayout}
+                    onIncrement={handleIncrement}
+                    onClear={handleClear}
+                    onEdit={openEdit}
+                    onSelect={handleSelect}
+                  />
+                ))}
+              </Fragment>
+            ))}
           </tbody>
         </table>
 
