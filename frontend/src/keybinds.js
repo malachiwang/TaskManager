@@ -21,5 +21,33 @@ export const KEYBINDS = {
   CLEAR_SELECTION: { key: 'Escape',     shift: false, label: 'Esc clear'  },
 };
 
-// Compact single-line legend text for display in the sheet header.
+// Compact single-line legend text — kept for reference, no longer rendered inline.
 export const KBD_LEGEND = '↵ mark  ⇧↵ −1  ←↑↓→ move  E edit  N new  Esc clear';
+
+// Structured shortcut reference for the keyboard help panel — P4.
+// Groups: Navigation, Editing, View.
+export const KEYBIND_HELP = [
+  {
+    group: 'Navigation',
+    items: [
+      { keys: '↑ / ↓', desc: 'Move selection between tasks' },
+      { keys: '← / →', desc: 'Move selection between dates' },
+    ],
+  },
+  {
+    group: 'Editing',
+    items: [
+      { keys: '↵',     desc: 'Increment completion for selected cell' },
+      { keys: '⇧ ↵',   desc: 'Decrement completion for selected cell' },
+      { keys: 'E',     desc: 'Edit the selected task' },
+      { keys: 'N',     desc: 'Add a new task' },
+    ],
+  },
+  {
+    group: 'View',
+    items: [
+      { keys: 'Esc', desc: 'Close modal, close help, or clear selection' },
+      { keys: '?',   desc: 'Show or hide keyboard shortcuts' },
+    ],
+  },
+];

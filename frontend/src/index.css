@@ -3258,6 +3258,149 @@ select.task-modal-input {
   margin-left: 2px;
 }
 
+/* ── Keyboard help trigger + panel — P4 ── */
+
+/* Anchor wrapper — establishes the absolute positioning context for the panel */
+.ws-kbd-help-anchor {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ? trigger button */
+.ws-kbd-help-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted-2);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  cursor: pointer;
+  line-height: 1;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+
+.ws-kbd-help-btn:hover {
+  color: var(--ink-2);
+  border-color: var(--muted-2);
+  background: var(--row-hover-bg);
+}
+
+.ws-kbd-help-btn[aria-expanded="true"] {
+  color: var(--ink);
+  border-color: var(--muted);
+  background: var(--row-hover-bg);
+}
+
+/* Panel — absolute dropdown below the anchor */
+.ws-kbd-help-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 200;
+  width: 290px;
+  background: var(--bg-panel);
+  border: 1px solid var(--grid-border);
+  border-radius: 4px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22), 0 1px 4px rgba(0, 0, 0, 0.10);
+  overflow: hidden;
+}
+
+/* Panel header row */
+.ws-kbd-help-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px 6px;
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-2);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* × close button inside panel header */
+.ws-kbd-help-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--muted-2);
+  background: transparent;
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.ws-kbd-help-close:hover {
+  color: var(--ink);
+  background: var(--row-hover-bg);
+}
+
+.ws-kbd-help-close:focus-visible {
+  outline: 2px solid var(--muted-2);
+  outline-offset: 1px;
+}
+
+/* Shortcut group section */
+.ws-kbd-help-section {
+  padding: 6px 10px 5px;
+  border-bottom: 1px solid var(--rule-2);
+}
+
+.ws-kbd-help-section:last-child {
+  border-bottom: none;
+}
+
+/* Group title */
+.ws-kbd-help-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted-2);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 3px;
+}
+
+/* Shortcut row */
+.ws-kbd-help-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 2px 0;
+}
+
+/* Key label */
+.ws-kbd-help-key {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-2);
+  white-space: nowrap;
+  min-width: 48px;
+}
+
+/* Description */
+.ws-kbd-help-desc {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
 /* Group by selector — Grouping Modes Phase 3 */
 .ws-group-label {
   display: inline-flex;

@@ -14,7 +14,7 @@ import {
 import TaskRow from './TaskRow.jsx';
 import TaskModal from './TaskModal.jsx';
 import EditBar from './EditBar.jsx';
-import { KBD_LEGEND } from '../keybinds.js';
+import KeyboardHelp from './KeyboardHelp.jsx';
 import { FILTERS, FILTER_LABELS, taskPassesFilter } from '../filters.js';
 import { GROUP_MODES, GROUP_MODE_LABELS, groupTasks } from '../grouping.js';
 
@@ -161,6 +161,9 @@ export default function TaskGrid() {
   const [groupMode, setGroupMode] = useState(
     () => localStorage.getItem('taskos-group-mode') || GROUP_MODES.SECTION,
   );
+
+  // Keyboard help panel — P4.
+  const [helpOpen, setHelpOpen] = useState(false);
 
   // Column widths — stored as user overrides; missing keys fall back to DEFAULT_WIDTHS.
   const [colWidths, setColWidths] = useState(() => {
@@ -388,12 +391,19 @@ export default function TaskGrid() {
   // re-registering on every render. Assigned synchronously each render cycle.
   // ---------------------------------------------------------------------------
 
-  const selectedCellRef = useRef(null);
-  const tasksRef        = useRef([]);
-  const datesRef        = useRef([]);
-  const completionsRef  = useRef({});
-  const modalOpenRef    = useRef(false);
-  const handlersRef     = useRef({});
+  const selectedCellRef    = useRef(null);
+  const tasksRef           = useRef([]);
+  const datesRef           = useRef([]);
+  const completionsRef     = useRef({});
+  const modalOpenRef       = useRef(false);
+  const handlersRef        = useRef({});
+  const helpOpenRef        = useRef(false);
+  const helpBtnRef         = useRef(null);
+  const helpPanelRef       = useRef(null);
+  const helpCloseBtnRef    = useRef(null);
+  // When true, the next helpOpen→false cycle skips returning focus to the trigger.
+  // Used by click-outside close so natural click focus is not overridden.
+  const skipFocusReturnRef = useRef(false);
 
   // Sync refs each render — always current before any async event fires.
   // tasksRef uses flatGroupedTasks so keyboard nav follows visual render order.
@@ -402,7 +412,8 @@ export default function TaskGrid() {
   datesRef.current        = dates;
   completionsRef.current  = completions;
   modalOpenRef.current    = modalOpen;
-  handlersRef.current     = { handleIncrement, handleClear, handleSetCount, openAdd, openEdit, setSelectedCell, closeModal };
+  helpOpenRef.current     = helpOpen;
+  handlersRef.current     = { handleIncrement, handleClear, handleSetCount, openAdd, openEdit, setSelectedCell, closeModal, setHelpOpen };
 
   // Clear selectedCell when the selected task is no longer in the flat grouped list.
   // Covers: soft-delete, filter change hiding the row, search hiding the row.
@@ -423,25 +434,61 @@ export default function TaskGrid() {
     setSelectedCell(null);
   }, [groupMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Close help panel when user clicks outside both the panel and the trigger button.
+  useEffect(() => {
+    if (!helpOpen) return;
+    function onMouseDown(e) {
+      if (
+        helpPanelRef.current?.contains(e.target) ||
+        helpBtnRef.current?.contains(e.target)
+      ) return;
+      // Skip focus-return so the natural click target keeps focus.
+      skipFocusReturnRef.current = true;
+      setHelpOpen(false);
+    }
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [helpOpen]);
+
+  // Focus management: move focus into panel on open; return to trigger on close.
+  useEffect(() => {
+    if (helpOpen) {
+      helpCloseBtnRef.current?.focus();
+    } else if (!skipFocusReturnRef.current) {
+      helpBtnRef.current?.focus();
+    } else {
+      skipFocusReturnRef.current = false;
+    }
+  }, [helpOpen]);
+
   // Register once on mount; TaskGrid only mounts on the Grid tab, so the
   // handler is automatically removed when the user switches to another tab.
   useEffect(() => {
     function onKeyDown(e) {
       const {
         handleIncrement, handleClear, handleSetCount,
-        openAdd, openEdit, setSelectedCell, closeModal,
+        openAdd, openEdit, setSelectedCell, closeModal, setHelpOpen,
       } = handlersRef.current;
       const sel   = selectedCellRef.current;
       const tasks = tasksRef.current;
       const dates = datesRef.current;
 
-      // Feature 1: Escape is handled before typing/modal guards.
-      // Priority: close modal → clear selection → no-op.
+      // Escape — three-level priority. Modal close is pre-guard (works while typing
+      // inside a modal input). Help-close and selection-clear respect the typing guard.
       if (e.key === 'Escape' && !e.shiftKey) {
         if (modalOpenRef.current) {
           closeModal();
-        } else if (sel) {
-          setSelectedCell(null);
+          return;
+        }
+        const tag2 = document.activeElement?.tagName?.toLowerCase();
+        const isTyping = ['input', 'textarea', 'select'].includes(tag2)
+          || document.activeElement?.isContentEditable;
+        if (!isTyping) {
+          if (helpOpenRef.current) {
+            setHelpOpen(false);
+          } else if (sel) {
+            setSelectedCell(null);
+          }
         }
         return;
       }
@@ -463,6 +510,12 @@ export default function TaskGrid() {
         if (!sel) return;
         const task = tasks.find((t) => t.id === sel.taskId);
         if (task) openEdit(task);
+        return;
+      }
+
+      // ? — toggle keyboard help panel (no selection required)
+      if (e.key === '?') {
+        setHelpOpen((o) => !o);
         return;
       }
 
@@ -648,7 +701,26 @@ export default function TaskGrid() {
           <span className="ws-status-pill ws-status-pill--ok">local</span>
           <span className="ws-status-pill ws-status-pill--ok">SQLite</span>
           <span className="ws-status-pill ws-status-pill--dim">synced: never</span>
-          <span className="ws-kbd-legend">{KBD_LEGEND}</span>
+          <div className="ws-kbd-help-anchor">
+            <button
+              ref={helpBtnRef}
+              type="button"
+              className="ws-kbd-help-btn"
+              aria-label="Keyboard shortcuts"
+              aria-haspopup="dialog"
+              aria-expanded={helpOpen}
+              onClick={() => setHelpOpen((o) => !o)}
+            >
+              ?
+            </button>
+            {helpOpen && (
+              <KeyboardHelp
+                panelRef={helpPanelRef}
+                closeButtonRef={helpCloseBtnRef}
+                onClose={() => setHelpOpen(false)}
+              />
+            )}
+          </div>
         </div>
       </div>
 
