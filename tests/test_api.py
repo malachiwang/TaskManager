@@ -483,6 +483,102 @@ class TestDashboard:
 
 
 # ---------------------------------------------------------------------------
+# Dashboard graph data (P6)
+# ---------------------------------------------------------------------------
+
+class TestDashboardGraphs:
+    def test_active_count_present(self, client):
+        create_task(client, name="A")
+        create_task(client, name="B")
+        data = client.get("/dashboard").json()
+        assert "active_count" in data
+        assert data["active_count"] == 2
+
+    def test_active_count_excludes_paused(self, client):
+        a = create_task(client, name="Active")
+        p = create_task(client, name="Paused")
+        client.patch(f"/tasks/{p['id']}", params={"is_paused": True})
+        assert client.get("/dashboard").json()["active_count"] == 1
+
+    def test_urgency_distribution_keys_present(self, client):
+        data = client.get("/dashboard").json()
+        assert "urgency_distribution" in data
+        dist = data["urgency_distribution"]
+        for key in ("critical", "high", "noticeable", "low"):
+            assert key in dist
+            assert isinstance(dist[key], int)
+            assert dist[key] >= 0
+
+    def test_urgency_distribution_sums_to_active_count(self, client):
+        for i in range(4):
+            create_task(client, name=f"Task {i}", priority=i + 3)
+        data = client.get("/dashboard").json()
+        dist = data["urgency_distribution"]
+        total = sum(dist.values())
+        assert total == data["active_count"]
+
+    def test_urgency_distribution_excludes_paused(self, client):
+        active = create_task(client, name="Active", priority=9)
+        paused = create_task(client, name="Paused", priority=9)
+        client.patch(f"/tasks/{paused['id']}", params={"is_paused": True})
+        data = client.get("/dashboard").json()
+        dist = data["urgency_distribution"]
+        assert sum(dist.values()) == 1  # only the active task
+
+    def test_completion_trend_present(self, client):
+        data = client.get("/dashboard").json()
+        assert "completion_trend" in data
+
+    def test_completion_trend_has_30_entries(self, client):
+        trend = client.get("/dashboard").json()["completion_trend"]
+        assert len(trend) == 30
+
+    def test_completion_trend_entry_shape(self, client):
+        trend = client.get("/dashboard").json()["completion_trend"]
+        for entry in trend:
+            assert "date" in entry
+            assert "count" in entry
+            assert isinstance(entry["count"], int)
+            assert entry["count"] >= 0
+
+    def test_completion_trend_ordered_oldest_first(self, client):
+        trend = client.get("/dashboard").json()["completion_trend"]
+        dates = [e["date"] for e in trend]
+        assert dates == sorted(dates)
+
+    def test_completion_trend_zero_filled(self, client):
+        # No completions — all counts must be 0
+        trend = client.get("/dashboard").json()["completion_trend"]
+        assert all(e["count"] == 0 for e in trend)
+
+    def test_completion_trend_date_range(self, client):
+        from datetime import date, timedelta
+        trend = client.get("/dashboard").json()["completion_trend"]
+        today = date.today().isoformat()
+        oldest = (date.today() - timedelta(days=29)).isoformat()
+        assert trend[0]["date"] == oldest
+        assert trend[-1]["date"] == today
+
+    def test_completion_trend_sums_completion_count(self, client):
+        # A single cell with count=3 should contribute 3, not 1
+        t = create_task(client, name="Multi")
+        client.post("/completions", params={"task_id": t["id"], "completion_date": TODAY})
+        client.patch(f"/completions/{t['id']}/{TODAY}", params={"count": 3})
+        trend = client.get("/dashboard").json()["completion_trend"]
+        today_entry = next(e for e in trend if e["date"] == TODAY)
+        assert today_entry["count"] == 3
+
+    def test_completion_trend_includes_paused_task_completions(self, client):
+        # Completions from now-paused tasks should still show in trend
+        t = create_task(client, name="Will Pause")
+        client.post("/completions", params={"task_id": t["id"], "completion_date": TODAY})
+        client.patch(f"/tasks/{t['id']}", params={"is_paused": True})
+        trend = client.get("/dashboard").json()["completion_trend"]
+        today_entry = next(e for e in trend if e["date"] == TODAY)
+        assert today_entry["count"] == 1
+
+
+# ---------------------------------------------------------------------------
 # Archives
 # ---------------------------------------------------------------------------
 

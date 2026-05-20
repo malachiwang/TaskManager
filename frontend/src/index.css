@@ -1781,6 +1781,192 @@ thead .meta-col {
 }
 
 /* -------------------------------------------------------------------------
+   Dashboard graph strip (P6)
+   ---------------------------------------------------------------------- */
+
+.ws-graph-strip {
+  display: flex;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--rule);
+  flex-shrink: 0;
+}
+
+.ws-graph-card {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  background: var(--bg-app);
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+}
+
+.ws-graph-title {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+  margin-bottom: 5px;
+}
+
+.ws-graph-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted-2);
+  margin-top: 4px;
+}
+
+/* 7D Pace card */
+.dash-pace-primary {
+  margin: 4px 0 2px;
+  line-height: 1.1;
+}
+
+.dash-pace-count {
+  font-family: var(--font-serif);
+  font-size: 26px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.dash-pace-unit {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  margin-left: 2px;
+}
+
+.dash-pace-none {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted-2);
+}
+
+.dash-pace-delta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  margin-bottom: 2px;
+  min-height: 14px;
+}
+
+.dash-pace-up  { color: var(--good); }
+.dash-pace-dn  { color: var(--urg-hi); }
+.dash-pace-new { color: var(--muted); }
+
+/* Sparkline SVG */
+.dash-sparkline {
+  display: block;
+  width: 100%;
+  height: 44px;
+}
+
+.dash-sparkline-bar {
+  fill: var(--accent);
+  opacity: 0.65;
+}
+
+/* Urgency distribution */
+.dash-urgdist {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dash-urgdist-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.dash-urgdist-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--muted-2);
+  width: 42px;
+  flex-shrink: 0;
+}
+
+.dash-urgdist-track {
+  flex: 1;
+  height: 7px;
+  background: var(--header-bg);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.dash-urgdist-fill {
+  height: 100%;
+  border-radius: 2px;
+  min-width: 2px;
+}
+
+/* Fill colors use the urgency CSS variables — no hardcoded hex */
+.dash-urgdist-fill.urg-critical   { background: var(--urg-crit); }
+.dash-urgdist-fill.urg-high       { background: var(--urg-hi); }
+.dash-urgdist-fill.urg-noticeable { background: var(--urg-mid); }
+.dash-urgdist-fill.urg-low        { background: var(--urg-low); }
+
+.dash-urgdist-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted-2);
+  width: 18px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* Active / paused ratio bar */
+.dash-ratio-bar {
+  display: flex;
+  height: 12px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--header-bg);
+  margin: 4px 0 2px;
+}
+
+.dash-ratio-empty {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted-2);
+  padding: 4px 0;
+}
+
+.dash-ratio-segment--active {
+  background: var(--accent);
+  opacity: 0.75;
+}
+
+.dash-ratio-segment--paused {
+  background: var(--muted-2);
+  opacity: 0.45;
+}
+
+/* Recent completions panel — wide chart body */
+.ws-frame-body--chart {
+  padding: 10px 12px 8px;
+}
+
+.dash-trend-labels {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--muted-2);
+  margin-top: 3px;
+}
+
+.dash-trend-total {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 5px;
+}
+
+/* -------------------------------------------------------------------------
    Archive page (§09)
    ---------------------------------------------------------------------- */
 

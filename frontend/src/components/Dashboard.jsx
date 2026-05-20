@@ -25,6 +25,85 @@ function UrgencyBar({ value, wide = false }) {
   );
 }
 
+// SVG bar sparkline — 30-day completion trend.
+function SparklineBar({ trend }) {
+  const maxCount = Math.max(...trend.map((d) => d.count), 1);
+  const W = 300, H = 44, GAP = 1;
+  const barW = (W - GAP * 29) / 30;
+  return (
+    <svg
+      className="dash-sparkline"
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      {trend.map((d, i) => {
+        const h = Math.max(2, (d.count / maxCount) * H);
+        return (
+          <rect
+            key={d.date}
+            x={i * (barW + GAP)}
+            y={H - h}
+            width={barW}
+            height={h}
+            className="dash-sparkline-bar"
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
+// 4-row urgency distribution bar chart.
+function UrgencyDist({ dist, total }) {
+  const bins = [
+    { key: 'critical',   label: 'Critical', cls: 'urg-critical' },
+    { key: 'high',       label: 'High',     cls: 'urg-high' },
+    { key: 'noticeable', label: 'Notice.',  cls: 'urg-noticeable' },
+    { key: 'low',        label: 'Low',      cls: 'urg-low' },
+  ];
+  return (
+    <div className="dash-urgdist">
+      {bins.map(({ key, label, cls }) => {
+        const count = dist[key] || 0;
+        const pct = total > 0 ? (count / total) * 100 : 0;
+        return (
+          <div key={key} className="dash-urgdist-row">
+            <span className="dash-urgdist-label">{label}</span>
+            <div className="dash-urgdist-track">
+              <div
+                className={`dash-urgdist-fill ${cls}`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <span className="dash-urgdist-count">{count}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Horizontal ratio bar — active vs paused.
+function RatioBar({ activeCount, pausedCount }) {
+  const total = activeCount + pausedCount;
+  if (total === 0) return <div className="dash-ratio-empty">No tasks</div>;
+  return (
+    <div className="dash-ratio-bar">
+      <div
+        className="dash-ratio-segment dash-ratio-segment--active"
+        style={{ width: `${(activeCount / total) * 100}%` }}
+        title={`Active: ${activeCount}`}
+      />
+      <div
+        className="dash-ratio-segment dash-ratio-segment--paused"
+        style={{ width: `${(pausedCount / total) * 100}%` }}
+        title={`Paused: ${pausedCount}`}
+      />
+    </div>
+  );
+}
+
 function nowLabel() {
   const d = new Date();
   const date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
@@ -49,9 +128,30 @@ export default function Dashboard() {
   if (error) return <div className="grid-status error">Error: {error}</div>;
   if (!data)  return <div className="grid-status">Loading…</div>;
 
-  const { top_5_urgent, category_summary, dormant_tasks, paused_count, never_done_count } = data;
+  const {
+    top_5_urgent, category_summary, dormant_tasks, paused_count, never_done_count,
+    active_count, urgency_distribution, completion_trend,
+  } = data;
 
   // ── Derived stats ────────────────────────────────────────────────────────
+
+  // Done in last 7 days — sum of the last 7 completion_trend entries.
+  const done7d = completion_trend.slice(-7).reduce((s, d) => s + d.count, 0);
+
+  // Previous 7-day window (days 14–8 ago) for pace comparison.
+  const prev7d = completion_trend.slice(-14, -7).reduce((s, d) => s + d.count, 0);
+
+  // Percent change vs previous window; null when prev is 0 (avoids divide-by-zero).
+  const paceChangePct = prev7d > 0 ? Math.round(((done7d - prev7d) / prev7d) * 100) : null;
+
+  // Best single day in the 30-day window.
+  const bestDay = Math.max(...completion_trend.map((d) => d.count), 0);
+
+  // Number of days in the last 7 with at least one completion.
+  const activeDays7d = completion_trend.slice(-7).filter((d) => d.count > 0).length;
+
+  // Total completions in the 30-day window.
+  const total30d = completion_trend.reduce((s, d) => s + d.count, 0);
 
   // Weighted average urgency from category_summary (active non-paused tasks).
   const catEntries = Object.entries(category_summary);
@@ -120,11 +220,11 @@ export default function Dashboard() {
           {peakUrgency !== '—' && <UrgencyBar value={parseFloat(peakUrgency)} wide />}
         </div>
 
-        {/* 3. Done in 7d — not derivable from current dashboard response */}
-        <div className="ws-stat-cell ws-stat-cell--dim">
+        {/* 3. Done in 7d — sum of last 7 completion_trend entries */}
+        <div className="ws-stat-cell">
           <div className="ws-stat-label">Done in 7d</div>
-          <div className="ws-stat-value">—</div>
-          <div className="ws-stat-delta">data unavailable</div>
+          <div className="ws-stat-value">{done7d}</div>
+          <div className="ws-stat-delta">completions, last 7 days</div>
         </div>
 
         {/* 4. Dormant 30d+ */}
@@ -143,6 +243,48 @@ export default function Dashboard() {
           <div className="ws-stat-label">Paused</div>
           <div className="ws-stat-value">{paused_count}</div>
           <div className="ws-stat-delta">excluded from pressure</div>
+        </div>
+
+      </div>
+
+      {/* ── Graph strip ── */}
+      <div className="ws-graph-strip">
+
+        <div className="ws-graph-card">
+          <div className="ws-graph-title">7D Pace</div>
+          <div className="dash-pace-primary">
+            {done7d === 0 && prev7d === 0 ? (
+              <span className="dash-pace-none">no activity</span>
+            ) : (
+              <>
+                <span className="dash-pace-count">{done7d}</span>
+                <span className="dash-pace-unit"> completions</span>
+              </>
+            )}
+          </div>
+          <div className="dash-pace-delta">
+            {paceChangePct !== null ? (
+              <span className={paceChangePct >= 0 ? 'dash-pace-up' : 'dash-pace-dn'}>
+                {paceChangePct >= 0 ? '+' : ''}{paceChangePct}% vs prev 7d
+              </span>
+            ) : done7d > 0 ? (
+              <span className="dash-pace-new">new activity</span>
+            ) : null}
+          </div>
+          <div className="ws-graph-sub">
+            best day: {bestDay} · {activeDays7d}/7 active days
+          </div>
+        </div>
+
+        <div className="ws-graph-card">
+          <div className="ws-graph-title">Urgency distribution</div>
+          <UrgencyDist dist={urgency_distribution} total={active_count} />
+        </div>
+
+        <div className="ws-graph-card">
+          <div className="ws-graph-title">Active / paused</div>
+          <RatioBar activeCount={active_count} pausedCount={paused_count} />
+          <div className="ws-graph-sub">{active_count} active · {paused_count} paused</div>
         </div>
 
       </div>
@@ -300,20 +442,24 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* ── Recent completions — deferred ── */}
+        {/* ── Recent completions — 30-day trend ── */}
         <div className="ws-frame">
           <div className="ws-frame-header">
             <span>Recent completions</span>
-            <span className="ws-frame-header-sub">unavailable from current data</span>
+            <span className="ws-frame-header-sub">
+              30-day total · all tasks · {completion_trend[0]?.date} → {completion_trend[29]?.date}
+            </span>
           </div>
-          <div className="ws-frame-body">
-            <p className="dash-deferred">
-              Recent completion history requires per-task completion counts over a date range.
-              The current <code>/dashboard</code> endpoint provides only <code>latest_completion</code> (most recent date) per task.
-            </p>
-            <p className="dash-deferred dash-deferred--planned">
-              Planned — requires <code>/dashboard</code> to include recent completion counts or a separate <code>/completions/recent</code> endpoint.
-            </p>
+          <div className="ws-frame-body ws-frame-body--chart">
+            <SparklineBar trend={completion_trend} />
+            <div className="dash-trend-labels">
+              <span>{completion_trend[0]?.date}</span>
+              <span>today</span>
+            </div>
+            <div className="dash-trend-total">
+              {total30d} completion{total30d !== 1 ? 's' : ''} in 30 days
+              {done7d > 0 ? ` · ${done7d} in the last 7` : ''}
+            </div>
           </div>
         </div>
 

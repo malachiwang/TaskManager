@@ -632,6 +632,42 @@ def dashboard():
         """
     ).fetchone()[0]
 
+    # active_count — explicit, avoids frontend re-derivation from category_summary
+    active_count = len(active_tasks)
+
+    # urgency_distribution — 4 bins, active non-paused only, matching urgencyClass thresholds
+    dist: dict[str, int] = {"critical": 0, "high": 0, "noticeable": 0, "low": 0}
+    for t in active_tasks:
+        u = t["urgency"]
+        if u >= 8:
+            dist["critical"] += 1
+        elif u >= 6:
+            dist["high"] += 1
+        elif u >= 3:
+            dist["noticeable"] += 1
+        else:
+            dist["low"] += 1
+
+    # completion_trend — last 30 days (today-29 through today), zero-filled, all tasks
+    trend_start = (today - timedelta(days=29)).isoformat()
+    trend_rows = conn.execute(
+        """
+        SELECT completion_date, SUM(completion_count) AS total
+        FROM completions
+        WHERE completion_date BETWEEN ? AND ?
+        GROUP BY completion_date
+        """,
+        (trend_start, today.isoformat()),
+    ).fetchall()
+    trend_map = {r["completion_date"]: r["total"] for r in trend_rows}
+    completion_trend = [
+        {
+            "date": (today - timedelta(days=29 - i)).isoformat(),
+            "count": trend_map.get((today - timedelta(days=29 - i)).isoformat(), 0),
+        }
+        for i in range(30)
+    ]
+
     conn.close()
     return {
         "top_5_urgent": top_5,
@@ -639,6 +675,9 @@ def dashboard():
         "dormant_tasks": dormant,
         "paused_count": paused_count,
         "never_done_count": never_done_count,
+        "active_count": active_count,
+        "urgency_distribution": dist,
+        "completion_trend": completion_trend,
     }
 
 
