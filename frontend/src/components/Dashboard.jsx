@@ -136,6 +136,56 @@ function HeatmapGrid({ heatmap }) {
   );
 }
 
+// Compact insight strip — computed from heatmap + trend, no backend changes.
+function fmtInsightDate(isoDate) {
+  const [y, m, day] = isoDate.split('-').map(Number);
+  return new Date(y, m - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function InsightStrip({ heatmap, trend }) {
+  const { rows } = heatmap;
+  const total30d = trend.reduce((s, d) => s + d.count, 0);
+
+  if (total30d === 0 || rows.length === 0) return null;
+
+  const bestEntry = trend.reduce(
+    (best, d) => d.count > best.count ? d : best,
+    { date: null, count: 0 },
+  );
+
+  const activeDays = trend.filter((d) => d.count > 0).length;
+
+  const totalAll = rows.reduce((s, r) => s + r.total, 0);
+  const concentrationPct = rows.length >= 2 && totalAll > 0
+    ? Math.round((rows[0].total / totalAll) * 100)
+    : null;
+
+  return (
+    <div className="dash-insight-strip">
+      <div className="dash-insight-chip">
+        <span className="dash-insight-label">Most active</span>
+        <span className="dash-insight-value">{rows[0].label} · {rows[0].total}</span>
+      </div>
+      {bestEntry.date && (
+        <div className="dash-insight-chip">
+          <span className="dash-insight-label">Best day</span>
+          <span className="dash-insight-value">{fmtInsightDate(bestEntry.date)} · {bestEntry.count}</span>
+        </div>
+      )}
+      <div className="dash-insight-chip">
+        <span className="dash-insight-label">Active days</span>
+        <span className="dash-insight-value">{activeDays}/30</span>
+      </div>
+      {concentrationPct !== null && (
+        <div className="dash-insight-chip">
+          <span className="dash-insight-label">Top section</span>
+          <span className="dash-insight-value">{concentrationPct}%</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Horizontal ratio bar — active vs paused.
 function RatioBar({ activeCount, pausedCount }) {
   const total = activeCount + pausedCount;
@@ -525,6 +575,7 @@ export default function Dashboard() {
           </div>
           <div className="ws-frame-body">
             <HeatmapGrid heatmap={completion_heatmap} />
+            <InsightStrip heatmap={completion_heatmap} trend={completion_trend} />
           </div>
         </div>
 
