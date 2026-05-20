@@ -29,6 +29,205 @@ function isWeekendDate(isoDate) {
   return new Date(y, m - 1, day).getDay() % 6 === 0;
 }
 
+function urgencyClass(u) {
+  if (u >= 8) return 'urg-critical';
+  if (u >= 6) return 'urg-high';
+  if (u >= 3) return 'urg-noticeable';
+  return 'urg-low';
+}
+
+// Local sparkline — no Dashboard import to avoid coupling.
+function ArchiveSparkline({ trend }) {
+  const maxCount = Math.max(...trend.map((d) => d.count), 1);
+  const W = 300, H = 40, GAP = 1;
+  const n = trend.length;
+  const barW = n > 1 ? (W - GAP * (n - 1)) / n : W;
+  return (
+    <svg
+      className="arch-sparkline"
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      {trend.map((d, i) => {
+        const h = Math.max(2, (d.count / maxCount) * H);
+        return (
+          <rect
+            key={d.date}
+            x={i * (barW + GAP)}
+            y={H - h}
+            width={barW}
+            height={h}
+            className="arch-sparkline-bar"
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Archive analytics — computed entirely from snapshot_data_json, no live state
+// ---------------------------------------------------------------------------
+
+function ArchiveAnalytics({ snapshot }) {
+  const tasks = snapshot.tasks ?? [];
+
+  if (tasks.length === 0) {
+    return (
+      <div className="arch-analytics">
+        <div className="arch-empty">No tasks in this archive.</div>
+      </div>
+    );
+  }
+
+  // ── Summary strip ─────────────────────────────────────────────────────
+  const totalTasks       = tasks.length;
+  const pausedCount      = tasks.filter((t) => t.is_paused).length;
+  const scheduledCount   = tasks.filter((t) => t.is_scheduled ?? false).length;
+  const totalCompletions = tasks.reduce(
+    (s, t) => s + Object.values(t.completions ?? {}).reduce((a, b) => a + b, 0), 0,
+  );
+  const noteCount = tasks.reduce(
+    (s, t) => s + Object.keys(t.cell_notes ?? {}).length, 0,
+  );
+  const rangeDays = snapshot.start_date && snapshot.end_date
+    ? buildDates(snapshot.start_date, snapshot.end_date).length
+    : null;
+
+  // ── Top urgent ────────────────────────────────────────────────────────
+  const topUrgent = tasks
+    .filter((t) => !t.is_paused && !(t.is_scheduled ?? false))
+    .sort((a, b) => (b.urgency ?? -Infinity) - (a.urgency ?? -Infinity))
+    .slice(0, 5);
+
+  // ── Section completion totals ─────────────────────────────────────────
+  const secMap = {};
+  for (const t of tasks) {
+    const sec = t.section?.trim() || '(no section)';
+    const count = Object.values(t.completions ?? {}).reduce((a, b) => a + b, 0);
+    secMap[sec] = (secMap[sec] ?? 0) + count;
+  }
+  const allSecEntries = Object.entries(secMap).sort((a, b) => b[1] - a[1]);
+  const nonZeroSecs   = allSecEntries.filter(([, c]) => c > 0);
+  const displaySecs   = (nonZeroSecs.length > 0 ? nonZeroSecs : allSecEntries).slice(0, 8);
+  const extraSecs     = nonZeroSecs.length > 8 ? nonZeroSecs.length - 8 : 0;
+  const maxSecCount   = displaySecs[0]?.[1] ?? 1;
+
+  // ── Range trend ───────────────────────────────────────────────────────
+  const hasDates = !!(snapshot.start_date && snapshot.end_date);
+  const trend = hasDates
+    ? buildDates(snapshot.start_date, snapshot.end_date).map((d) => ({
+        date: d,
+        count: tasks.reduce((s, t) => s + (t.completions?.[d] ?? 0), 0),
+      }))
+    : null;
+
+  return (
+    <div className="arch-analytics">
+
+      {/* ── Stat strip ── */}
+      <div className="arch-stat-strip">
+        {[
+          { label: 'Tasks',       value: totalTasks },
+          { label: 'Completions', value: totalCompletions },
+          { label: 'Notes',       value: noteCount },
+          { label: 'Paused',      value: pausedCount },
+          { label: 'Scheduled',   value: scheduledCount },
+          { label: 'Range',       value: rangeDays !== null ? `${rangeDays}d` : '—' },
+        ].map(({ label, value }) => (
+          <div key={label} className="arch-stat-chip">
+            <span className="arch-stat-label">{label}</span>
+            <span className="arch-stat-value">{value}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Two-panel grid: top urgent + section totals ── */}
+      <div className="arch-analytics-grid">
+
+        {/* Top urgent */}
+        <div className="arch-panel">
+          <div className="arch-panel-title">Top archived urgency</div>
+          {topUrgent.length === 0 ? (
+            <div className="arch-empty">No active urgent tasks in this archive.</div>
+          ) : (
+            <table className="arch-top-table">
+              <thead>
+                <tr>
+                  <th>Archived urg</th>
+                  <th>Task</th>
+                  <th>Section</th>
+                  <th>Days</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topUrgent.map((t) => (
+                  <tr key={t.id}>
+                    <td className={`arch-urg-num ${urgencyClass(t.urgency ?? 0)}`}>
+                      {t.urgency != null ? t.urgency.toFixed(1) : '—'}
+                    </td>
+                    <td className="arch-task-name" title={t.name}>{t.name}</td>
+                    <td className="arch-muted">{t.section || '—'}</td>
+                    <td className="arch-num">{t.days_since ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Section completion totals */}
+        <div className="arch-panel">
+          <div className="arch-panel-title">Section completions</div>
+          {totalCompletions === 0 ? (
+            <div className="arch-empty">No completions in this archive range.</div>
+          ) : (
+            <>
+              {displaySecs.map(([sec, count]) => (
+                <div key={sec} className="arch-sec-row">
+                  <span className="arch-sec-name" title={sec}>{sec}</span>
+                  <div className="arch-sec-bar-wrap">
+                    <div
+                      className="arch-sec-bar"
+                      style={{ width: `${maxSecCount > 0 ? (count / maxSecCount) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <span className="arch-sec-count">{count}</span>
+                </div>
+              ))}
+              {extraSecs > 0 && (
+                <div className="arch-sec-more">
+                  and {extraSecs} more section{extraSecs !== 1 ? 's' : ''}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+      </div>
+
+      {/* ── Range sparkline ── */}
+      {trend && (
+        <div className="arch-panel">
+          <div className="arch-panel-title">Range activity</div>
+          <div className="arch-sparkline-wrap">
+            <ArchiveSparkline trend={trend} />
+          </div>
+          <div className="arch-sparkline-labels">
+            <span>{snapshot.start_date}</span>
+            <span>{snapshot.end_date}</span>
+          </div>
+          <div className="arch-sparkline-total">
+            {totalCompletions} completion{totalCompletions !== 1 ? 's' : ''} across {trend.length} day{trend.length !== 1 ? 's' : ''}
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
 function ArchiveMiniGrid({ data }) {
   const { tasks, start_date, end_date } = data;
   const dates = buildDates(start_date, end_date);
@@ -494,6 +693,7 @@ export default function Archive() {
               {' · '}snapshot · read only
             </span>
           </div>
+          <ArchiveAnalytics snapshot={selected.snapshot_data_json} />
           <ArchiveMiniGrid data={selected.snapshot_data_json} />
         </div>
       )}

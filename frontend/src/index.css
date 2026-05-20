@@ -2451,6 +2451,215 @@ thead .meta-col {
 }
 
 /* -------------------------------------------------------------------------
+   Archive analytics (§09b)
+   ---------------------------------------------------------------------- */
+
+.arch-analytics {
+  font-family: var(--font-mono);
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Stat strip */
+.arch-stat-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.arch-stat-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--header-bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 4px 10px;
+  min-width: 52px;
+}
+
+.arch-stat-label {
+  font-size: 9px;
+  color: var(--muted-2);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.arch-stat-value {
+  font-size: 14px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+/* Two-panel grid */
+.arch-analytics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+@media (max-width: 600px) {
+  .arch-analytics-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Panel */
+.arch-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.arch-panel-title {
+  font-size: 9px;
+  color: var(--muted-2);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 2px;
+}
+
+/* Top urgent table */
+.arch-top-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  color: var(--ink);
+}
+
+.arch-top-table th {
+  text-align: left;
+  font-size: 9px;
+  color: var(--muted-2);
+  font-weight: 400;
+  padding: 0 4px 3px 0;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.arch-top-table td {
+  padding: 3px 4px 3px 0;
+  border-bottom: 1px solid var(--header-bg);
+  vertical-align: middle;
+}
+
+.arch-urg-num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.arch-task-name {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arch-muted {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.arch-num {
+  color: var(--muted);
+  font-size: 10px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Section completion rows */
+.arch-sec-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  min-height: 18px;
+}
+
+.arch-sec-name {
+  width: 100px;
+  flex-shrink: 0;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10px;
+}
+
+.arch-sec-bar-wrap {
+  flex: 1;
+  height: 6px;
+  background: var(--header-bg);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.arch-sec-bar {
+  height: 100%;
+  background: var(--muted);
+  border-radius: 2px;
+  min-width: 2px;
+}
+
+.arch-sec-count {
+  width: 28px;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 10px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.arch-sec-more {
+  font-size: 10px;
+  color: var(--muted-2);
+  margin-top: 2px;
+}
+
+/* Sparkline */
+.arch-sparkline-wrap {
+  width: 100%;
+  height: 40px;
+}
+
+.arch-sparkline {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.arch-sparkline-bar {
+  fill: var(--muted);
+}
+
+.arch-sparkline-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: var(--muted-2);
+  margin-top: 2px;
+}
+
+.arch-sparkline-total {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* Empty states */
+.arch-empty {
+  font-size: 11px;
+  color: var(--muted-2);
+  font-style: italic;
+  padding: 2px 0;
+}
+
+/* -------------------------------------------------------------------------
    Import banner — design report .ban pattern (§09)
    ---------------------------------------------------------------------- */
 
