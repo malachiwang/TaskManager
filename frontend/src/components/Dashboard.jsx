@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchDashboard } from '../api.js';
+import { fetchDashboard, fetchSnapshotPressure } from '../api.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -183,6 +183,104 @@ function InsightStrip({ heatmap, trend }) {
         </div>
       )}
     </div>
+  );
+}
+
+// Amber→orange→red color ramp for urgency heatmap cells.
+function pressureColor(value) {
+  if (value === null || value === undefined) return null;
+  if (value <= 0) return 'transparent';
+  const pct = Math.min(value / 10, 1);
+  const r = Math.round(200 + pct * 55);
+  const g = Math.round(140 - pct * 110);
+  const a = Math.max(0.18, pct).toFixed(2);
+  return `rgba(${r},${g},20,${a})`;
+}
+
+// Section × snapshot-date avg-urgency heatmap — reads from GET /snapshots/pressure.
+function PressureHeatmap() {
+  const [days, setDays] = useState(30);
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    setData(null);
+    fetchSnapshotPressure(days)
+      .then(setData)
+      .catch((e) => setError(e.message));
+  }, [days]);
+
+  const dayOptions = [7, 14, 30, 60, 90];
+
+  return (
+    <>
+      <div className="dash-pheat-controls">
+        {dayOptions.map((d) => (
+          <button
+            key={d}
+            type="button"
+            className={`dash-pheat-btn${days === d ? ' dash-pheat-btn--active' : ''}`}
+            onClick={() => setDays(d)}
+          >
+            {d}d
+          </button>
+        ))}
+      </div>
+      {error ? (
+        <div className="ws-empty">Error: {error}</div>
+      ) : !data ? (
+        <div className="ws-empty">Loading…</div>
+      ) : data.rows.length === 0 ? (
+        <div className="dash-pheat-empty">
+          No snapshot history yet. Visit the dashboard daily to build history.
+        </div>
+      ) : (
+        <div className="dash-pheat">
+          {data.dates.length > 7 && (
+            <div className="dash-pheat-axis">
+              <div className="dash-pheat-label" aria-hidden="true" />
+              <div className="dash-pheat-cells">
+                {data.dates.map((d, i) => (
+                  <div key={d} className="dash-pheat-axis-cell">
+                    {(i === 0 || i === data.dates.length - 1) ? d.slice(5) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {data.rows.map((row) => (
+            <div key={row.key} className="dash-pheat-row">
+              <div className="dash-pheat-label" title={row.label}>
+                <span className="dash-pheat-label-name">{row.label}</span>
+                <span className={`dash-pheat-label-avg ${urgencyClass(row.avg_urgency)}`}>
+                  {row.avg_urgency.toFixed(1)}
+                </span>
+              </div>
+              <div className="dash-pheat-cells">
+                {row.avg_values.map((val, i) => {
+                  const bg = pressureColor(val);
+                  return (
+                    <div
+                      key={data.dates[i]}
+                      className={`dash-pheat-cell${val === null ? ' dash-pheat-cell--null' : ''}`}
+                      style={bg && bg !== 'transparent' ? { background: bg } : undefined}
+                      title={val !== null
+                        ? `${row.label} · ${data.dates[i]} · avg ${val.toFixed(1)}`
+                        : `${row.label} · ${data.dates[i]} · no data`}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {data && data.snapshot_count < data.days_requested && (
+        <div className="dash-pheat-caption">
+          {data.snapshot_count} of {data.days_requested} snapshot days captured
+        </div>
+      )}
+    </>
   );
 }
 
@@ -576,6 +674,19 @@ export default function Dashboard() {
           <div className="ws-frame-body">
             <HeatmapGrid heatmap={completion_heatmap} />
             <InsightStrip heatmap={completion_heatmap} trend={completion_trend} />
+          </div>
+        </div>
+
+        {/* ── Pressure heatmap — section × historical snapshot dates ── */}
+        <div className="ws-frame ws-frame--full">
+          <div className="ws-frame-header">
+            <span>Pressure history</span>
+            <span className="ws-frame-header-sub">
+              section × snapshot date · avg urgency · paused &amp; scheduled excluded
+            </span>
+          </div>
+          <div className="ws-frame-body">
+            <PressureHeatmap />
           </div>
         </div>
 

@@ -60,6 +60,12 @@ export async function fetchDashboard() {
   return res.json();
 }
 
+export async function fetchSnapshotPressure(days = 30) {
+  const res = await fetch(`${BASE}/snapshots/pressure?days=${days}`);
+  if (!res.ok) throw new Error(`fetchSnapshotPressure failed: ${res.status}`);
+  return res.json();
+}
+
 export async function deleteTask(id) {
   const res = await fetch(`${BASE}/tasks/${id}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(`deleteTask failed: ${res.status}`);

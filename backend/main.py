@@ -825,6 +825,124 @@ def dashboard():
 
 
 # ---------------------------------------------------------------------------
+# Snapshot analytics
+# ---------------------------------------------------------------------------
+
+@app.get("/snapshots/pressure")
+def snapshot_pressure(days: int = Query(default=30, ge=1, le=90)):
+    """
+    Historical pressure heatmap from task_daily_snapshots.
+
+    Returns section × snapshot-date avg/max urgency.
+    Only includes dates where snapshots actually exist — no calendar zero-fill.
+    Paused and scheduled tasks are excluded (their urgency=0 would distort real pressure).
+    null in avg_values/max_values/critical_counts means no qualifying tasks for that
+    section on that date (distinct from 0.0 which is real captured zero urgency).
+    """
+    conn = get_connection()
+
+    # Step 1: most recent N distinct snapshot dates, sorted oldest→newest.
+    date_rows = conn.execute(
+        "SELECT DISTINCT snapshot_date FROM task_daily_snapshots "
+        "ORDER BY snapshot_date DESC LIMIT ?",
+        (days,),
+    ).fetchall()
+
+    if not date_rows:
+        conn.close()
+        return {
+            "metric": "avg_urgency",
+            "days_requested": days,
+            "snapshot_count": 0,
+            "dates": [],
+            "rows": [],
+            "max_avg": 0,
+            "max_max": 0,
+        }
+
+    date_list = sorted(r["snapshot_date"] for r in date_rows)  # oldest→newest
+
+    # Step 2: aggregate per (snapshot_date, section) for those dates,
+    # excluding paused and scheduled tasks.
+    placeholders = ",".join("?" * len(date_list))
+    agg_rows = conn.execute(
+        f"""
+        SELECT
+            snapshot_date,
+            COALESCE(section, '') AS section,
+            AVG(urgency)          AS avg_urgency,
+            MAX(urgency)          AS max_urgency,
+            SUM(CASE WHEN urgency >= 8 THEN 1 ELSE 0 END) AS critical_count
+        FROM task_daily_snapshots
+        WHERE snapshot_date IN ({placeholders})
+          AND is_paused    = 0
+          AND is_scheduled = 0
+        GROUP BY snapshot_date, section
+        """,
+        date_list,
+    ).fetchall()
+    conn.close()
+
+    # Build section → { date_iso: {avg, max, critical} } lookup.
+    sec_date_map: dict[str, dict] = defaultdict(dict)
+    for r in agg_rows:
+        sec_date_map[r["section"]][r["snapshot_date"]] = {
+            "avg":      round(float(r["avg_urgency"]), 2),
+            "max":      round(float(r["max_urgency"]), 2),
+            "critical": int(r["critical_count"]),
+        }
+
+    # Build response rows — null for section/date combos with no qualifying tasks.
+    rows = []
+    for sec_key, date_map in sec_date_map.items():
+        avg_values:      list = []
+        max_values:      list = []
+        critical_counts: list = []
+
+        for d in date_list:
+            if d in date_map:
+                avg_values.append(date_map[d]["avg"])
+                max_values.append(date_map[d]["max"])
+                critical_counts.append(date_map[d]["critical"])
+            else:
+                avg_values.append(None)
+                max_values.append(None)
+                critical_counts.append(None)
+
+        valid_avgs = [v for v in avg_values if v is not None]
+        row_avg    = round(sum(valid_avgs) / len(valid_avgs), 2) if valid_avgs else 0.0
+        row_max    = max((v for v in max_values if v is not None), default=0.0)
+        crit_days  = sum(v for v in critical_counts if v is not None)
+
+        label = sec_key.strip() if sec_key.strip() else "(no section)"
+        rows.append({
+            "key":             sec_key,
+            "label":           label,
+            "avg_values":      avg_values,
+            "max_values":      max_values,
+            "critical_counts": critical_counts,
+            "avg_urgency":     row_avg,
+            "max_urgency":     row_max,
+            "critical_days":   crit_days,
+        })
+
+    rows.sort(key=lambda r: r["avg_urgency"], reverse=True)
+
+    max_avg = max((r["avg_urgency"] for r in rows), default=0.0)
+    max_max = max((r["max_urgency"] for r in rows), default=0.0)
+
+    return {
+        "metric":         "avg_urgency",
+        "days_requested": days,
+        "snapshot_count": len(date_list),
+        "dates":          date_list,
+        "rows":           rows,
+        "max_avg":        round(max_avg, 2),
+        "max_max":        round(max_max, 2),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Archives
 # ---------------------------------------------------------------------------
 

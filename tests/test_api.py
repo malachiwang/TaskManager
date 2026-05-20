@@ -8,7 +8,10 @@ Run with: pytest tests/test_api.py -v
 """
 import csv
 import io
+import sqlite3
 from datetime import date, timedelta
+
+import backend.database as db_module
 
 
 TODAY = date.today().isoformat()
@@ -2315,3 +2318,161 @@ class TestDeleteTask:
         resp = client.delete(f"/tasks/{task['id']}")
         assert resp.status_code == 200
         assert task["id"] not in [t["id"] for t in client.get("/tasks").json()]
+
+
+# ---------------------------------------------------------------------------
+# Snapshot pressure heatmap  (Ticket 3)
+# ---------------------------------------------------------------------------
+
+class TestSnapshotPressure:
+    """GET /snapshots/pressure aggregates task_daily_snapshots into a heatmap."""
+
+    _SNAP_FIELDS = (
+        "task_id", "snapshot_date", "task_name", "section", "category",
+        "status", "is_paused", "is_scheduled", "active_from", "priority",
+        "interval_days", "days_since", "urgency", "completion_count",
+        "effective_last_done", "created_at", "updated_at",
+    )
+
+    def _insert_snap(self, task_id, snapshot_date, urgency, section=None,
+                     is_paused=0, is_scheduled=0):
+        """Insert a snapshot row directly via SQLite (bypasses today-only guard)."""
+        now = "2024-01-01T00:00:00"
+        conn = sqlite3.connect(str(db_module.DB_PATH))
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO task_daily_snapshots
+                (task_id, snapshot_date, task_name, section, category,
+                 status, is_paused, is_scheduled, active_from,
+                 priority, interval_days, days_since, urgency,
+                 completion_count, effective_last_done, created_at, updated_at)
+            VALUES (?, ?, 'T', ?, NULL, 'active', ?, ?, NULL,
+                    5, 7, 1, ?, 0, NULL, ?, ?)
+            """,
+            (task_id, snapshot_date, section, is_paused, is_scheduled,
+             urgency, now, now),
+        )
+        conn.commit()
+        conn.close()
+
+    # 1. No snapshots → empty response with zero counts.
+    def test_returns_empty_when_no_snapshots(self, client):
+        resp = client.get("/snapshots/pressure")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["snapshot_count"] == 0
+        assert data["dates"] == []
+        assert data["rows"] == []
+        assert data["max_avg"] == 0
+        assert data["max_max"] == 0
+
+    # 2. Response dates list contains only dates that have snapshot rows.
+    def test_returns_only_snapshot_dates(self, client):
+        self._insert_snap(1, "2024-01-10", 5.0)
+        self._insert_snap(1, "2024-01-12", 5.0)
+        resp = client.get("/snapshots/pressure")
+        data = resp.json()
+        assert set(data["dates"]) == {"2024-01-10", "2024-01-12"}
+
+    # 3. days parameter limits to N most recent distinct dates.
+    def test_days_parameter_limits_dates(self, client):
+        for day in range(1, 6):
+            self._insert_snap(day, f"2024-01-{day:02d}", 3.0)
+        resp = client.get("/snapshots/pressure", params={"days": 3})
+        data = resp.json()
+        assert data["snapshot_count"] == 3
+        # Must be the 3 most recent: Jan 3, 4, 5.
+        assert set(data["dates"]) == {"2024-01-03", "2024-01-04", "2024-01-05"}
+
+    # 4. Paused tasks are excluded from aggregation.
+    def test_excludes_paused_tasks(self, client):
+        self._insert_snap(1, "2024-01-01", urgency=0.0, is_paused=1)
+        resp = client.get("/snapshots/pressure")
+        data = resp.json()
+        # Date exists but no qualifying rows → no section rows.
+        assert data["rows"] == []
+
+    # 5. Scheduled tasks are excluded from aggregation.
+    def test_excludes_scheduled_tasks(self, client):
+        self._insert_snap(1, "2024-01-01", urgency=0.0, is_scheduled=1)
+        resp = client.get("/snapshots/pressure")
+        data = resp.json()
+        assert data["rows"] == []
+
+    # 6. Tasks in different sections produce separate rows.
+    def test_groups_by_snapshot_section(self, client):
+        self._insert_snap(1, "2024-01-01", urgency=4.0, section="Health")
+        self._insert_snap(2, "2024-01-01", urgency=6.0, section="Work")
+        resp = client.get("/snapshots/pressure")
+        data = resp.json()
+        section_keys = {r["key"] for r in data["rows"]}
+        assert section_keys == {"Health", "Work"}
+
+    # 7. avg_urgency per row is computed correctly.
+    def test_avg_urgency_computed_correctly(self, client):
+        self._insert_snap(1, "2024-01-01", urgency=4.0, section="S")
+        self._insert_snap(2, "2024-01-01", urgency=6.0, section="S")
+        resp = client.get("/snapshots/pressure")
+        data = resp.json()
+        row = next(r for r in data["rows"] if r["key"] == "S")
+        # avg of 4.0 and 6.0 = 5.0
+        assert row["avg_urgency"] == 5.0
+
+    # 8. max_urgency per row is the maximum over all dates.
+    def test_max_urgency_computed_correctly(self, client):
+        self._insert_snap(1, "2024-01-01", urgency=3.0, section="S")
+        self._insert_snap(1, "2024-01-02", urgency=9.0, section="S")
+        resp = client.get("/snapshots/pressure")
+        data = resp.json()
+        row = next(r for r in data["rows"] if r["key"] == "S")
+        assert row["max_urgency"] == 9.0
+
+    # 9. critical_days counts dates where any task in section had urgency >= 8.
+    def test_critical_days_counted(self, client):
+        self._insert_snap(1, "2024-01-01", urgency=9.0, section="S")
+        self._insert_snap(1, "2024-01-02", urgency=5.0, section="S")
+        self._insert_snap(1, "2024-01-03", urgency=8.0, section="S")
+        resp = client.get("/snapshots/pressure")
+        data = resp.json()
+        row = next(r for r in data["rows"] if r["key"] == "S")
+        assert row["critical_days"] == 2  # Jan 1 (9) and Jan 3 (8)
+
+    # 10. Section missing on a date produces null in that date's slot.
+    def test_null_for_missing_section_date(self, client):
+        # Section A on Jan 1 only; section B on Jan 1 and Jan 2.
+        self._insert_snap(1, "2024-01-01", urgency=5.0, section="A")
+        self._insert_snap(2, "2024-01-01", urgency=5.0, section="B")
+        self._insert_snap(2, "2024-01-02", urgency=5.0, section="B")
+        resp = client.get("/snapshots/pressure")
+        data = resp.json()
+        dates = data["dates"]  # sorted oldest→newest: [Jan 1, Jan 2]
+        row_a = next(r for r in data["rows"] if r["key"] == "A")
+        # Section A has data for Jan 1 but not Jan 2 → second slot is null.
+        jan2_idx = dates.index("2024-01-02")
+        assert row_a["avg_values"][jan2_idx] is None
+        assert row_a["max_values"][jan2_idx] is None
+        assert row_a["critical_counts"][jan2_idx] is None
+
+    # 11. Rows are sorted by avg_urgency descending.
+    def test_rows_sorted_by_avg_urgency_desc(self, client):
+        self._insert_snap(1, "2024-01-01", urgency=2.0, section="Low")
+        self._insert_snap(2, "2024-01-01", urgency=8.0, section="High")
+        self._insert_snap(3, "2024-01-01", urgency=5.0, section="Mid")
+        resp = client.get("/snapshots/pressure")
+        data = resp.json()
+        avgs = [r["avg_urgency"] for r in data["rows"]]
+        assert avgs == sorted(avgs, reverse=True)
+
+    # 12. Section stored in snapshot is used, not the task's current section.
+    def test_section_at_snapshot_time_not_current(self, client):
+        # Create a task, snapshot it under "OldSection", then change its section.
+        task = create_task(client, name="Migrated")
+        self._insert_snap(task["id"], "2024-01-01", urgency=5.0, section="OldSection")
+        # Update task to a new section (simulating a rename).
+        client.patch(f"/tasks/{task['id']}", params={"section": "NewSection"})
+        resp = client.get("/snapshots/pressure")
+        data = resp.json()
+        section_keys = {r["key"] for r in data["rows"]}
+        # The pressure heatmap should reflect the snapshot-time section.
+        assert "OldSection" in section_keys
+        assert "NewSection" not in section_keys
