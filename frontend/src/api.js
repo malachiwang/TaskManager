@@ -116,6 +116,24 @@ export async function setCompletionCount(taskId, date, count) {
   return res.json();
 }
 
+export async function fetchNotes(start, end) {
+  const res = await fetch(`${BASE}/notes?start=${start}&end=${end}`);
+  if (!res.ok) throw new Error(`fetchNotes failed: ${res.status}`);
+  return res.json();
+}
+
+export async function upsertNote(taskId, date, note) {
+  const params = new URLSearchParams({ note });
+  const res = await fetch(`${BASE}/notes/${taskId}/${date}?${params}`, { method: 'PUT' });
+  if (!res.ok) throw new Error(`upsertNote failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteNote(taskId, date) {
+  const res = await fetch(`${BASE}/notes/${taskId}/${date}`, { method: 'DELETE' });
+  if (!res.ok && res.status !== 404) throw new Error(`deleteNote failed: ${res.status}`);
+}
+
 export async function previewImport(file) {
   const formData = new FormData();
   formData.append('file', file);

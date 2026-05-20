@@ -485,6 +485,96 @@ def set_completion_count(task_id: int, completion_date: str, count: int):
 
 
 # ---------------------------------------------------------------------------
+# Cell Notes — P5
+# ---------------------------------------------------------------------------
+
+@app.get("/notes")
+def list_notes(
+    start: str = Query(..., description="Start date YYYY-MM-DD"),
+    end: str = Query(..., description="End date YYYY-MM-DD"),
+):
+    """Return all cell notes whose note_date falls in [start, end]."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT task_id, note_date, note FROM cell_notes "
+        "WHERE note_date BETWEEN ? AND ?",
+        (start, end),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.put("/notes/{task_id}/{note_date}", status_code=200)
+def upsert_note(task_id: int, note_date: str, note: str = ""):
+    """
+    Upsert a cell note for a task/date.
+    Empty or whitespace-only note → delete the row (treated as no note).
+    """
+    note = note.strip()
+    conn = get_connection()
+    if not conn.execute("SELECT id FROM tasks WHERE id = ?", (task_id,)).fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    now = datetime.now().isoformat()
+
+    if not note:
+        with conn:
+            conn.execute(
+                "DELETE FROM cell_notes WHERE task_id = ? AND note_date = ?",
+                (task_id, note_date),
+            )
+        conn.close()
+        return {"deleted": True, "task_id": task_id, "note_date": note_date}
+
+    existing = conn.execute(
+        "SELECT id FROM cell_notes WHERE task_id = ? AND note_date = ?",
+        (task_id, note_date),
+    ).fetchone()
+    with conn:
+        if existing:
+            conn.execute(
+                "UPDATE cell_notes SET note = ?, updated_at = ? "
+                "WHERE task_id = ? AND note_date = ?",
+                (note, now, task_id, note_date),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO cell_notes (task_id, note_date, note, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (task_id, note_date, note, now, now),
+            )
+
+    row = conn.execute(
+        "SELECT task_id, note_date, note FROM cell_notes "
+        "WHERE task_id = ? AND note_date = ?",
+        (task_id, note_date),
+    ).fetchone()
+    conn.close()
+    return dict(row)
+
+
+@app.delete("/notes/{task_id}/{note_date}")
+def delete_note(task_id: int, note_date: str):
+    """Explicitly delete a cell note row."""
+    conn = get_connection()
+    existing = conn.execute(
+        "SELECT id FROM cell_notes WHERE task_id = ? AND note_date = ?",
+        (task_id, note_date),
+    ).fetchone()
+    if not existing:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Note not found")
+    with conn:
+        conn.execute(
+            "DELETE FROM cell_notes WHERE task_id = ? AND note_date = ?",
+            (task_id, note_date),
+        )
+    conn.close()
+    return {"deleted": True, "task_id": task_id, "note_date": note_date}
+
+
+# ---------------------------------------------------------------------------
 # Dashboard
 # ---------------------------------------------------------------------------
 
@@ -698,6 +788,7 @@ def export_backup():
     conn = get_connection()
     tasks = [dict(r) for r in conn.execute("SELECT * FROM tasks").fetchall()]
     completions = [dict(r) for r in conn.execute("SELECT * FROM completions").fetchall()]
+    cell_notes = [dict(r) for r in conn.execute("SELECT * FROM cell_notes").fetchall()]
     archive_rows = conn.execute("SELECT * FROM archive_snapshots").fetchall()
     archives = []
     for r in archive_rows:
@@ -707,10 +798,11 @@ def export_backup():
     conn.close()
 
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "exported_at": datetime.now().isoformat(),
         "tasks": tasks,
         "completions": completions,
+        "cell_notes": cell_notes,
         "archive_snapshots": archives,
     }
     filename = f"taskos-backup-{date.today().isoformat()}.json"

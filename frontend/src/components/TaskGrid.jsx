@@ -10,6 +10,8 @@ import {
   deleteTask,
   createArchive,
   buildExportSheetUrl,
+  fetchNotes,
+  upsertNote,
 } from '../api.js';
 import TaskRow from './TaskRow.jsx';
 import TaskModal from './TaskModal.jsx';
@@ -165,6 +167,9 @@ export default function TaskGrid() {
   // Keyboard help panel — P4.
   const [helpOpen, setHelpOpen] = useState(false);
 
+  // Cell notes — P5. Parallel map to completions: `${taskId}:${date}` → string.
+  const [notes, setNotes] = useState({});
+
   // Column widths — stored as user overrides; missing keys fall back to DEFAULT_WIDTHS.
   const [colWidths, setColWidths] = useState(() => {
     try {
@@ -232,14 +237,19 @@ export default function TaskGrid() {
   const loadData = useCallback(() => {
     const start = dates[0];
     const end = dates[dates.length - 1];
-    return Promise.all([fetchTasks(), fetchCompletions(start, end)])
-      .then(([taskList, compList]) => {
+    return Promise.all([fetchTasks(), fetchCompletions(start, end), fetchNotes(start, end)])
+      .then(([taskList, compList, noteList]) => {
         setTasks(taskList);
         const map = {};
         for (const c of compList) {
           map[`${c.task_id}:${c.completion_date}`] = c.completion_count;
         }
         setCompletions(map);
+        const noteMap = {};
+        for (const n of noteList) {
+          noteMap[`${n.task_id}:${n.note_date}`] = n.note;
+        }
+        setNotes(noteMap);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -327,6 +337,23 @@ export default function TaskGrid() {
 
   const handleSelect = useCallback((taskId, date) => {
     setSelectedCell({ taskId, date });
+  }, []);
+
+  const handleSaveNote = useCallback(async (taskId, date, noteText) => {
+    try {
+      const result = await upsertNote(taskId, date, noteText);
+      if (result.deleted) {
+        setNotes((prev) => {
+          const next = { ...prev };
+          delete next[`${taskId}:${date}`];
+          return next;
+        });
+      } else {
+        setNotes((prev) => ({ ...prev, [`${taskId}:${date}`]: result.note }));
+      }
+    } catch (e) {
+      console.error('saveNote failed:', e);
+    }
   }, []);
 
   const handleSetCount = useCallback(async (taskId, date, count) => {
@@ -773,10 +800,12 @@ export default function TaskGrid() {
             selectedCell={selectedCell}
             tasks={tasks}
             completions={completions}
+            notes={notes}
             todayStr={todayStr}
             onIncrement={handleIncrement}
             onClear={handleClear}
             onSetCount={handleSetCount}
+            onSaveNote={handleSaveNote}
           />
         </div>
       </div>
@@ -862,6 +891,7 @@ export default function TaskGrid() {
                     dates={dates}
                     todayStr={todayStr}
                     completions={completions}
+                    notes={notes}
                     selectedCell={selectedCell}
                     colLayout={colLayout}
                     onIncrement={handleIncrement}

@@ -20,6 +20,8 @@ export default function DateCell({
   isToday,
   isPaused,
   isSelected,
+  hasNote,
+  noteText,
   onIncrement,
   onClear,
   onSelect,
@@ -66,6 +68,7 @@ export default function DateCell({
     isWeekend ? 'weekend' : '',
     count > 0 && !isPaused ? 'has-count' : '',
     isSelected ? 'selected' : '',
+    hasNote ? 'has-note' : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -74,7 +77,7 @@ export default function DateCell({
     <td
       className={classes}
       onClick={handleClick}
-      title={isDisabled ? (isFuture ? 'Future date — not available' : 'Task is paused') : date}
+      title={hasNote && noteText ? noteText : (isDisabled ? (isFuture ? 'Future date — not available' : 'Task is paused') : date)}
     >
       <span className="dc-cell-center">
         {renderContent()}

@@ -1,19 +1,26 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 function dateLabel(isoDate) {
   const [y, m, day] = isoDate.split('-').map(Number);
   return new Date(y, m - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-export default function EditBar({ selectedCell, tasks, completions, todayStr, onIncrement, onClear, onSetCount }) {
+export default function EditBar({ selectedCell, tasks, completions, notes, todayStr, onIncrement, onClear, onSetCount, onSaveNote }) {
   const [setMode, setSetMode] = useState(false);
   const [inputVal, setInputVal] = useState('');
+  const [noteVal, setNoteVal] = useState('');
+  const noteOrigRef = useRef('');
+  const skipSaveRef = useRef(false);
 
-  // Reset set-count input whenever selection changes.
+  // Reset set-count input and note whenever selection changes.
   useEffect(() => {
     setSetMode(false);
     setInputVal('');
-  }, [selectedCell]);
+    const key = selectedCell ? `${selectedCell.taskId}:${selectedCell.date}` : null;
+    const val = key ? (notes[key] || '') : '';
+    setNoteVal(val);
+    noteOrigRef.current = val;
+  }, [selectedCell]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!selectedCell) {
     return (
@@ -29,6 +36,23 @@ export default function EditBar({ selectedCell, tasks, completions, todayStr, on
   const isFuture = date > todayStr;
   const isPaused = task ? task.is_paused === 1 : false;
   const isDisabled = isFuture || isPaused;
+
+  function handleNoteBlur() {
+    if (skipSaveRef.current) { skipSaveRef.current = false; return; }
+    if (noteVal !== noteOrigRef.current) {
+      noteOrigRef.current = noteVal;
+      onSaveNote(taskId, date, noteVal);
+    }
+  }
+
+  function handleNoteKey(e) {
+    if (e.key === 'Enter') { e.target.blur(); }
+    if (e.key === 'Escape') {
+      skipSaveRef.current = true;
+      setNoteVal(noteOrigRef.current);
+      e.target.blur();
+    }
+  }
 
   function handleApplySet() {
     const n = parseInt(inputVal, 10);
@@ -83,6 +107,19 @@ export default function EditBar({ selectedCell, tasks, completions, todayStr, on
           )}
         </div>
       )}
+      <div className="edit-bar-note-row">
+        <span className="edit-bar-note-label">Note</span>
+        <input
+          type="text"
+          className="edit-bar-note-input"
+          value={noteVal}
+          readOnly={isFuture}
+          onChange={(e) => setNoteVal(e.target.value)}
+          onBlur={handleNoteBlur}
+          onKeyDown={handleNoteKey}
+          placeholder={isFuture ? '' : 'Add a note…'}
+        />
+      </div>
     </div>
   );
 }

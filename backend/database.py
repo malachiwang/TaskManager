@@ -66,6 +66,16 @@ def init_db() -> None:
                 archived_at        TEXT    NOT NULL,
                 snapshot_data_json TEXT    NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS cell_notes (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id    INTEGER NOT NULL REFERENCES tasks(id),
+                note_date  TEXT    NOT NULL,
+                note       TEXT    NOT NULL DEFAULT '',
+                created_at TEXT    NOT NULL,
+                updated_at TEXT    NOT NULL,
+                UNIQUE (task_id, note_date)
+            );
         """)
     # ── Migration 1: add section column (original migration) ──────────────
     try:

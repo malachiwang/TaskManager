@@ -9,7 +9,7 @@ function urgencyClass(urgency) {
 }
 
 export default function TaskRow({
-  task, dates, todayStr, completions, selectedCell, colLayout,
+  task, dates, todayStr, completions, notes, selectedCell, colLayout,
   onIncrement, onClear, onEdit, onSelect,
 }) {
   const isPaused = task.is_paused === 1;
@@ -53,6 +53,9 @@ export default function TaskRow({
       {dates.map((date) => {
         const isFuture = date > todayStr;
         const count = completions[`${task.id}:${date}`] || 0;
+        const noteKey = `${task.id}:${date}`;
+        const hasNote = !!notes[noteKey];
+        const noteText = notes[noteKey] || '';
         return (
           <DateCell
             key={date}
@@ -63,6 +66,8 @@ export default function TaskRow({
             isToday={date === todayStr}
             isPaused={isPaused}
             isSelected={selectedCell?.taskId === task.id && selectedCell?.date === date}
+            hasNote={hasNote}
+            noteText={noteText}
             onIncrement={onIncrement}
             onClear={onClear}
             onSelect={onSelect}

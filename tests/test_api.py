@@ -616,12 +616,18 @@ class TestExport:
         assert "schema_version" in data
         assert "tasks" in data
         assert "completions" in data
+        assert "cell_notes" in data
         assert "archive_snapshots" in data
+
+    def test_backup_schema_version_is_2(self, client):
+        data = client.get("/export/backup.json").json()
+        assert data["schema_version"] == 2
 
     def test_backup_empty_db_returns_valid_empty_arrays(self, client):
         data = client.get("/export/backup.json").json()
         assert data["tasks"] == []
         assert data["completions"] == []
+        assert data["cell_notes"] == []
         assert data["archive_snapshots"] == []
 
     def test_backup_includes_tasks(self, client):
@@ -1025,6 +1031,105 @@ class TestSection:
         resp = client.post("/import/preview", files={"file": ("s.csv", content, "text/csv")})
         assert resp.json()["detected_metadata_columns"]["section"] == "Major Category"
 
+
+# ---------------------------------------------------------------------------
+# Cell Notes — P5
+# ---------------------------------------------------------------------------
+
+class TestCellNotes:
+    def test_put_creates_note(self, client):
+        t = create_task(client)
+        resp = client.put(f"/notes/{t['id']}/{TODAY}", params={"note": "30 min review"})
+        assert resp.status_code == 200
+        assert resp.json()["note"] == "30 min review"
+        assert resp.json()["task_id"] == t["id"]
+        assert resp.json()["note_date"] == TODAY
+
+    def test_put_updates_existing_note(self, client):
+        t = create_task(client)
+        client.put(f"/notes/{t['id']}/{TODAY}", params={"note": "first"})
+        resp = client.put(f"/notes/{t['id']}/{TODAY}", params={"note": "updated"})
+        assert resp.json()["note"] == "updated"
+
+    def test_put_empty_note_deletes_row(self, client):
+        t = create_task(client)
+        client.put(f"/notes/{t['id']}/{TODAY}", params={"note": "hello"})
+        resp = client.put(f"/notes/{t['id']}/{TODAY}", params={"note": ""})
+        assert resp.json()["deleted"] is True
+        # GET should no longer return that note
+        notes = client.get("/notes", params={"start": TODAY, "end": TODAY}).json()
+        assert all(n["note_date"] != TODAY or n["task_id"] != t["id"] for n in notes)
+
+    def test_put_whitespace_only_note_deletes_row(self, client):
+        t = create_task(client)
+        client.put(f"/notes/{t['id']}/{TODAY}", params={"note": "text"})
+        resp = client.put(f"/notes/{t['id']}/{TODAY}", params={"note": "   "})
+        assert resp.json()["deleted"] is True
+
+    def test_get_notes_returns_notes_in_range(self, client):
+        t = create_task(client)
+        client.put(f"/notes/{t['id']}/{TODAY}", params={"note": "done"})
+        notes = client.get("/notes", params={"start": TODAY, "end": TODAY}).json()
+        assert len(notes) == 1
+        assert notes[0]["note"] == "done"
+
+    def test_get_notes_excludes_notes_outside_range(self, client):
+        t = create_task(client)
+        client.put(f"/notes/{t['id']}/{YESTERDAY}", params={"note": "yesterday note"})
+        notes = client.get("/notes", params={"start": TODAY, "end": TODAY}).json()
+        assert notes == []
+
+    def test_delete_note_removes_row(self, client):
+        t = create_task(client)
+        client.put(f"/notes/{t['id']}/{TODAY}", params={"note": "to delete"})
+        resp = client.delete(f"/notes/{t['id']}/{TODAY}")
+        assert resp.status_code == 200
+        assert resp.json()["deleted"] is True
+        notes = client.get("/notes", params={"start": TODAY, "end": TODAY}).json()
+        assert notes == []
+
+    def test_delete_nonexistent_note_returns_404(self, client):
+        t = create_task(client)
+        resp = client.delete(f"/notes/{t['id']}/{TODAY}")
+        assert resp.status_code == 404
+
+    def test_note_survives_completion_clear(self, client):
+        t = create_task(client)
+        client.post("/completions", params={"task_id": t["id"], "completion_date": TODAY})
+        client.put(f"/notes/{t['id']}/{TODAY}", params={"note": "leg hurt"})
+        # Clear the completion
+        client.delete(f"/completions/{t['id']}/{TODAY}")
+        # Note must still exist
+        notes = client.get("/notes", params={"start": TODAY, "end": TODAY}).json()
+        assert len(notes) == 1
+        assert notes[0]["note"] == "leg hurt"
+
+    def test_note_survives_task_soft_delete(self, client):
+        t = create_task(client)
+        client.put(f"/notes/{t['id']}/{TODAY}", params={"note": "keep me"})
+        # Soft-delete the task
+        client.delete(f"/tasks/{t['id']}")
+        # Note row must still exist in DB (task is_active=0, not hard-deleted)
+        # We query the DB directly via the notes endpoint — soft-deleted tasks still exist
+        notes = client.get("/notes", params={"start": TODAY, "end": TODAY}).json()
+        assert len(notes) == 1
+        assert notes[0]["note"] == "keep me"
+
+    def test_put_unknown_task_returns_404(self, client):
+        resp = client.put("/notes/9999/2026-01-01", params={"note": "ghost"})
+        assert resp.status_code == 404
+
+    def test_backup_includes_cell_notes(self, client):
+        t = create_task(client)
+        client.put(f"/notes/{t['id']}/{TODAY}", params={"note": "backup test"})
+        data = client.get("/export/backup.json").json()
+        assert "cell_notes" in data
+        assert len(data["cell_notes"]) == 1
+        assert data["cell_notes"][0]["note"] == "backup test"
+
+    def test_backup_empty_cell_notes(self, client):
+        data = client.get("/export/backup.json").json()
+        assert data["cell_notes"] == []
 
 # ---------------------------------------------------------------------------
 # PATCH /completions/{task_id}/{date} — set count
