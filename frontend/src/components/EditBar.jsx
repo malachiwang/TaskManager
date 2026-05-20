@@ -35,7 +35,8 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
   const count = completions[`${taskId}:${date}`] || 0;
   const isFuture = date > todayStr;
   const isPaused = task ? task.is_paused === 1 : false;
-  const isDisabled = isFuture || isPaused;
+  const isBeforeActiveFrom = !!(task?.active_from && date < task.active_from);
+  const isDisabled = isFuture || isPaused || isBeforeActiveFrom;
 
   function handleNoteBlur() {
     if (skipSaveRef.current) { skipSaveRef.current = false; return; }
@@ -75,7 +76,7 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
         <span className="edit-bar-date">{dateLabel(date)}</span>
         <span className="edit-bar-sep">·</span>
         {isDisabled ? (
-          <span className="edit-bar-disabled">{isFuture ? 'future date' : 'paused'}</span>
+          <span className="edit-bar-disabled">{isFuture ? 'future date' : isBeforeActiveFrom ? 'before active date' : 'paused'}</span>
         ) : (
           <span className="edit-bar-count">count: {count}</span>
         )}
@@ -113,11 +114,11 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
           type="text"
           className="edit-bar-note-input"
           value={noteVal}
-          readOnly={isFuture}
+          readOnly={isFuture || isBeforeActiveFrom}
           onChange={(e) => setNoteVal(e.target.value)}
           onBlur={handleNoteBlur}
           onKeyDown={handleNoteKey}
-          placeholder={isFuture ? '' : 'Add a note…'}
+          placeholder={isFuture || isBeforeActiveFrom ? '' : 'Add a note…'}
         />
       </div>
     </div>

@@ -389,6 +389,7 @@ thead .meta-col {
    the same value as the rest of the row. Eliminates per-cell dual overrides. */
 .task-row             { --row-bg: var(--bg-panel); }
 .task-row.paused      { --row-bg: var(--paused-bg); }
+.task-row.scheduled   { --row-bg: var(--bg-panel); }
 .task-row:hover       { --row-bg: var(--row-hover-bg); }
 
 /* Paused row: muted and italic.
@@ -403,6 +404,16 @@ thead .meta-col {
 
 .task-row.paused .meta-col {
   color: #bbb;
+}
+
+/* Scheduled row — visible but muted; distinct from paused (no italic, lighter mute) */
+.task-row.scheduled td {
+  color: #c0c0c0;
+  cursor: default;
+}
+
+.task-row.scheduled .meta-col {
+  color: #c0c0c0;
 }
 
 /* -------------------------------------------------------------------------
@@ -455,6 +466,13 @@ thead .meta-col {
 /* Paused cell — not interactive, no hover affordance */
 .date-cell.paused {
   cursor: default;
+}
+
+/* Pre-active cell — before task's active_from date; read-only, muted */
+.date-cell.before-active {
+  background: var(--bg-app);
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* Completed cell — visual state now entirely on inner .dc-box spans */

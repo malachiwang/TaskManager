@@ -19,6 +19,7 @@ export default function DateCell({
   isFuture,
   isToday,
   isPaused,
+  activeFrom,
   isSelected,
   hasNote,
   noteText,
@@ -26,7 +27,8 @@ export default function DateCell({
   onClear,
   onSelect,
 }) {
-  const isDisabled = isFuture || isPaused;
+  const isBeforeActiveFrom = !!(activeFrom && date < activeFrom);
+  const isDisabled = isFuture || isPaused || isBeforeActiveFrom;
 
   // Detect weekend (Saturday=6, Sunday=0) from ISO date string.
   const [wy, wm, wd] = date.split('-').map(Number);
@@ -34,7 +36,7 @@ export default function DateCell({
 
   function renderContent() {
     if (isFuture) return null;
-    if (isPaused) {
+    if (isPaused || isBeforeActiveFrom) {
       if (count === 0) return null;
       return (
         <span className="dc-box dc-box--filled dc-box--muted">
@@ -62,13 +64,14 @@ export default function DateCell({
 
   const classes = [
     'date-cell',
-    isFuture  ? 'future'  : '',
-    isPaused  ? 'paused'  : '',
-    isToday && !isFuture ? 'today' : '',
-    isWeekend ? 'weekend' : '',
-    count > 0 && !isPaused ? 'has-count' : '',
-    isSelected ? 'selected' : '',
-    hasNote ? 'has-note' : '',
+    isFuture          ? 'future'       : '',
+    isPaused          ? 'paused'       : '',
+    isBeforeActiveFrom ? 'before-active' : '',
+    isToday && !isFuture ? 'today'     : '',
+    isWeekend         ? 'weekend'      : '',
+    count > 0 && !isPaused && !isBeforeActiveFrom ? 'has-count' : '',
+    isSelected        ? 'selected'     : '',
+    hasNote           ? 'has-note'     : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -77,7 +80,7 @@ export default function DateCell({
     <td
       className={classes}
       onClick={handleClick}
-      title={hasNote && noteText ? noteText : (isDisabled ? (isFuture ? 'Future date — not available' : 'Task is paused') : date)}
+      title={hasNote && noteText ? noteText : (isDisabled ? (isFuture ? 'Future date — not available' : isBeforeActiveFrom ? 'Before active date' : 'Task is paused') : date)}
     >
       <span className="dc-cell-center">
         {renderContent()}

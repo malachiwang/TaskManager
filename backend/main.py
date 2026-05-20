@@ -102,7 +102,7 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 
 def _enrich_task(row: dict, today: date) -> dict:
-    """Add computed fields (effective_last_done, days_since, urgency) to a task row."""
+    """Add computed fields (effective_last_done, days_since, urgency, is_scheduled) to a task row."""
     t = dict(row)
     created = date.fromisoformat(t["created_at"])
     manual_iso = _normalize_date_override(t.get("manual_last_done_override"))
@@ -113,18 +113,28 @@ def _enrich_task(row: dict, today: date) -> dict:
         else None
     )
 
+    # is_scheduled: active_from exists and is in the future.
+    active_from_iso = _normalize_date_override(t.get("active_from"))
+    is_scheduled = bool(active_from_iso and active_from_iso > today.isoformat())
+
     effective = calculate_effective_last_done(created, latest, manual)
     days = calculate_days_since(effective, today)
-    urgency = calculate_urgency(
-        priority=t["priority"],
-        days_since=days,
-        interval_days=t["interval_days"],
-        is_paused=bool(t["is_paused"]),
-    )
+
+    # Scheduled tasks generate no pressure, same pattern as paused.
+    if is_scheduled or bool(t["is_paused"]):
+        urgency = 0.0
+    else:
+        urgency = calculate_urgency(
+            priority=t["priority"],
+            days_since=days,
+            interval_days=t["interval_days"],
+            is_paused=False,
+        )
 
     t["effective_last_done"] = effective.isoformat()
     t["days_since"] = days
     t["urgency"] = urgency
+    t["is_scheduled"] = is_scheduled
     return t
 
 
@@ -196,7 +206,7 @@ def create_task(
     norm_status = _normalize_status(status)
     is_paused_val = 1 if norm_status == 'hiatus' else 0
     paused_at_val = datetime.now().isoformat() if is_paused_val else None
-    active_from_val = active_from.strip() if active_from and active_from.strip() else None
+    active_from_val = _normalize_date_override(active_from)
     manual_override_val = _normalize_date_override(manual_last_done_override)
 
     conn = get_connection()
@@ -293,7 +303,7 @@ def update_task(
     if interval_days is not None:
         updates["interval_days"] = interval_days
     if active_from is not None:
-        updates["active_from"] = active_from.strip() if active_from.strip() else None
+        updates["active_from"] = _normalize_date_override(active_from)
 
     if updates:
         # Column names are hardcoded above — not from user input — so this is safe
@@ -601,7 +611,11 @@ def dashboard():
 
     active_tasks = [_enrich_task(dict(r), today) for r in rows]
 
-    top_5 = sorted(active_tasks, key=lambda t: t["urgency"], reverse=True)[:5]
+    top_5 = sorted(
+        [t for t in active_tasks if not t["is_scheduled"]],
+        key=lambda t: t["urgency"],
+        reverse=True,
+    )[:5]
 
     # Category averages (active, non-paused only)
     cat_urgencies: dict[str, list] = defaultdict(list)
@@ -616,20 +630,23 @@ def dashboard():
         for cat, vals in cat_urgencies.items()
     }
 
-    # Dormant: 30+ days since any completion (active, non-paused)
-    dormant = [t for t in active_tasks if t["days_since"] >= 30]
+    # Dormant: 30+ days since any completion (active, non-paused, not scheduled)
+    dormant = [t for t in active_tasks if t["days_since"] >= 30 and not t["is_scheduled"]]
 
     paused_count = conn.execute(
         "SELECT COUNT(*) FROM tasks WHERE is_active = 1 AND is_paused = 1"
     ).fetchone()[0]
 
+    # Never done: excludes scheduled (not yet started) and paused tasks.
     never_done_count = conn.execute(
         """
         SELECT COUNT(*) FROM tasks t
         WHERE t.is_active = 1 AND t.is_paused = 0
           AND NOT EXISTS (SELECT 1 FROM completions c WHERE c.task_id = t.id)
           AND t.manual_last_done_override IS NULL
-        """
+          AND (t.active_from IS NULL OR t.active_from <= ?)
+        """,
+        (today.isoformat(),),
     ).fetchone()[0]
 
     # active_count — explicit, avoids frontend re-derivation from category_summary
@@ -1295,8 +1312,7 @@ async def import_apply(file: UploadFile = File(...)):
             status = _normalize_status(fv("status") or "active")
             is_paused_val = 1 if status == 'hiatus' else 0
             paused_at_val = now if is_paused_val else None
-            active_from_raw = fv("active_from")
-            active_from_val = active_from_raw.strip() if active_from_raw and active_from_raw.strip() else None
+            active_from_val = _normalize_date_override(fv("active_from"))
             notes = fv("notes") or ""
             manual_override = _normalize_date_override(fv("manual_last_done_override"))
 

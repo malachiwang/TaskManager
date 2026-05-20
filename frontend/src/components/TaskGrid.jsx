@@ -112,12 +112,14 @@ function computeColLayout(colWidths) {
 }
 
 // Returns the best default keyboard cell when no cell is selected.
-// Fallback order: first active task + today > first active task + last non-future date >
-// first active task + first visible date > first task + first date > null.
+// Fallback order: first non-paused non-scheduled task > first non-paused task > first task.
 function getDefaultKeyboardCell(tasks, dates) {
   if (!tasks.length || !dates.length) return null;
   const todayStr = toLocalDate(new Date());
-  const task = tasks.find((t) => t.is_paused !== 1) ?? tasks[0];
+  const task =
+    tasks.find((t) => t.is_paused !== 1 && !t.is_scheduled) ??
+    tasks.find((t) => t.is_paused !== 1) ??
+    tasks[0];
   let date;
   if (dates.includes(todayStr)) {
     date = todayStr;
@@ -595,6 +597,7 @@ export default function TaskGrid() {
         if (!task) return;
         if (task.is_paused === 1) return;
         if (sel.date > toLocalDate(new Date())) return; // no-op on future dates
+        if (task.active_from && sel.date < task.active_from) return; // no-op before active_from
 
         if (e.shiftKey) {
           const count = completionsRef.current[`${sel.taskId}:${sel.date}`] || 0;

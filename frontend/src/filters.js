@@ -13,6 +13,7 @@ export const FILTERS = {
   URGENT:     'urgent',
   DORMANT:    'dormant',
   NEVER_DONE: 'never_done',
+  SCHEDULED:  'scheduled',
 };
 
 export const FILTER_LABELS = {
@@ -22,6 +23,7 @@ export const FILTER_LABELS = {
   [FILTERS.URGENT]:     'Urgent',
   [FILTERS.DORMANT]:    'Dormant',
   [FILTERS.NEVER_DONE]: 'Never done',
+  [FILTERS.SCHEDULED]:  'Scheduled',
 };
 
 // Returns true if the task passes the given filter.
@@ -33,14 +35,18 @@ export function taskPassesFilter(task, filter) {
       return task.is_paused === 1;
     case FILTERS.URGENT:
       return task.is_paused !== 1
+        && !task.is_scheduled
         && typeof task.urgency === 'number'
         && task.urgency >= URGENT_THRESHOLD;
     case FILTERS.DORMANT:
       return task.is_paused !== 1
+        && !task.is_scheduled
         && task.days_since != null
         && task.days_since >= DORMANT_THRESHOLD;
     case FILTERS.NEVER_DONE:
-      return !task.latest_completion;
+      return !task.latest_completion && !task.is_scheduled;
+    case FILTERS.SCHEDULED:
+      return task.is_scheduled === true;
     default:
       return true; // FILTERS.ALL
   }

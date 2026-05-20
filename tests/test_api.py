@@ -1932,6 +1932,109 @@ class TestArchiveSnapshotUpgrade:
 
 
 # ---------------------------------------------------------------------------
+# active_from — is_scheduled, urgency suppression, dashboard exclusions
+# ---------------------------------------------------------------------------
+
+FUTURE_DATE  = (date.today() + timedelta(days=30)).isoformat()
+PAST_DATE    = (date.today() - timedelta(days=30)).isoformat()
+
+
+class TestActiveFrom:
+    """active_from controls is_scheduled, urgency=0, dashboard exclusions."""
+
+    # -- is_scheduled field --------------------------------------------------
+
+    def test_future_active_from_is_scheduled_true(self, client):
+        task = create_task(client, active_from=FUTURE_DATE)
+        assert task["is_scheduled"] is True
+
+    def test_past_active_from_is_scheduled_false(self, client):
+        task = create_task(client, active_from=PAST_DATE)
+        assert task["is_scheduled"] is False
+
+    def test_null_active_from_is_scheduled_false(self, client):
+        task = create_task(client)
+        assert task["is_scheduled"] is False
+
+    def test_today_active_from_is_scheduled_false(self, client):
+        task = create_task(client, active_from=TODAY)
+        assert task["is_scheduled"] is False
+
+    # -- urgency suppression -------------------------------------------------
+
+    def test_future_active_from_urgency_zero(self, client):
+        task = create_task(client, priority=10, interval_days=1, active_from=FUTURE_DATE)
+        assert task["urgency"] == 0.0
+
+    def test_past_active_from_urgency_nonzero(self, client):
+        task = create_task(client, priority=10, interval_days=1, active_from=PAST_DATE)
+        assert task["urgency"] > 0
+
+    def test_null_active_from_urgency_nonzero(self, client):
+        task = create_task(client, priority=10, interval_days=1)
+        assert task["urgency"] > 0
+
+    # -- normalization -------------------------------------------------------
+
+    def test_active_from_normalized_on_create(self, client):
+        # ISO input preserved
+        task = create_task(client, active_from=FUTURE_DATE)
+        assert task["active_from"] == FUTURE_DATE
+
+    def test_invalid_active_from_normalized_to_none_on_create(self, client):
+        task = create_task(client, active_from="not-a-date")
+        assert task["active_from"] is None
+        assert task["is_scheduled"] is False
+
+    def test_active_from_normalized_on_patch(self, client):
+        task = create_task(client)
+        resp = client.patch(f"/tasks/{task['id']}", params={"active_from": FUTURE_DATE})
+        assert resp.status_code == 200
+        assert resp.json()["active_from"] == FUTURE_DATE
+        assert resp.json()["is_scheduled"] is True
+
+    def test_invalid_active_from_normalized_on_patch(self, client):
+        task = create_task(client)
+        resp = client.patch(f"/tasks/{task['id']}", params={"active_from": "garbage"})
+        assert resp.status_code == 200
+        assert resp.json()["active_from"] is None
+
+    # -- dashboard exclusions ------------------------------------------------
+
+    def test_scheduled_excluded_from_dormant_tasks(self, client):
+        # Task with future active_from and old created_at would show as dormant
+        # without the scheduled guard, since days_since counts from created_at.
+        # We use a high priority/low interval so it would definitely be dormant
+        # if not scheduled. The key: is_scheduled excludes it from dormant list.
+        task = create_task(client, active_from=FUTURE_DATE)
+        dash = client.get("/dashboard").json()
+        dormant_ids = [t["id"] for t in dash["dormant_tasks"]]
+        assert task["id"] not in dormant_ids
+
+    def test_scheduled_excluded_from_never_done_count(self, client):
+        before = client.get("/dashboard").json()["never_done_count"]
+        create_task(client, active_from=FUTURE_DATE)
+        after = client.get("/dashboard").json()["never_done_count"]
+        # Scheduled task must not increment never_done_count
+        assert after == before
+
+    def test_unscheduled_still_in_never_done_count(self, client):
+        before = client.get("/dashboard").json()["never_done_count"]
+        create_task(client)  # no active_from, never completed
+        after = client.get("/dashboard").json()["never_done_count"]
+        assert after == before + 1
+
+    def test_scheduled_not_in_top5_urgent_when_others_exist(self, client):
+        # Create a high-urgency active task and a scheduled task.
+        active_task = create_task(client, priority=10, interval_days=1)
+        scheduled_task = create_task(client, priority=10, interval_days=1, active_from=FUTURE_DATE)
+        dash = client.get("/dashboard").json()
+        top_ids = [t["id"] for t in dash["top_5_urgent"]]
+        assert active_task["id"] in top_ids
+        assert scheduled_task["id"] not in top_ids
+
+
+# ---------------------------------------------------------------------------
 # manual_last_done_override date normalization  (emergency fix)
 # ---------------------------------------------------------------------------
 
