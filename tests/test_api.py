@@ -1874,6 +1874,64 @@ class TestArchiveRenameDelete:
 
 
 # ---------------------------------------------------------------------------
+# Archive snapshot upgrade — schema_version 2 + cell_notes
+# ---------------------------------------------------------------------------
+
+class TestArchiveSnapshotUpgrade:
+    """Snapshot blobs created by create_archive() must include schema_version 2 and cell_notes."""
+
+    def _make_task(self, client, name="Test"):
+        resp = client.post("/tasks", params={"name": name})
+        assert resp.status_code == 201
+        return resp.json()["id"]
+
+    def _create_archive(self, client, start="2026-01-01", end="2026-01-31"):
+        resp = client.post(
+            "/archives",
+            params={"name": "snap", "start_date": start, "end_date": end},
+        )
+        assert resp.status_code == 201, resp.text
+        return resp.json()
+
+    def test_snapshot_has_schema_version(self, client):
+        self._make_task(client)
+        a = self._create_archive(client)
+        detail = client.get(f"/archives/{a['id']}").json()
+        snap = detail["snapshot_data_json"]
+        assert snap["snapshot_schema_version"] == 2
+
+    def test_all_tasks_have_cell_notes_key(self, client):
+        self._make_task(client)
+        a = self._create_archive(client)
+        detail = client.get(f"/archives/{a['id']}").json()
+        for task in detail["snapshot_data_json"]["tasks"]:
+            assert "cell_notes" in task
+
+    def test_task_without_notes_has_empty_cell_notes(self, client):
+        self._make_task(client)
+        a = self._create_archive(client)
+        detail = client.get(f"/archives/{a['id']}").json()
+        for task in detail["snapshot_data_json"]["tasks"]:
+            assert task["cell_notes"] == {}
+
+    def test_cell_notes_included_in_range(self, client):
+        tid = self._make_task(client)
+        client.put(f"/notes/{tid}/2026-01-15", params={"note": "hello"})
+        a = self._create_archive(client, start="2026-01-01", end="2026-01-31")
+        detail = client.get(f"/archives/{a['id']}").json()
+        task = next(t for t in detail["snapshot_data_json"]["tasks"] if t["id"] == tid)
+        assert task["cell_notes"].get("2026-01-15") == "hello"
+
+    def test_cell_notes_outside_range_excluded(self, client):
+        tid = self._make_task(client)
+        client.put(f"/notes/{tid}/2026-02-10", params={"note": "outside"})
+        a = self._create_archive(client, start="2026-01-01", end="2026-01-31")
+        detail = client.get(f"/archives/{a['id']}").json()
+        task = next(t for t in detail["snapshot_data_json"]["tasks"] if t["id"] == tid)
+        assert "2026-02-10" not in task["cell_notes"]
+
+
+# ---------------------------------------------------------------------------
 # manual_last_done_override date normalization  (emergency fix)
 # ---------------------------------------------------------------------------
 

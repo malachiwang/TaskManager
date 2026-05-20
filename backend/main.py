@@ -764,10 +764,29 @@ def create_archive(name: str, start_date: str, end_date: str):
             comp_map[tid] = {}
         comp_map[tid][c["completion_date"]] = c["completion_count"]
 
+    note_rows = conn.execute(
+        "SELECT task_id, note_date, note FROM cell_notes "
+        "WHERE note_date BETWEEN ? AND ?",
+        (start_date, end_date),
+    ).fetchall()
+
+    note_map: dict[int, dict[str, str]] = {}
+    for n in note_rows:
+        tid = n["task_id"]
+        if tid not in note_map:
+            note_map[tid] = {}
+        note_map[tid][n["note_date"]] = n["note"]
+
     for t in tasks:
         t["completions"] = comp_map.get(t["id"], {})
+        t["cell_notes"] = note_map.get(t["id"], {})
 
-    snapshot = {"start_date": start_date, "end_date": end_date, "tasks": tasks}
+    snapshot = {
+        "snapshot_schema_version": 2,
+        "start_date": start_date,
+        "end_date": end_date,
+        "tasks": tasks,
+    }
     archived_at = datetime.now().isoformat()
 
     with conn:

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchArchives, fetchArchive, deleteArchive, previewImport, applyImport } from '../api.js';
+import { fetchArchives, fetchArchive, deleteArchive, renameArchive, previewImport, applyImport } from '../api.js';
 
 function buildDates(start, end) {
   const dates = [];
@@ -64,8 +64,13 @@ function ArchiveMiniGrid({ data }) {
               <td className="col-days">{task.is_paused ? '—' : task.days_since}</td>
               {dates.map((d) => {
                 const count = task.completions?.[d] || 0;
+                const hasNote = !!(task.cell_notes?.[d]);
                 return (
-                  <td key={d} className={`date-cell${isWeekendDate(d) ? ' weekend' : ''}${count ? ' has-count' : ''}`}>
+                  <td
+                    key={d}
+                    className={`date-cell${isWeekendDate(d) ? ' weekend' : ''}${count ? ' has-count' : ''}${hasNote ? ' has-note' : ''}`}
+                    title={hasNote ? task.cell_notes[d] : undefined}
+                  >
                     {cellDisplay(count)}
                   </td>
                 );
@@ -321,6 +326,9 @@ export default function Archive() {
   const [detailLoading, setDetailLoading] = useState(false);
   // id of the archive pending delete confirmation, or null
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  // rename state
+  const [renamingId, setRenamingId]       = useState(null);
+  const [renameVal, setRenameVal]         = useState('');
 
   function loadArchives() {
     return fetchArchives()
@@ -350,6 +358,31 @@ export default function Archive() {
     } catch (e) {
       setError(e.message);
     }
+  }
+
+  function startRename(a, e) {
+    e.stopPropagation();
+    setRenamingId(a.id);
+    setRenameVal(a.name);
+    setDeleteConfirm(null);
+  }
+
+  async function commitRename(id) {
+    const trimmed = renameVal.trim();
+    if (!trimmed) { setRenamingId(null); return; }
+    try {
+      await renameArchive(id, trimmed);
+      setRenamingId(null);
+      if (selected?.id === id) setSelected((prev) => ({ ...prev, name: trimmed }));
+      await loadArchives();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  function cancelRename() {
+    setRenamingId(null);
+    setRenameVal('');
   }
 
   if (loading) return <div className="grid-status">Loading…</div>;
@@ -392,7 +425,7 @@ export default function Archive() {
               <li
                 key={a.id}
                 className={`ws-snap-item${selected?.id === a.id ? ' ws-snap-item--active' : ''}`}
-                onClick={() => handleView(a.id)}
+                onClick={() => renamingId === a.id ? null : handleView(a.id)}
               >
                 <div>
                   <div className="ws-snap-name">{a.name}</div>
@@ -402,37 +435,47 @@ export default function Archive() {
                   <span className="ws-snap-meta">
                     {a.archived_at.replace('T', ' ').slice(0, 10)}
                   </span>
-                  <button
-                    className="action-btn"
-                    onClick={(e) => { e.stopPropagation(); handleView(a.id); }}
-                  >
-                    View →
-                  </button>
-                  {deleteConfirm === a.id ? (
-                    <>
-                      <span className="ws-snap-delete-confirm">Delete?</span>
-                      <button
-                        className="action-btn action-btn--danger"
-                        onClick={(e) => { e.stopPropagation(); handleDelete(a.id); }}
-                      >
-                        Confirm
-                      </button>
-                      <button
-                        className="action-btn"
-                        onClick={(e) => { e.stopPropagation(); setDeleteConfirm(null); }}
-                      >
-                        Cancel
-                      </button>
-                    </>
-                  ) : (
+                  <div className="ws-snap-actions" onClick={(e) => e.stopPropagation()}>
+                    <button className="ws-snap-btn" onClick={() => handleView(a.id)}>View →</button>
+                    <button className="ws-snap-btn" onClick={(e) => startRename(a, e)}>Rename</button>
                     <button
-                      className="action-btn"
-                      onClick={(e) => { e.stopPropagation(); setDeleteConfirm(a.id); }}
+                      className="ws-snap-btn ws-snap-btn--delete"
+                      onClick={() => setDeleteConfirm(deleteConfirm === a.id ? null : a.id)}
                     >
                       Delete
                     </button>
-                  )}
+                  </div>
                 </div>
+                {renamingId === a.id && (
+                  <div className="ws-snap-rename-row" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      className="ws-snap-rename-input"
+                      value={renameVal}
+                      autoFocus
+                      onChange={(e) => setRenameVal(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') commitRename(a.id);
+                        if (e.key === 'Escape') cancelRename();
+                      }}
+                    />
+                    <div className="ws-snap-confirm-strip">
+                      <button className="ws-snap-btn" onClick={() => commitRename(a.id)}>Save</button>
+                      <button className="ws-snap-btn" onClick={cancelRename}>Cancel</button>
+                    </div>
+                  </div>
+                )}
+                {deleteConfirm === a.id && (
+                  <div className="ws-snap-confirm-strip" onClick={(e) => e.stopPropagation()}>
+                    <span className="ws-snap-delete-confirm">Delete this snapshot?</span>
+                    <button
+                      className="ws-snap-btn ws-snap-btn--delete"
+                      onClick={() => handleDelete(a.id)}
+                    >
+                      Confirm
+                    </button>
+                    <button className="ws-snap-btn" onClick={() => setDeleteConfirm(null)}>Cancel</button>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
