@@ -157,4 +157,41 @@ def init_db() -> None:
     except Exception:
         pass  # Never crash startup — _enrich_task is also safe now
 
+    # ── Migration 5: create task_daily_snapshots table + indexes ─────────────
+    # No FK on task_id — historical rows must survive hard deletes.
+    # Indexes support date-range, per-task, and section×date queries.
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS task_daily_snapshots (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id             INTEGER NOT NULL,
+            snapshot_date       TEXT    NOT NULL,
+            task_name           TEXT    NOT NULL,
+            section             TEXT,
+            category            TEXT,
+            status              TEXT    NOT NULL,
+            is_paused           INTEGER NOT NULL DEFAULT 0,
+            is_scheduled        INTEGER NOT NULL DEFAULT 0,
+            active_from         TEXT,
+            priority            INTEGER NOT NULL,
+            interval_days       INTEGER NOT NULL,
+            days_since          INTEGER,
+            urgency             REAL,
+            completion_count    INTEGER NOT NULL DEFAULT 0,
+            effective_last_done TEXT,
+            created_at          TEXT    NOT NULL,
+            updated_at          TEXT    NOT NULL,
+            UNIQUE(task_id, snapshot_date)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_snap_date
+            ON task_daily_snapshots(snapshot_date);
+
+        CREATE INDEX IF NOT EXISTS idx_snap_task
+            ON task_daily_snapshots(task_id);
+
+        CREATE INDEX IF NOT EXISTS idx_snap_section_date
+            ON task_daily_snapshots(section, snapshot_date);
+    """)
+    conn.commit()
+
     conn.close()

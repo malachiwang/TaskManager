@@ -138,6 +138,85 @@ def _enrich_task(row: dict, today: date) -> dict:
     return t
 
 
+def _capture_daily_snapshots(conn, snapshot_date: date) -> None:
+    """
+    Upsert one snapshot row per active task for snapshot_date.
+
+    Captures all is_active=1 tasks (including paused and scheduled).
+    Uses INSERT … ON CONFLICT DO UPDATE so same-day calls update the row
+    without overwriting created_at, making the operation fully idempotent.
+    """
+    today_iso = snapshot_date.isoformat()
+
+    rows = conn.execute(
+        """
+        SELECT t.*,
+               (SELECT MAX(completion_date)
+                FROM completions c
+                WHERE c.task_id = t.id) AS latest_completion
+        FROM tasks t
+        WHERE t.is_active = 1
+        ORDER BY t.id
+        """
+    ).fetchall()
+
+    if not rows:
+        return
+
+    tasks = [_enrich_task(dict(r), snapshot_date) for r in rows]
+    task_ids = [t["id"] for t in tasks]
+
+    # Batch-fetch today's completion counts — one query, not N.
+    placeholders = ",".join("?" * len(task_ids))
+    comp_rows = conn.execute(
+        f"SELECT task_id, completion_count FROM completions "
+        f"WHERE completion_date = ? AND task_id IN ({placeholders})",
+        (today_iso, *task_ids),
+    ).fetchall()
+    comp_map = {r["task_id"]: r["completion_count"] for r in comp_rows}
+
+    now = datetime.now().isoformat()
+
+    with conn:
+        for t in tasks:
+            conn.execute(
+                """
+                INSERT INTO task_daily_snapshots (
+                    task_id, snapshot_date, task_name, section, category,
+                    status, is_paused, is_scheduled, active_from,
+                    priority, interval_days, days_since, urgency,
+                    completion_count, effective_last_done, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(task_id, snapshot_date) DO UPDATE SET
+                    task_name        = excluded.task_name,
+                    section          = excluded.section,
+                    category         = excluded.category,
+                    status           = excluded.status,
+                    is_paused        = excluded.is_paused,
+                    is_scheduled     = excluded.is_scheduled,
+                    active_from      = excluded.active_from,
+                    priority         = excluded.priority,
+                    interval_days    = excluded.interval_days,
+                    days_since       = excluded.days_since,
+                    urgency          = excluded.urgency,
+                    completion_count = excluded.completion_count,
+                    effective_last_done = excluded.effective_last_done,
+                    updated_at       = excluded.updated_at
+                """,
+                (
+                    t["id"], today_iso, t["name"],
+                    t.get("section"), t.get("category"),
+                    t["status"], int(t["is_paused"]), int(t["is_scheduled"]),
+                    t.get("active_from"),
+                    t["priority"], t["interval_days"],
+                    t["days_since"], t["urgency"],
+                    comp_map.get(t["id"], 0),
+                    t["effective_last_done"],
+                    now, now,
+                ),
+            )
+
+
 # ---------------------------------------------------------------------------
 # Tasks
 # ---------------------------------------------------------------------------
@@ -728,6 +807,9 @@ def dashboard():
         "max_value": heatmap_max,
     }
 
+    # Side-effect: upsert today's task-state snapshots for historical analytics.
+    _capture_daily_snapshots(conn, today)
+
     conn.close()
     return {
         "top_5_urgent": top_5,
@@ -914,15 +996,21 @@ def export_backup():
         row = dict(r)
         row["snapshot_data_json"] = json.loads(row["snapshot_data_json"])
         archives.append(row)
+    daily_snapshots = [
+        dict(r) for r in conn.execute(
+            "SELECT * FROM task_daily_snapshots ORDER BY snapshot_date, task_id"
+        ).fetchall()
+    ]
     conn.close()
 
     payload = {
-        "schema_version": 2,
+        "schema_version": 3,
         "exported_at": datetime.now().isoformat(),
         "tasks": tasks,
         "completions": completions,
         "cell_notes": cell_notes,
         "archive_snapshots": archives,
+        "task_daily_snapshots": daily_snapshots,
     }
     filename = f"taskos-backup-{date.today().isoformat()}.json"
     return Response(

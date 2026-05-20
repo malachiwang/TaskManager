@@ -810,7 +810,7 @@ class TestExport:
 
     def test_backup_schema_version_is_2(self, client):
         data = client.get("/export/backup.json").json()
-        assert data["schema_version"] == 2
+        assert data["schema_version"] == 3
 
     def test_backup_empty_db_returns_valid_empty_arrays(self, client):
         data = client.get("/export/backup.json").json()
@@ -2032,6 +2032,131 @@ class TestActiveFrom:
         top_ids = [t["id"] for t in dash["top_5_urgent"]]
         assert active_task["id"] in top_ids
         assert scheduled_task["id"] not in top_ids
+
+
+# ---------------------------------------------------------------------------
+# Daily snapshot system  (Ticket 6)
+# ---------------------------------------------------------------------------
+
+class TestDailySnapshots:
+    """GET /dashboard triggers _capture_daily_snapshots; verify via backup export."""
+
+    def _get_snapshots(self, client):
+        """Return task_daily_snapshots list from backup export."""
+        return client.get("/export/backup.json").json()["task_daily_snapshots"]
+
+    def _trigger(self, client):
+        """Trigger snapshot capture by loading the dashboard."""
+        client.get("/dashboard")
+
+    # 1. Table exists immediately after app startup (init_db migration 5).
+    def test_snapshot_table_created(self, client):
+        snaps = self._get_snapshots(client)
+        assert isinstance(snaps, list)
+
+    # 2. Loading dashboard creates at least one snapshot row per active task.
+    def test_dashboard_load_creates_snapshots(self, client):
+        create_task(client, name="Alpha")
+        create_task(client, name="Beta")
+        self._trigger(client)
+        snaps = self._get_snapshots(client)
+        assert len(snaps) >= 2
+
+    # 3. Exactly one snapshot row per active task for today.
+    def test_snapshot_one_row_per_active_task(self, client):
+        create_task(client, name="T1")
+        create_task(client, name="T2")
+        create_task(client, name="T3")
+        self._trigger(client)
+        today_snaps = [s for s in self._get_snapshots(client) if s["snapshot_date"] == TODAY]
+        assert len(today_snaps) == 3
+
+    # 4. Calling dashboard twice does not duplicate rows (UPSERT is idempotent).
+    def test_snapshot_is_idempotent(self, client):
+        create_task(client)
+        self._trigger(client)
+        self._trigger(client)
+        today_snaps = [s for s in self._get_snapshots(client) if s["snapshot_date"] == TODAY]
+        assert len(today_snaps) == 1
+
+    # 5. Same-day second dashboard call updates mutable fields (urgency, days_since).
+    def test_snapshot_updates_on_same_day(self, client):
+        task = create_task(client, priority=3, interval_days=14)
+        self._trigger(client)
+        # Patch priority, then re-trigger — snapshot should reflect new priority.
+        client.patch(f"/tasks/{task['id']}", params={"priority": 9})
+        self._trigger(client)
+        today_snaps = [s for s in self._get_snapshots(client) if s["snapshot_date"] == TODAY]
+        assert today_snaps[0]["priority"] == 9
+
+    # 6. Core fields are stored correctly.
+    def test_snapshot_stores_core_fields(self, client):
+        task = create_task(client, name="CoreCheck", priority=7, interval_days=3)
+        self._trigger(client)
+        snap = next(s for s in self._get_snapshots(client) if s["task_id"] == task["id"])
+        assert snap["task_name"] == "CoreCheck"
+        assert snap["priority"] == 7
+        assert snap["interval_days"] == 3
+        assert snap["status"] == "active"
+        assert snap["is_paused"] == 0
+        assert snap["snapshot_date"] == TODAY
+
+    # 7. Scheduled task (active_from in future) is snapshotted with is_scheduled=1, urgency=0.
+    def test_scheduled_task_snapshot(self, client):
+        task = create_task(client, name="Scheduled", active_from=FUTURE_DATE)
+        self._trigger(client)
+        snap = next(s for s in self._get_snapshots(client) if s["task_id"] == task["id"])
+        assert snap["is_scheduled"] == 1
+        assert snap["urgency"] == 0.0
+
+    # 8. Paused task is snapshotted with is_paused=1 and urgency=0.
+    def test_paused_task_snapshot(self, client):
+        task = create_task(client, name="OnHiatus")
+        client.patch(f"/tasks/{task['id']}", params={"status": "hiatus"})
+        self._trigger(client)
+        snap = next(s for s in self._get_snapshots(client) if s["task_id"] == task["id"])
+        assert snap["is_paused"] == 1
+        assert snap["urgency"] == 0.0
+
+    # 9. completion_count in snapshot reflects today's completions.
+    def test_completion_count_in_snapshot(self, client):
+        task = create_task(client)
+        # Use PATCH to set count=3 directly.
+        client.patch(f"/completions/{task['id']}/{TODAY}", params={"count": 3})
+        self._trigger(client)
+        snap = next(s for s in self._get_snapshots(client) if s["task_id"] == task["id"])
+        assert snap["completion_count"] == 3
+
+    # 10. Soft-deleted (is_active=0) task is not captured in snapshots.
+    def test_soft_deleted_task_not_in_snapshot(self, client):
+        task = create_task(client, name="ToDelete")
+        client.delete(f"/tasks/{task['id']}")
+        self._trigger(client)
+        snap_ids = [s["task_id"] for s in self._get_snapshots(client)]
+        assert task["id"] not in snap_ids
+
+    # 11. task_daily_snapshots array appears in backup JSON with schema_version=3.
+    def test_snapshots_in_backup_json(self, client):
+        create_task(client)
+        self._trigger(client)
+        backup = client.get("/export/backup.json").json()
+        assert backup["schema_version"] == 3
+        assert "task_daily_snapshots" in backup
+        assert len(backup["task_daily_snapshots"]) >= 1
+
+    # 12. Snapshot rows persist even after task metadata changes (name/priority patch).
+    def test_snapshot_survives_task_metadata_change(self, client):
+        task = create_task(client, name="Original", priority=5)
+        self._trigger(client)
+        # Confirm snapshot captured.
+        snaps_before = [s for s in self._get_snapshots(client) if s["task_id"] == task["id"]]
+        assert len(snaps_before) == 1
+        # Change task name and priority.
+        client.patch(f"/tasks/{task['id']}", params={"name": "Renamed", "priority": 8})
+        # Snapshot row still exists for this task (same-day upsert updates fields).
+        snaps_after = [s for s in self._get_snapshots(client) if s["task_id"] == task["id"]]
+        assert len(snaps_after) == 1
+        assert snaps_after[0]["task_id"] == task["id"]
 
 
 # ---------------------------------------------------------------------------
