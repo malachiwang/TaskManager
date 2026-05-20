@@ -19,6 +19,7 @@ import EditBar from './EditBar.jsx';
 import KeyboardHelp from './KeyboardHelp.jsx';
 import { FILTERS, FILTER_LABELS, taskPassesFilter } from '../filters.js';
 import { GROUP_MODES, GROUP_MODE_LABELS, groupTasks } from '../grouping.js';
+import { matchKeybind, resolveKeybinds } from '../keybinds.js';
 
 // ---------------------------------------------------------------------------
 // Date helpers
@@ -434,6 +435,11 @@ export default function TaskGrid() {
   // Used by click-outside close so natural click focus is not overridden.
   const skipFocusReturnRef = useRef(false);
 
+  // Resolved keybinds — merged defaults + any localStorage overrides.
+  // Resolved once on mount; future editing UI will update this via state.
+  const [resolvedKb]    = useState(resolveKeybinds);
+  const keybindsRef     = useRef(resolvedKb);
+
   // Sync refs each render — always current before any async event fires.
   // tasksRef uses flatGroupedTasks so keyboard nav follows visual render order.
   selectedCellRef.current = selectedCell;
@@ -442,6 +448,7 @@ export default function TaskGrid() {
   completionsRef.current  = completions;
   modalOpenRef.current    = modalOpen;
   helpOpenRef.current     = helpOpen;
+  keybindsRef.current     = resolvedKb;
   handlersRef.current     = { handleIncrement, handleClear, handleSetCount, openAdd, openEdit, setSelectedCell, closeModal, setHelpOpen };
 
   // Clear selectedCell when the selected task is no longer in the flat grouped list.
@@ -498,13 +505,14 @@ export default function TaskGrid() {
         handleIncrement, handleClear, handleSetCount,
         openAdd, openEdit, setSelectedCell, closeModal, setHelpOpen,
       } = handlersRef.current;
+      const kb    = keybindsRef.current;
       const sel   = selectedCellRef.current;
       const tasks = tasksRef.current;
       const dates = datesRef.current;
 
       // Escape — three-level priority. Modal close is pre-guard (works while typing
       // inside a modal input). Help-close and selection-clear respect the typing guard.
-      if (e.key === 'Escape' && !e.shiftKey) {
+      if (matchKeybind(e, kb.CLEAR_SELECTION)) {
         if (modalOpenRef.current) {
           closeModal();
           return;
@@ -529,13 +537,13 @@ export default function TaskGrid() {
       if (modalOpenRef.current) return;
 
       // N — open Add Task modal (no selection required)
-      if (e.key.toLowerCase() === 'n' && !e.shiftKey) {
+      if (matchKeybind(e, kb.NEW_TASK)) {
         openAdd();
         return;
       }
 
       // E — open Edit Task modal (requires selection; no auto-edit on bootstrap)
-      if (e.key.toLowerCase() === 'e' && !e.shiftKey) {
+      if (matchKeybind(e, kb.EDIT_TASK)) {
         if (!sel) return;
         const task = tasks.find((t) => t.id === sel.taskId);
         if (task) openEdit(task);
@@ -543,13 +551,15 @@ export default function TaskGrid() {
       }
 
       // ? — toggle keyboard help panel (no selection required)
-      if (e.key === '?') {
+      if (matchKeybind(e, kb.TOGGLE_HELP)) {
         setHelpOpen((o) => !o);
         return;
       }
 
-      // Feature 2: Arrow / Enter / Shift+Enter bootstrap selection when no cell is selected.
-      const isNavKey = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter'].includes(e.key);
+      // Arrow / Enter / Shift+Enter bootstrap selection when no cell is selected.
+      const isNavKey = matchKeybind(e, kb.MOVE_LEFT)  || matchKeybind(e, kb.MOVE_RIGHT) ||
+                       matchKeybind(e, kb.MOVE_UP)    || matchKeybind(e, kb.MOVE_DOWN)  ||
+                       matchKeybind(e, kb.INCREMENT)  || matchKeybind(e, kb.DECREMENT);
       if (!sel && isNavKey) {
         e.preventDefault();
         const defaultCell = getDefaultKeyboardCell(tasks, dates);
@@ -563,26 +573,26 @@ export default function TaskGrid() {
       const rowIdx  = tasks.findIndex((t) => t.id === sel.taskId);
       const dateIdx = dates.indexOf(sel.date);
 
-      if (e.key === 'ArrowLeft' && !e.shiftKey) {
+      if (matchKeybind(e, kb.MOVE_LEFT)) {
         e.preventDefault();
         const next = Math.max(0, dateIdx - 1);
         setSelectedCell({ taskId: sel.taskId, date: dates[next] });
         return;
       }
-      if (e.key === 'ArrowRight' && !e.shiftKey) {
+      if (matchKeybind(e, kb.MOVE_RIGHT)) {
         e.preventDefault();
         const next = Math.min(dates.length - 1, dateIdx + 1);
         setSelectedCell({ taskId: sel.taskId, date: dates[next] });
         return;
       }
-      if (e.key === 'ArrowUp' && !e.shiftKey) {
+      if (matchKeybind(e, kb.MOVE_UP)) {
         e.preventDefault();
         if (rowIdx < 0) return;
         const next = Math.max(0, rowIdx - 1);
         setSelectedCell({ taskId: tasks[next].id, date: sel.date });
         return;
       }
-      if (e.key === 'ArrowDown' && !e.shiftKey) {
+      if (matchKeybind(e, kb.MOVE_DOWN)) {
         e.preventDefault();
         if (rowIdx < 0) return;
         const next = Math.min(tasks.length - 1, rowIdx + 1);
@@ -592,14 +602,15 @@ export default function TaskGrid() {
 
       // Enter — increment (plain) or true decrement (shift).
       // Reuses existing setCompletionCount (PATCH) and deleteCompletion (DELETE) paths.
-      if (e.key === 'Enter') {
+      // Check DECREMENT first (Shift+Enter) before INCREMENT (Enter).
+      if (matchKeybind(e, kb.DECREMENT) || matchKeybind(e, kb.INCREMENT)) {
         const task = tasks.find((t) => t.id === sel.taskId);
         if (!task) return;
         if (task.is_paused === 1) return;
         if (sel.date > toLocalDate(new Date())) return; // no-op on future dates
         if (task.active_from && sel.date < task.active_from) return; // no-op before active_from
 
-        if (e.shiftKey) {
+        if (matchKeybind(e, kb.DECREMENT)) {
           const count = completionsRef.current[`${sel.taskId}:${sel.date}`] || 0;
           if (count === 0) return;
           if (count === 1) {

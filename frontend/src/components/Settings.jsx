@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { buildExportBackupUrl } from '../api.js';
+import { resolveKeybinds, bindingLabel, KEYBINDS, KB_GROUP_ORDER } from '../keybinds.js';
 
 const LS_SETTINGS_KEY   = 'taskos-settings';
 const LS_COL_WIDTHS_KEY = 'taskos-col-widths';
@@ -20,6 +21,15 @@ export default function Settings() {
   const [defaultInterval, setDefaultInterval] = useState(() => loadSettings().defaultIntervalDays ?? 7);
   const [savedMsg, setSavedMsg]               = useState(false);
   const [colResetMsg, setColResetMsg]         = useState(false);
+
+  // Resolved keybinds for the read-only shortcuts table.
+  const resolvedKb = useMemo(resolveKeybinds, []);
+  const kbGroups = useMemo(() =>
+    KB_GROUP_ORDER.map((group) => ({
+      group,
+      actions: Object.entries(KEYBINDS).filter(([, b]) => b.group === group),
+    })),
+  []);
 
   function handleSaveDefaults(e) {
     e.preventDefault();
@@ -259,10 +269,33 @@ export default function Settings() {
             </div>
           </div>
 
-          {/* 05 System Behavior */}
+          {/* 05 Keyboard Shortcuts */}
           <div className="ws-frame">
             <div className="ws-frame-header">
               <span className="ws-frame-kicker">05</span>
+              <span>Keyboard shortcuts</span>
+              <span className="ws-frame-header-sub">read only · rebinding in a future release</span>
+            </div>
+            {kbGroups.map(({ group, actions }) => (
+              <div key={group}>
+                <div className="ws-settings-group">{group}</div>
+                {actions.map(([action, binding]) => (
+                  <div key={action} className="ws-kbd-shortcut-row">
+                    <kbd className="ws-kbd-key">{bindingLabel(resolvedKb[action])}</kbd>
+                    <span className="ws-kbd-shortcut-desc">{binding.description}</span>
+                    {!binding.customizable && (
+                      <span className="ws-state-badge ws-state-badge--dim">fixed</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+
+          {/* 06 System Behavior */}
+          <div className="ws-frame">
+            <div className="ws-frame-header">
+              <span className="ws-frame-kicker">06</span>
               <span>System behavior</span>
               <span className="ws-frame-header-sub">read only · reference card</span>
             </div>
@@ -321,10 +354,10 @@ D = days_since   I = interval_days`}</pre>
             </div>
           </div>
 
-          {/* 06 About */}
+          {/* 07 About */}
           <div className="ws-frame">
             <div className="ws-frame-header">
-              <span className="ws-frame-kicker">06</span>
+              <span className="ws-frame-kicker">07</span>
               <span>About</span>
             </div>
             <div className="ws-frame-body settings-prose">
