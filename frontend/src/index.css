@@ -3581,6 +3581,63 @@ select.task-modal-input {
   color: var(--muted);
 }
 
+/* Keyboard shortcut editing — recording state, action buttons */
+
+.ws-kbd-shortcut-row--recording {
+  background: var(--bg-panel);
+  outline: 1px solid var(--accent);
+  border-radius: 3px;
+}
+
+.ws-kbd-recording-prompt {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-style: italic;
+  color: var(--muted);
+  min-width: 32px;
+  padding: 2px 0;
+}
+
+.ws-kbd-error {
+  flex: 1;
+  font-size: 11px;
+  color: #c0392b;
+}
+
+[data-theme="paper"] .ws-kbd-error {
+  color: #b03020;
+}
+
+.ws-kbd-action-btn {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ws-kbd-action-btn:hover {
+  color: var(--ink);
+  border-color: var(--muted);
+}
+
+.ws-kbd-action-btn--reset {
+  color: var(--muted);
+  border-color: var(--rule-2, var(--grid-border));
+  border-style: dashed;
+}
+
+.ws-kbd-reset-all {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--rule-2);
+  text-align: right;
+}
+
 /* Formula block */
 .ws-formula-block {
   padding: 10px 14px 12px;

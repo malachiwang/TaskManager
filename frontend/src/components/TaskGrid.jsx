@@ -759,6 +759,7 @@ export default function TaskGrid() {
                 panelRef={helpPanelRef}
                 closeButtonRef={helpCloseBtnRef}
                 onClose={() => setHelpOpen(false)}
+                resolvedKb={resolvedKb}
               />
             )}
           </div>

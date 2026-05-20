@@ -1,6 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { buildExportBackupUrl } from '../api.js';
-import { resolveKeybinds, bindingLabel, KEYBINDS, KB_GROUP_ORDER } from '../keybinds.js';
+import {
+  KEYBINDS, KB_GROUP_ORDER,
+  loadKbOverrides, writeKbOverrides, buildResolvedFromOverrides,
+  isReservedBinding, findBindingConflict, captureEventToBinding,
+  bindingLabel, bindingSignature, normalizeBinding,
+} from '../keybinds.js';
 
 const LS_SETTINGS_KEY   = 'taskos-settings';
 const LS_COL_WIDTHS_KEY = 'taskos-col-widths';
@@ -22,14 +27,108 @@ export default function Settings() {
   const [savedMsg, setSavedMsg]               = useState(false);
   const [colResetMsg, setColResetMsg]         = useState(false);
 
-  // Resolved keybinds for the read-only shortcuts table.
-  const resolvedKb = useMemo(resolveKeybinds, []);
+  // Keybind overrides state — only the overrides (not full resolved map).
+  // Updating this state re-derives resolvedKb immediately.
+  const [kbOverrides, setKbOverrides] = useState(loadKbOverrides);
+  const resolvedKb = useMemo(() => buildResolvedFromOverrides(kbOverrides), [kbOverrides]);
+
+  // Recording state: which action is being recorded, and any inline error.
+  const [recordingAction, setRecordingAction] = useState(null);
+  const [recordingError,  setRecordingError]  = useState('');
+
+  // Static group/action structure — shape never changes.
   const kbGroups = useMemo(() =>
     KB_GROUP_ORDER.map((group) => ({
       group,
       actions: Object.entries(KEYBINDS).filter(([, b]) => b.group === group),
     })),
   []);
+
+  // ---------------------------------------------------------------------------
+  // Keybind recording — capture next keydown while recording is active.
+  // TaskGrid is unmounted on the Settings tab so there is no handler conflict.
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!recordingAction) return;
+
+    function captureKey(e) {
+      // Pure modifier keys — ignore silently; user is still composing.
+      if (['Shift', 'Control', 'Meta', 'Alt', 'CapsLock'].includes(e.key)) return;
+
+      // Escape always cancels recording, never binds.
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setRecordingAction(null);
+        setRecordingError('');
+        return;
+      }
+
+      // Block everything else from triggering browser shortcuts while recording.
+      e.preventDefault();
+      e.stopPropagation();
+
+      const binding = captureEventToBinding(e);
+      if (!binding) return;
+
+      if (isReservedBinding(binding)) {
+        setRecordingError('Reserved — choose a letter, digit, or symbol');
+        return;
+      }
+
+      const conflict = findBindingConflict(binding, recordingAction, resolvedKb);
+      if (conflict) {
+        setRecordingError(`Already used for "${KEYBINDS[conflict].description}"`);
+        return;
+      }
+
+      // Valid — apply using functional update to avoid stale kbOverrides closure.
+      const action = recordingAction;
+      setKbOverrides((prev) => {
+        const isDefault =
+          bindingSignature(binding) === bindingSignature(normalizeBinding(KEYBINDS[action]));
+        const next = { ...prev };
+        if (isDefault) {
+          delete next[action];
+        } else {
+          next[action] = binding;
+        }
+        writeKbOverrides(next);
+        return next;
+      });
+      setRecordingAction(null);
+      setRecordingError('');
+    }
+
+    window.addEventListener('keydown', captureKey);
+    return () => window.removeEventListener('keydown', captureKey);
+  }, [recordingAction, resolvedKb]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function startRecording(action) {
+    setRecordingAction(action);
+    setRecordingError('');
+  }
+
+  function cancelRecording() {
+    setRecordingAction(null);
+    setRecordingError('');
+  }
+
+  function resetOverride(action) {
+    setKbOverrides((prev) => {
+      const next = { ...prev };
+      delete next[action];
+      writeKbOverrides(next);
+      return next;
+    });
+    // Cancel recording for this action if it was active.
+    if (recordingAction === action) cancelRecording();
+  }
+
+  function resetAllOverrides() {
+    writeKbOverrides({});
+    setKbOverrides({});
+    cancelRecording();
+  }
 
   function handleSaveDefaults(e) {
     e.preventDefault();
@@ -274,22 +373,54 @@ export default function Settings() {
             <div className="ws-frame-header">
               <span className="ws-frame-kicker">05</span>
               <span>Keyboard shortcuts</span>
-              <span className="ws-frame-header-sub">read only · rebinding in a future release</span>
+              <span className="ws-frame-header-sub">customizable · saved in browser storage</span>
             </div>
             {kbGroups.map(({ group, actions }) => (
               <div key={group}>
                 <div className="ws-settings-group">{group}</div>
-                {actions.map(([action, binding]) => (
-                  <div key={action} className="ws-kbd-shortcut-row">
-                    <kbd className="ws-kbd-key">{bindingLabel(resolvedKb[action])}</kbd>
-                    <span className="ws-kbd-shortcut-desc">{binding.description}</span>
-                    {!binding.customizable && (
-                      <span className="ws-state-badge ws-state-badge--dim">fixed</span>
-                    )}
-                  </div>
-                ))}
+                {actions.map(([action, binding]) => {
+                  const isRecording = recordingAction === action;
+                  if (!binding.customizable) {
+                    return (
+                      <div key={action} className="ws-kbd-shortcut-row">
+                        <kbd className="ws-kbd-key">{bindingLabel(resolvedKb[action])}</kbd>
+                        <span className="ws-kbd-shortcut-desc">{binding.description}</span>
+                        <span className="ws-state-badge ws-state-badge--dim">fixed</span>
+                      </div>
+                    );
+                  }
+                  if (isRecording) {
+                    return (
+                      <div key={action} className="ws-kbd-shortcut-row ws-kbd-shortcut-row--recording">
+                        <span className="ws-kbd-recording-prompt">Press a key…</span>
+                        {recordingError
+                          ? <span className="ws-kbd-error" aria-live="polite">{recordingError}</span>
+                          : <span className="ws-kbd-shortcut-desc">{binding.description}</span>
+                        }
+                        <button className="ws-kbd-action-btn" onClick={cancelRecording}>Cancel</button>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div key={action} className="ws-kbd-shortcut-row">
+                      <kbd className="ws-kbd-key">{bindingLabel(resolvedKb[action])}</kbd>
+                      <span className="ws-kbd-shortcut-desc">{binding.description}</span>
+                      <button className="ws-kbd-action-btn" onClick={() => startRecording(action)}>Change</button>
+                      {action in kbOverrides && (
+                        <button className="ws-kbd-action-btn ws-kbd-action-btn--reset" onClick={() => resetOverride(action)}>Reset</button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             ))}
+            {Object.keys(kbOverrides).length > 0 && (
+              <div className="ws-kbd-reset-all">
+                <button className="ws-kbd-action-btn" onClick={resetAllOverrides}>
+                  Reset all shortcuts
+                </button>
+              </div>
+            )}
           </div>
 
           {/* 06 System Behavior */}

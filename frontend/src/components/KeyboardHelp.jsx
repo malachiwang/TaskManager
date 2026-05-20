@@ -1,10 +1,9 @@
-// Keyboard help panel — P4 Keyboard Discoverability.
-// Purely presentational — no internal state.
-// Rendered conditionally by TaskGrid when helpOpen is true.
+// Keyboard help panel.
+// Receives resolvedKb from TaskGrid so labels reflect any active custom bindings.
 
-import { KEYBIND_HELP } from '../keybinds.js';
+import { KEYBIND_HELP, bindingLabel } from '../keybinds.js';
 
-export default function KeyboardHelp({ panelRef, closeButtonRef, onClose }) {
+export default function KeyboardHelp({ panelRef, closeButtonRef, onClose, resolvedKb }) {
   return (
     <div
       ref={panelRef}
@@ -28,12 +27,18 @@ export default function KeyboardHelp({ panelRef, closeButtonRef, onClose }) {
       {KEYBIND_HELP.map((section) => (
         <div key={section.group} className="ws-kbd-help-section">
           <div className="ws-kbd-help-title">{section.group}</div>
-          {section.items.map((item) => (
-            <div key={item.keys} className="ws-kbd-help-row">
-              <span className="ws-kbd-help-key">{item.keys}</span>
-              <span className="ws-kbd-help-desc">{item.desc}</span>
-            </div>
-          ))}
+          {section.items.map((item) => {
+            const label = item.action && resolvedKb
+              ? bindingLabel(resolvedKb[item.action])
+              : item.keys;
+            const rowKey = item.action ?? item.keys;
+            return (
+              <div key={rowKey} className="ws-kbd-help-row">
+                <span className="ws-kbd-help-key">{label}</span>
+                <span className="ws-kbd-help-desc">{item.desc}</span>
+              </div>
+            );
+          })}
         </div>
       ))}
     </div>

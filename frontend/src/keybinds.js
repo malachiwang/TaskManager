@@ -1,11 +1,20 @@
 // Centralized keyboard shortcut definitions.
 //
-// Each action carries full metadata so the handler, Settings, and KeyboardHelp
-// can all derive from one source of truth.
-//
-// Future phase: editing UI writes user overrides to localStorage('taskos-keybinds').
-// resolveKeybinds() already merges those overrides — the handler will reflect
-// custom bindings automatically once the editing UI exists.
+// Architecture:
+//   KEYBINDS          — static default definitions with full metadata
+//   loadKbOverrides   — reads taskos-keybinds from localStorage
+//   writeKbOverrides  — writes / removes taskos-keybinds in localStorage
+//   buildResolvedFromOverrides — merges overrides onto defaults
+//   resolveKeybinds   — convenience: load + build in one call
+//   matchKeybind      — pure KeyboardEvent comparator
+//   bindingLabel      — human-readable label for display
+//   isReservedBinding — validation: blocks Enter, Esc, Arrows, etc.
+//   findBindingConflict — validation: detects collisions with other actions
+//   captureEventToBinding — normalizes a KeyboardEvent into a binding object
+
+// ---------------------------------------------------------------------------
+// KEYBINDS — one entry per action
+// ---------------------------------------------------------------------------
 
 export const KEYBINDS = {
   INCREMENT: {
@@ -74,24 +83,19 @@ export const KEYBINDS = {
 export const KB_GROUP_ORDER = ['Navigation', 'Editing', 'View'];
 
 // ---------------------------------------------------------------------------
-// Symbol key detection
+// Internal helpers
 // ---------------------------------------------------------------------------
-// Symbol keys (?, !, @, …) carry their own shift state in e.key — pressing
-// Shift+/ gives e.key='?'. For these keys we skip the shift check in
-// matchKeybind so the binding works on any keyboard layout.
 
+// Symbol keys (?, !, etc.) carry their own shift state in e.key — pressing
+// Shift+/ gives e.key='?'. For these we skip the shift check in matchKeybind
+// and normalize shift to false in captureEventToBinding.
 function isSymbolKey(key) {
   return key.length === 1 && !/[a-zA-Z0-9]/.test(key);
 }
 
 // ---------------------------------------------------------------------------
-// normalizeBinding
+// normalizeBinding — lowercase letters, coerce booleans, no mutation
 // ---------------------------------------------------------------------------
-// Returns a new binding object with:
-//   - single-letter keys lowercased
-//   - all modifier fields coerced to booleans
-// Does not mutate the input.
-
 export function normalizeBinding(binding) {
   return {
     key:   /^[a-zA-Z]$/.test(binding.key) ? binding.key.toLowerCase() : binding.key,
@@ -103,22 +107,20 @@ export function normalizeBinding(binding) {
 }
 
 // ---------------------------------------------------------------------------
-// bindingSignature
-// ---------------------------------------------------------------------------
-// Returns a stable string for conflict detection / map keys.
+// bindingSignature — stable string for conflict detection
 // Example: "e|false|false|false|false"
-
+// ---------------------------------------------------------------------------
 export function bindingSignature(binding) {
   const n = normalizeBinding(binding);
-  return `${n.key}|${n.shift}|${n.meta}|${n.ctrl}|${n.alt}`;
+  // Symbol keys normalize shift to false so signatures are consistent with matchKeybind.
+  const shift = isSymbolKey(n.key) ? false : n.shift;
+  return `${n.key}|${shift}|${n.meta}|${n.ctrl}|${n.alt}`;
 }
 
 // ---------------------------------------------------------------------------
-// bindingLabel
+// bindingLabel — human-readable display string
+// Examples: e→E, Enter→↵, Shift+Enter→⇧↵, ArrowLeft→←, ?→?
 // ---------------------------------------------------------------------------
-// Returns a compact human-readable label.
-// Examples: e → E, Enter → ↵, Shift+Enter → ⇧↵, ArrowLeft → ←, ? → ?
-
 const KEY_DISPLAY = {
   Enter:      '↵',
   Escape:     'Esc',
@@ -137,20 +139,16 @@ export function bindingLabel(binding) {
   if (n.ctrl)  prefix += 'Ctrl+';
   if (n.alt)   prefix += 'Alt+';
   if (n.meta)  prefix += '⌘';
-  // Skip shift prefix for symbol keys — the symbol character already implies it.
+  // Skip shift prefix for symbol keys — the symbol already implies it.
   if (n.shift && !isSymbolKey(n.key)) prefix += '⇧';
   return prefix + keyStr;
 }
 
 // ---------------------------------------------------------------------------
-// matchKeybind
-// ---------------------------------------------------------------------------
-// Compares a KeyboardEvent against a binding definition.
+// matchKeybind — compare a KeyboardEvent against a binding definition
 // Pure function — no side effects.
-//
-// Symbol keys (?, etc.) skip the shift check because e.key already encodes
-// the shift state (Shift+/ → e.key='?' with e.shiftKey=true on US keyboards).
-
+// Symbol keys skip the shift check; see isSymbolKey above.
+// ---------------------------------------------------------------------------
 export function matchKeybind(event, binding) {
   const n = normalizeBinding(binding);
   if (event.key.toLowerCase() !== n.key.toLowerCase()) return false;
@@ -162,39 +160,104 @@ export function matchKeybind(event, binding) {
 }
 
 // ---------------------------------------------------------------------------
-// resolveKeybinds
+// captureEventToBinding — convert a KeyboardEvent to a storable binding
+// Returns null for pure modifier keys (Shift, Ctrl, etc.).
+// Symbol keys: shift is normalized to false (symbol encodes its own shift state).
 // ---------------------------------------------------------------------------
-// Returns a resolved keybind map: KEYBINDS defaults merged with any valid
-// localStorage overrides. Only actions where customizable===true are
-// overridable. Invalid or corrupt entries are silently ignored.
+export function captureEventToBinding(event) {
+  if (['Shift', 'Control', 'Meta', 'Alt', 'CapsLock'].includes(event.key)) return null;
+  const key = /^[a-zA-Z]$/.test(event.key) ? event.key.toLowerCase() : event.key;
+  const shift = isSymbolKey(event.key) ? false : !!event.shiftKey;
+  return {
+    key,
+    shift,
+    meta: !!event.metaKey,
+    ctrl: !!event.ctrlKey,
+    alt:  !!event.altKey,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// isReservedBinding — true if the binding should never be allowed as a custom
+// shortcut. Blocks: multi-char named keys (Enter, Esc, Arrows, etc.), Space,
+// and any combination using Ctrl / Meta / Alt.
+// ---------------------------------------------------------------------------
+export function isReservedBinding(binding) {
+  const n = normalizeBinding(binding);
+  if (n.key.length > 1) return true;   // Enter, Escape, ArrowLeft, Tab, F1…
+  if (n.key === ' ')    return true;   // Space
+  if (n.meta || n.ctrl || n.alt) return true;
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// findBindingConflict — returns the conflicting action ID, or null.
+// Validates against ALL resolved bindings (fixed + customizable).
+// Uses bindingSignature for comparison, which already normalizes symbol shift.
+// ---------------------------------------------------------------------------
+export function findBindingConflict(binding, forAction, resolved) {
+  const sig = bindingSignature(binding);
+  for (const [action, b] of Object.entries(resolved)) {
+    if (action === forAction) continue;
+    if (bindingSignature(b) === sig) return action;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// localStorage persistence
+// ---------------------------------------------------------------------------
 
 const LS_KEYBINDS_KEY = 'taskos-keybinds';
 
-export function resolveKeybinds() {
-  let overrides = {};
+// loadKbOverrides — returns only the validated overrides object (not merged).
+// Used to initialize Settings state so edits can be tracked separately.
+export function loadKbOverrides() {
   try {
     const raw = localStorage.getItem(LS_KEYBINDS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        overrides = parsed;
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const clean = {};
+    for (const [action, override] of Object.entries(parsed)) {
+      if (
+        KEYBINDS[action]?.customizable &&
+        override &&
+        typeof override === 'object' &&
+        typeof override.key === 'string' &&
+        override.key.length > 0
+      ) {
+        clean[action] = normalizeBinding(override);
       }
     }
+    return clean;
   } catch {
-    // Corrupt JSON — use all defaults.
+    return {};
   }
+}
 
+// writeKbOverrides — persists the overrides object. Removes the key entirely
+// when overrides is empty so localStorage stays clean.
+export function writeKbOverrides(overrides) {
+  try {
+    if (Object.keys(overrides).length === 0) {
+      localStorage.removeItem(LS_KEYBINDS_KEY);
+    } else {
+      localStorage.setItem(LS_KEYBINDS_KEY, JSON.stringify(overrides));
+    }
+  } catch {
+    // localStorage unavailable — silently ignore.
+  }
+}
+
+// buildResolvedFromOverrides — merge validated overrides onto KEYBINDS defaults.
+// Separating this from loading lets Settings update resolvedKb reactively.
+export function buildResolvedFromOverrides(overrides) {
   const result = {};
   for (const [action, binding] of Object.entries(KEYBINDS)) {
     const override = overrides[action];
-    if (
-      binding.customizable &&
-      override &&
-      typeof override === 'object' &&
-      typeof override.key === 'string' &&
-      override.key.length > 0
-    ) {
-      result[action] = { ...binding, ...normalizeBinding(override) };
+    if (binding.customizable && override) {
+      result[action] = { ...binding, ...override };
     } else {
       result[action] = binding;
     }
@@ -202,33 +265,39 @@ export function resolveKeybinds() {
   return result;
 }
 
-// ---------------------------------------------------------------------------
-// KEYBIND_HELP — static structured data for KeyboardHelp panel.
-// Groups and descriptions match KEYBINDS above.
-// ---------------------------------------------------------------------------
+// resolveKeybinds — convenience wrapper: load overrides + build resolved map.
+// Used by TaskGrid on mount.
+export function resolveKeybinds() {
+  return buildResolvedFromOverrides(loadKbOverrides());
+}
 
+// ---------------------------------------------------------------------------
+// KEYBIND_HELP — structured data for KeyboardHelp panel.
+// Items with `action` get their label from the resolved binding at render time.
+// Items without `action` use the static `keys` string (combined nav rows).
+// ---------------------------------------------------------------------------
 export const KEYBIND_HELP = [
   {
     group: 'Navigation',
     items: [
-      { keys: '↑ / ↓', desc: 'Move selection between tasks'  },
-      { keys: '← / →', desc: 'Move selection between dates'  },
+      { keys: '↑ / ↓', desc: 'Move selection between tasks' },
+      { keys: '← / →', desc: 'Move selection between dates' },
     ],
   },
   {
     group: 'Editing',
     items: [
-      { keys: '↵',   desc: 'Increment completion for selected cell' },
-      { keys: '⇧ ↵', desc: 'Decrement completion for selected cell' },
-      { keys: 'E',   desc: 'Edit the selected task' },
-      { keys: 'N',   desc: 'Add a new task' },
+      { action: 'INCREMENT', desc: 'Increment completion for selected cell' },
+      { action: 'DECREMENT', desc: 'Decrement completion for selected cell' },
+      { action: 'EDIT_TASK', desc: 'Edit the selected task' },
+      { action: 'NEW_TASK',  desc: 'Add a new task' },
     ],
   },
   {
     group: 'View',
     items: [
-      { keys: 'Esc', desc: 'Close modal, close help, or clear selection' },
-      { keys: '?',   desc: 'Show or hide keyboard shortcuts' },
+      { action: 'CLEAR_SELECTION', desc: 'Close modal, close help, or clear selection' },
+      { action: 'TOGGLE_HELP',     desc: 'Show or hide keyboard shortcuts' },
     ],
   },
 ];
