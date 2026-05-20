@@ -579,6 +579,99 @@ class TestDashboardGraphs:
 
 
 # ---------------------------------------------------------------------------
+# Dashboard heatmap data (P7)
+# ---------------------------------------------------------------------------
+
+class TestDashboardHeatmap:
+    def _dashboard(self, client):
+        return client.get("/dashboard").json()
+
+    def test_heatmap_key_present(self, client):
+        assert "completion_heatmap" in self._dashboard(client)
+
+    def test_heatmap_structure(self, client):
+        h = self._dashboard(client)["completion_heatmap"]
+        assert "group_by" in h
+        assert "dates" in h
+        assert "rows" in h
+        assert "max_value" in h
+        assert h["group_by"] == "section"
+        assert isinstance(h["dates"], list)
+        assert len(h["dates"]) == 30
+
+    def test_heatmap_dates_match_completion_trend(self, client):
+        data = self._dashboard(client)
+        trend_dates = [e["date"] for e in data["completion_trend"]]
+        heatmap_dates = data["completion_heatmap"]["dates"]
+        assert heatmap_dates == trend_dates
+
+    def test_heatmap_empty_db(self, client):
+        h = self._dashboard(client)["completion_heatmap"]
+        assert h["rows"] == []
+        assert h["max_value"] == 0
+
+    def test_heatmap_values_sum_completion_count(self, client):
+        t = create_task(client, name="Multi", section="Health")
+        client.post("/completions", params={"task_id": t["id"], "completion_date": TODAY})
+        client.patch(f"/completions/{t['id']}/{TODAY}", params={"count": 4})
+        h = self._dashboard(client)["completion_heatmap"]
+        health_row = next(r for r in h["rows"] if r["label"] == "Health")
+        today_idx = h["dates"].index(TODAY)
+        assert health_row["values"][today_idx] == 4
+
+    def test_heatmap_zero_total_rows_suppressed(self, client):
+        # Task with no completions in the window should not appear
+        create_task(client, name="Silent", section="Quiet")
+        h = self._dashboard(client)["completion_heatmap"]
+        labels = [r["label"] for r in h["rows"]]
+        assert "Quiet" not in labels
+
+    def test_heatmap_max_value_globally_correct(self, client):
+        t1 = create_task(client, name="T1", section="A")
+        t2 = create_task(client, name="T2", section="B")
+        client.post("/completions", params={"task_id": t1["id"], "completion_date": TODAY})
+        client.patch(f"/completions/{t1['id']}/{TODAY}", params={"count": 5})
+        client.post("/completions", params={"task_id": t2["id"], "completion_date": TODAY})
+        client.patch(f"/completions/{t2['id']}/{TODAY}", params={"count": 2})
+        h = self._dashboard(client)["completion_heatmap"]
+        assert h["max_value"] == 5
+
+    def test_heatmap_blank_section_becomes_no_section(self, client):
+        t = create_task(client, name="Blank Section", section="")
+        client.post("/completions", params={"task_id": t["id"], "completion_date": TODAY})
+        h = self._dashboard(client)["completion_heatmap"]
+        labels = [r["label"] for r in h["rows"]]
+        assert "(no section)" in labels
+
+    def test_heatmap_includes_paused_task_completions(self, client):
+        t = create_task(client, name="Paused Task", section="Health")
+        client.post("/completions", params={"task_id": t["id"], "completion_date": TODAY})
+        client.patch(f"/tasks/{t['id']}", params={"is_paused": True})
+        h = self._dashboard(client)["completion_heatmap"]
+        health_row = next((r for r in h["rows"] if r["label"] == "Health"), None)
+        assert health_row is not None
+        today_idx = h["dates"].index(TODAY)
+        assert health_row["values"][today_idx] == 1
+
+    def test_heatmap_row_values_length(self, client):
+        t = create_task(client, name="Task", section="Work")
+        client.post("/completions", params={"task_id": t["id"], "completion_date": TODAY})
+        h = self._dashboard(client)["completion_heatmap"]
+        for row in h["rows"]:
+            assert len(row["values"]) == 30
+
+    def test_heatmap_rows_sorted_by_total_descending(self, client):
+        t1 = create_task(client, name="Low", section="Low")
+        t2 = create_task(client, name="High", section="High")
+        client.post("/completions", params={"task_id": t1["id"], "completion_date": TODAY})
+        client.post("/completions", params={"task_id": t2["id"], "completion_date": TODAY})
+        client.patch(f"/completions/{t2['id']}/{TODAY}", params={"count": 3})
+        h = self._dashboard(client)["completion_heatmap"]
+        totals = [r["total"] for r in h["rows"]]
+        assert totals == sorted(totals, reverse=True)
+
+
+# ---------------------------------------------------------------------------
 # Archives
 # ---------------------------------------------------------------------------
 

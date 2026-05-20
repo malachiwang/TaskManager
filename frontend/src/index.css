@@ -1945,6 +1945,97 @@ thead .meta-col {
   opacity: 0.45;
 }
 
+/* ── Completion heatmap (P7) ─────────────────────────────────────────────── */
+
+.dash-heatmap {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dash-heatmap-empty {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted-2);
+  font-style: italic;
+  padding: 4px 0;
+}
+
+/* Date axis row */
+.dash-heatmap-axis {
+  display: flex;
+  align-items: flex-end;
+  margin-bottom: 2px;
+}
+
+/* Spacer matching label width so axis cells align with data cells */
+.dash-heatmap-axis .dash-heatmap-label {
+  visibility: hidden;
+}
+
+.dash-heatmap-axis-cell {
+  width: 10px;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 8px;
+  color: var(--muted-2);
+  line-height: 1;
+  /* allow tick text to overflow visually; neighbors are empty */
+  overflow: visible;
+  white-space: nowrap;
+}
+
+/* Section row */
+.dash-heatmap-row {
+  display: flex;
+  align-items: center;
+}
+
+/* Fixed-width label area */
+.dash-heatmap-label {
+  width: 110px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding-right: 8px;
+  overflow: hidden;
+}
+
+.dash-heatmap-label-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.dash-heatmap-label-total {
+  color: var(--muted-2);
+  flex-shrink: 0;
+  font-size: 10px;
+}
+
+/* Cell row */
+.dash-heatmap-cells {
+  display: flex;
+  gap: 1px;
+}
+
+/* Individual heatmap cell */
+.dash-heatmap-cell {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border-radius: 1px;
+  background: var(--header-bg);
+  cursor: default;
+}
+
 /* Recent completions panel — wide chart body */
 .ws-frame-body--chart {
   padding: 10px 12px 8px;

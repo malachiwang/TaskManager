@@ -660,13 +660,56 @@ def dashboard():
         (trend_start, today.isoformat()),
     ).fetchall()
     trend_map = {r["completion_date"]: r["total"] for r in trend_rows}
+    date_list = [(today - timedelta(days=29 - i)).isoformat() for i in range(30)]
     completion_trend = [
-        {
-            "date": (today - timedelta(days=29 - i)).isoformat(),
-            "count": trend_map.get((today - timedelta(days=29 - i)).isoformat(), 0),
-        }
-        for i in range(30)
+        {"date": d, "count": trend_map.get(d, 0)}
+        for d in date_list
     ]
+
+    # completion_heatmap — section × date, same 30-day window as completion_trend.
+    # Uses current task.section (not historical). Includes paused and soft-deleted
+    # tasks because their historical completions are real activity.
+    heat_sql_rows = conn.execute(
+        """
+        SELECT t.section, c.completion_date, SUM(c.completion_count) AS total
+        FROM completions c
+        JOIN tasks t ON t.id = c.task_id
+        WHERE c.completion_date BETWEEN ? AND ?
+        GROUP BY t.section, c.completion_date
+        """,
+        (trend_start, today.isoformat()),
+    ).fetchall()
+
+    heat_map: dict[str, dict[str, int]] = defaultdict(lambda: {d: 0 for d in date_list})
+    for r in heat_sql_rows:
+        section_key = r["section"] if r["section"] else ""
+        heat_map[section_key][r["completion_date"]] = r["total"]
+
+    heatmap_rows = []
+    for section_key, day_counts in heat_map.items():
+        values = [day_counts[d] for d in date_list]
+        total = sum(values)
+        if total == 0:
+            continue
+        label = section_key.strip() if section_key.strip() else "(no section)"
+        heatmap_rows.append({
+            "key": section_key,
+            "label": label,
+            "total": total,
+            "values": values,
+        })
+    heatmap_rows.sort(key=lambda r: r["total"], reverse=True)
+
+    heatmap_max = max(
+        (v for row in heatmap_rows for v in row["values"]),
+        default=0,
+    )
+    completion_heatmap = {
+        "group_by": "section",
+        "dates": date_list,
+        "rows": heatmap_rows,
+        "max_value": heatmap_max,
+    }
 
     conn.close()
     return {
@@ -678,6 +721,7 @@ def dashboard():
         "active_count": active_count,
         "urgency_distribution": dist,
         "completion_trend": completion_trend,
+        "completion_heatmap": completion_heatmap,
     }
 
 

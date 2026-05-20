@@ -84,6 +84,58 @@ function UrgencyDist({ dist, total }) {
   );
 }
 
+// Section × 30-day completion density heatmap.
+const TICK_INDICES = new Set([0, 7, 14, 21, 29]);
+
+function HeatmapGrid({ heatmap }) {
+  const { dates, rows, max_value } = heatmap;
+
+  if (rows.length === 0) {
+    return <div className="dash-heatmap-empty">No completions in the last 30 days.</div>;
+  }
+
+  return (
+    <div className="dash-heatmap">
+      {/* Sparse date axis */}
+      <div className="dash-heatmap-axis">
+        <div className="dash-heatmap-label" aria-hidden="true" />
+        <div className="dash-heatmap-cells">
+          {dates.map((d, i) => (
+            <div key={d} className="dash-heatmap-axis-cell">
+              {TICK_INDICES.has(i) ? d.slice(8) : null}
+            </div>
+          ))}
+        </div>
+      </div>
+      {rows.map((row) => (
+        <div key={row.key} className="dash-heatmap-row">
+          <div className="dash-heatmap-label" title={row.label}>
+            <span className="dash-heatmap-label-name">{row.label}</span>
+            <span className="dash-heatmap-label-total">{row.total}</span>
+          </div>
+          <div className="dash-heatmap-cells">
+            {row.values.map((count, i) => {
+              const intensity = max_value > 0 && count > 0
+                ? Math.max(count / max_value, 0.15)
+                : 0;
+              return (
+                <div
+                  key={dates[i]}
+                  className="dash-heatmap-cell"
+                  style={intensity > 0
+                    ? { background: `rgba(58,123,213,${intensity.toFixed(2)})` }
+                    : undefined}
+                  title={`${row.label} · ${dates[i]} · ${count} completion${count !== 1 ? 's' : ''}`}
+                />
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Horizontal ratio bar — active vs paused.
 function RatioBar({ activeCount, pausedCount }) {
   const total = activeCount + pausedCount;
@@ -130,7 +182,7 @@ export default function Dashboard() {
 
   const {
     top_5_urgent, category_summary, dormant_tasks, paused_count, never_done_count,
-    active_count, urgency_distribution, completion_trend,
+    active_count, urgency_distribution, completion_trend, completion_heatmap,
   } = data;
 
   // ── Derived stats ────────────────────────────────────────────────────────
@@ -463,21 +515,16 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* ── Completion heatmap — deferred, full width ── */}
+        {/* ── Completion heatmap — section × 30d ── */}
         <div className="ws-frame ws-frame--full">
           <div className="ws-frame-header">
             <span>Completion heatmap</span>
-            <span className="ws-frame-header-sub">unavailable · requires section × date completion counts</span>
+            <span className="ws-frame-header-sub">
+              section × date · SUM(completion_count) · {completion_heatmap.dates[0]} → {completion_heatmap.dates[29]}
+            </span>
           </div>
           <div className="ws-frame-body">
-            <p className="dash-deferred">
-              A heatmap requires section × date completion count data for the trailing 31 days.
-              The current <code>/dashboard</code> endpoint contains task-level urgency scores only — no completion timeseries.
-            </p>
-            <p className="dash-deferred dash-deferred--planned">
-              Planned — requires a new backend query aggregating <code>completions</code> by section and date.
-              No fake data will be rendered.
-            </p>
+            <HeatmapGrid heatmap={completion_heatmap} />
           </div>
         </div>
 
