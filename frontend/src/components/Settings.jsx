@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { buildExportBackupUrl } from '../api.js';
 import {
-  KEYBINDS, KB_GROUP_ORDER,
+  KEYBINDS, KB_GROUP_ORDER, FIXED_SHORTCUTS,
   loadKbOverrides, writeKbOverrides, buildResolvedFromOverrides,
   isReservedBinding, findBindingConflict, captureEventToBinding,
   bindingLabel, bindingSignature, normalizeBinding,
@@ -69,6 +69,12 @@ export default function Settings() {
 
       const binding = captureEventToBinding(e);
       if (!binding) return;
+
+      // Shift+1–9 is reserved for quick selection (event.code check is layout-agnostic).
+      if (e.shiftKey && /^Digit[1-9]$/.test(e.code)) {
+        setRecordingError('Reserved — Shift+1–9 is used for quick selection');
+        return;
+      }
 
       if (isReservedBinding(binding)) {
         setRecordingError('Reserved — choose a letter, digit, or symbol');
@@ -378,6 +384,13 @@ export default function Settings() {
             {kbGroups.map(({ group, actions }) => (
               <div key={group}>
                 <div className="ws-settings-group">{group}</div>
+                {FIXED_SHORTCUTS.filter((s) => s.group === group).map((s) => (
+                  <div key={s.keys} className="ws-kbd-shortcut-row">
+                    <kbd className="ws-kbd-key">{s.keys}</kbd>
+                    <span className="ws-kbd-shortcut-desc">{s.description}</span>
+                    <span className="ws-state-badge ws-state-badge--dim">fixed</span>
+                  </div>
+                ))}
                 {actions.map(([action, binding]) => {
                   const isRecording = recordingAction === action;
                   if (!binding.customizable) {

@@ -272,6 +272,18 @@ export function resolveKeybinds() {
 }
 
 // ---------------------------------------------------------------------------
+// FIXED_SHORTCUTS — non-customizable shortcuts shown in the Settings panel.
+// These are outside KEYBINDS because they are not single-action bindings.
+// ---------------------------------------------------------------------------
+export const FIXED_SHORTCUTS = [
+  {
+    group: 'Navigation',
+    keys: '⇧1–9',
+    description: 'Jump to Nth task row or Nth date column',
+  },
+];
+
+// ---------------------------------------------------------------------------
 // KEYBIND_HELP — structured data for KeyboardHelp panel.
 // Items with `action` get their label from the resolved binding at render time.
 // Items without `action` use the static `keys` string (combined nav rows).
@@ -282,6 +294,7 @@ export const KEYBIND_HELP = [
     items: [
       { keys: '↑ / ↓', desc: 'Move selection between tasks' },
       { keys: '← / →', desc: 'Move selection between dates' },
+      { keys: '⇧1–9', desc: 'Jump to Nth task row or Nth date column' },
     ],
   },
   {

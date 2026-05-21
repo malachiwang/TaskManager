@@ -113,23 +113,35 @@ function computeColLayout(colWidths) {
   return { widths, offsets };
 }
 
+// Returns the best default date column for keyboard bootstrap.
+// Today if visible; else last non-future date; else first date; else null.
+function getDefaultKeyboardDate(dates) {
+  if (!dates.length) return null;
+  const todayStr = toLocalDate(new Date());
+  if (dates.includes(todayStr)) return todayStr;
+  const nonFuture = dates.filter((d) => d <= todayStr);
+  return nonFuture.length > 0 ? nonFuture[nonFuture.length - 1] : dates[0];
+}
+
 // Returns the best default keyboard cell when no cell is selected.
 // Fallback order: first non-paused non-scheduled task > first non-paused task > first task.
 function getDefaultKeyboardCell(tasks, dates) {
   if (!tasks.length || !dates.length) return null;
-  const todayStr = toLocalDate(new Date());
   const task =
     tasks.find((t) => t.is_paused !== 1 && !t.is_scheduled) ??
     tasks.find((t) => t.is_paused !== 1) ??
     tasks[0];
-  let date;
-  if (dates.includes(todayStr)) {
-    date = todayStr;
-  } else {
-    const nonFuture = dates.filter((d) => d <= todayStr);
-    date = nonFuture.length > 0 ? nonFuture[nonFuture.length - 1] : dates[0];
-  }
-  return { taskId: task.id, date };
+  const date = getDefaultKeyboardDate(dates);
+  return date ? { taskId: task.id, date } : null;
+}
+
+// Returns 0-indexed position (0..8) for Shift+Digit1..9, null for anything else.
+// Uses event.code (layout-agnostic physical key) — never event.key, which varies
+// by keyboard layout (e.g. Shift+1 produces '!' on US keyboards).
+function getShiftDigitIndex(e) {
+  if (!e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return null;
+  if (!/^Digit[1-9]$/.test(e.code)) return null;
+  return parseInt(e.code[5], 10) - 1; // 'Digit1'→0, 'Digit9'→8
 }
 
 export default function TaskGrid() {
@@ -554,6 +566,24 @@ export default function TaskGrid() {
       // ? — toggle keyboard help panel (no selection required)
       if (matchKeybind(e, kb.TOGGLE_HELP)) {
         setHelpOpen((o) => !o);
+        return;
+      }
+
+      // Shift+1..9 — quick selection (uses event.code for layout-agnostic detection).
+      // No selection: jump to Nth visible task row at the default date.
+      // Existing selection: jump to Nth visible date column in the same task row.
+      const shiftIdx = getShiftDigitIndex(e);
+      if (shiftIdx !== null) {
+        e.preventDefault();
+        if (!sel) {
+          if (!tasks.length || !dates.length || shiftIdx >= tasks.length) return;
+          const date = getDefaultKeyboardDate(dates);
+          if (!date) return;
+          setSelectedCell({ taskId: tasks[shiftIdx].id, date });
+        } else {
+          if (shiftIdx >= dates.length) return;
+          setSelectedCell({ taskId: sel.taskId, date: dates[shiftIdx] });
+        }
         return;
       }
 
