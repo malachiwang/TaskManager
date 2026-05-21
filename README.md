@@ -17,6 +17,22 @@ that automatically computes last-done, days-since, urgency, and history.
 
 ---
 
+## Development quick start
+
+Once dependencies are installed (see setup below):
+
+```bash
+./start.sh
+```
+
+- Requires `.venv` already created and Python dependencies installed
+- Requires frontend npm dependencies installed (`cd frontend && npm install`)
+- Starts backend on http://localhost:8000
+- Starts frontend on http://localhost:5173
+- Stop with Ctrl+C — backend process is cleaned up automatically
+
+---
+
 ## Local Setup
 
 ### Requirements
