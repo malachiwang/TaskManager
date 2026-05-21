@@ -4092,6 +4092,192 @@ select.task-modal-input {
   margin-left: 2px;
 }
 
+/* ── Saved views control — P7 ── */
+
+.ws-views {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.ws-views-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border: 1px solid var(--rule);
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.ws-views-btn:hover,
+.ws-views-btn--open {
+  background: var(--header-bg);
+  color: var(--ink);
+  border-color: var(--ink-3);
+}
+
+.ws-views-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  width: 320px;
+  background: var(--bg-panel);
+  border: 1px solid var(--rule);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  max-height: 480px;
+}
+
+.ws-views-head {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--muted-2);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 8px 10px 4px;
+}
+
+.ws-views-save {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.ws-views-save-row {
+  display: flex;
+  gap: 6px;
+  padding: 2px 10px 0;
+}
+
+.ws-views-input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--rule);
+  background: var(--bg-app);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--ink);
+  outline: none;
+}
+
+.ws-views-input:focus {
+  border-color: var(--ink-3);
+}
+
+.ws-views-save-btn {
+  padding: 2px 10px;
+  border: 1px solid var(--rule);
+  background: var(--ink-2);
+  color: #fff;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ws-views-save-btn:hover {
+  background: var(--ink);
+}
+
+.ws-views-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted-2);
+  padding: 3px 10px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ws-views-error {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--urg-hi, #c0392b);
+  padding: 2px 10px 0;
+}
+
+.ws-views-list {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.ws-views-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--header-bg);
+}
+
+.ws-views-item:last-child {
+  border-bottom: none;
+}
+
+.ws-views-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.ws-views-name {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ws-views-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.ws-views-action-btn {
+  padding: 2px 7px;
+  border: 1px solid var(--rule);
+  background: none;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ws-views-action-btn:hover {
+  color: var(--ink);
+  border-color: var(--ink-3);
+}
+
+.ws-views-action-btn--del {
+  color: var(--muted-2);
+}
+
+.ws-views-action-btn--confirm {
+  color: var(--urg-hi, #c0392b);
+  border-color: var(--urg-hi, #c0392b);
+}
+
+.ws-views-empty {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted-2);
+  padding: 10px;
+  text-align: center;
+  font-style: italic;
+}
+
 /* ── Keyboard help trigger + panel — P4 ── */
 
 /* Anchor wrapper — establishes the absolute positioning context for the panel */

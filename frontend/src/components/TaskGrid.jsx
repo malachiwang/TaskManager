@@ -20,6 +20,7 @@ import KeyboardHelp from './KeyboardHelp.jsx';
 import { FILTERS, FILTER_LABELS, taskPassesFilter } from '../filters.js';
 import { GROUP_MODES, GROUP_MODE_LABELS, groupTasks } from '../grouping.js';
 import { matchKeybind, resolveKeybinds } from '../keybinds.js';
+import SavedViewsControl from './SavedViewsControl.jsx';
 
 // ---------------------------------------------------------------------------
 // Date helpers
@@ -638,6 +639,20 @@ export default function TaskGrid() {
     localStorage.removeItem(LS_KEY);
   }
 
+  // Saved views
+  // ---------------------------------------------------------------------------
+
+  function handleApplyView(view) {
+    const validFilter    = Object.values(FILTERS).includes(view.filter)
+      ? view.filter    : FILTERS.ALL;
+    const validGroupMode = Object.values(GROUP_MODES).includes(view.groupMode)
+      ? view.groupMode : GROUP_MODES.SECTION;
+    setActiveFilter(validFilter);
+    setGroupMode(validGroupMode);
+    setSearchQuery(view.searchQuery || '');
+    setSelectedCell(null);
+  }
+
   // Starts a drag resize for the given column key.
   // Uses document-level mousemove/mouseup listeners; cleans up on mouseup.
   // Width updates are throttled to one per animation frame.
@@ -803,6 +818,12 @@ export default function TaskGrid() {
             ))}
           </select>
         </label>
+        <SavedViewsControl
+          activeFilter={activeFilter}
+          groupMode={groupMode}
+          searchQuery={searchQuery}
+          onApplyView={handleApplyView}
+        />
       </div>
 
       {/* ── Inspector strip — compositionally framed EditBar ── */}
