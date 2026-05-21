@@ -26,11 +26,14 @@ if not getattr(sys, "frozen", False):
         sys.path.insert(0, str(_ROOT))
 
 import uvicorn  # noqa: E402
+from backend.main import app  # noqa: E402 — direct import so PyInstaller collects backend/
 
 
 def main() -> None:
     port = int(os.environ.get("TASKOS_PORT", "8765"))
-    uvicorn.run("backend.main:app", host="127.0.0.1", port=port)
+    # Pass the app object, not a string import — required for PyInstaller bundles
+    # because string imports ("backend.main:app") are not detected by static analysis.
+    uvicorn.run(app, host="127.0.0.1", port=port)
 
 
 if __name__ == "__main__":

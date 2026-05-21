@@ -86,7 +86,7 @@ dev mode — the backend running via `start.sh` on port 8000 serves all requests
 | Mode | SQLite path |
 |------|-------------|
 | Dev (`./start.sh`) | `<repo-root>/taskos.db` |
-| Packaged `.app` | `~/Library/Application Support/com.taskos.app/taskos.db` |
+| Packaged `.app` | `~/Library/Application Support/com.taskos.desktop/taskos.db` |
 
 The packaged app never reads or writes the dev `taskos.db`. Both are gitignored.
 

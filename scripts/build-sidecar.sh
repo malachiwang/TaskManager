@@ -52,17 +52,47 @@ fi
 echo "Target triple: $TARGET_TRIPLE"
 
 # ---------------------------------------------------------------------------
-# 3. Run PyInstaller
+# 3. Clean stale artifacts from previous builds
 # ---------------------------------------------------------------------------
 
 DIST_DIR="$PROJECT_ROOT/dist-sidecar"
+WORK_DIR="$PROJECT_ROOT/build-sidecar-tmp"
+BINARIES_DIR="$PROJECT_ROOT/src-tauri/binaries"
+DEST_BIN="$BINARIES_DIR/taskos-server-$TARGET_TRIPLE"
 
-echo "Building sidecar with PyInstaller..."
+# Remove stale sidecar binary so a failed build doesn't leave old binary in place.
+rm -f "$DEST_BIN"
+# Remove stale onedir output if a previous run used --onedir.
+rm -rf "$DIST_DIR/taskos-server"
+
+# ---------------------------------------------------------------------------
+# 4. Run PyInstaller (--onefile for Tauri sidecar compatibility)
+#
+# --onefile: embeds Python runtime + all modules into a single self-extracting
+#   binary. Required for Tauri externalBin, which bundles a single file — not
+#   a directory tree. The --onedir output requires an adjacent _internal/ folder
+#   which Tauri cannot bundle alongside the sidecar executable.
+#
+# --paths: adds project root to PyInstaller's module search path so that the
+#   backend package is found during static analysis.
+#
+# --collect-submodules backend: explicitly collects all submodules under
+#   backend/ (main, database, logic, etc.) even if not directly imported by
+#   static analysis from server.py.
+#
+# --specpath build-sidecar-tmp: keeps the generated .spec inside the work dir
+#   rather than the repo root.
+# ---------------------------------------------------------------------------
+
+echo "Building sidecar with PyInstaller (--onefile)..."
 pyinstaller \
-  --onedir \
+  --onefile \
   --name taskos-server \
   --distpath "$DIST_DIR" \
-  --workpath "$PROJECT_ROOT/build-sidecar-tmp" \
+  --workpath "$WORK_DIR" \
+  --specpath "$WORK_DIR" \
+  --paths "$PROJECT_ROOT" \
+  --collect-submodules backend \
   --noconfirm \
   --hidden-import uvicorn.logging \
   --hidden-import uvicorn.loops \
@@ -78,14 +108,12 @@ pyinstaller \
   backend/server.py
 
 # ---------------------------------------------------------------------------
-# 4. Copy binary to src-tauri/binaries/ with target-triple suffix
+# 5. Copy onefile binary to src-tauri/binaries/ with target-triple suffix
 # ---------------------------------------------------------------------------
 
-BINARIES_DIR="$PROJECT_ROOT/src-tauri/binaries"
 mkdir -p "$BINARIES_DIR"
 
-SRC_BIN="$DIST_DIR/taskos-server/taskos-server"
-DEST_BIN="$BINARIES_DIR/taskos-server-$TARGET_TRIPLE"
+SRC_BIN="$DIST_DIR/taskos-server"
 
 if [ ! -f "$SRC_BIN" ]; then
   echo "ERROR: PyInstaller output not found at $SRC_BIN"

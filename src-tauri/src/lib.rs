@@ -13,7 +13,7 @@ pub fn run() {
         .manage(SidecarChild(Mutex::new(None)))
         .setup(|app| {
             // Compute the platform app-data directory for the packaged DB.
-            // On macOS: ~/Library/Application Support/com.taskos.app/
+            // On macOS: ~/Library/Application Support/com.taskos.desktop/
             let db_path = app
                 .path()
                 .app_data_dir()

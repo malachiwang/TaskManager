@@ -1,10 +1,10 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "TaskManagementOS",
-  "identifier": "com.taskos.app",
+  "identifier": "com.taskos.desktop",
   "build": {
     "beforeDevCommand": "",
-    "beforeBuildCommand": "VITE_API_BASE=http://127.0.0.1:8765/api npm --prefix ../frontend run build",
+    "beforeBuildCommand": "VITE_API_BASE=http://127.0.0.1:8765 npm --prefix ../frontend run build",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../frontend/dist"
   },
