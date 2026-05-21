@@ -711,6 +711,36 @@ thead .meta-col {
   cursor: default;
 }
 
+.edit-bar-note-preview {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 0 2px 4px;
+  font-size: 11px;
+  overflow: hidden;
+}
+
+.edit-bar-note-preview-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--muted-2);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+
+/* Linkified URL in notes — used by LinkifiedText component */
+.note-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-all;
+}
+
+.note-link:hover {
+  opacity: 0.75;
+}
+
 /* -------------------------------------------------------------------------
    Loading / error / empty states
    ---------------------------------------------------------------------- */

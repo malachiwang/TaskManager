@@ -1,4 +1,5 @@
 import DateCell from './DateCell.jsx';
+import LinkifiedText from './LinkifiedText.jsx';
 
 // Map urgency value to a CSS class for color coding.
 function urgencyClass(urgency) {
@@ -54,7 +55,7 @@ export default function TaskRow({
       <td className="meta-col sticky-col col-sub" title={task.subtask} style={cs('col-sub')}>{task.subtask || ''}</td>
       <td className="meta-col scroll-meta-col col-freq" style={cs('col-freq')}>{task.interval_days}d</td>
       <td className={`meta-col scroll-meta-col col-days${isOverdue ? ' days-overdue' : ''}`} style={cs('col-days')}>{isPaused || isScheduled ? '—' : task.days_since}</td>
-      <td className="meta-col scroll-meta-col col-notes" title={task.notes} style={cs('col-notes')}>{task.notes || ''}</td>
+      <td className="meta-col scroll-meta-col col-notes" title={task.notes} style={cs('col-notes')}><LinkifiedText text={task.notes || ''} /></td>
       {dates.map((date) => {
         const isFuture = date > todayStr;
         const count = completions[`${task.id}:${date}`] || 0;

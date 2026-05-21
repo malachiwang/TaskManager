@@ -1,4 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
+import LinkifiedText from './LinkifiedText.jsx';
+
+const HAS_URL = /https?:\/\/|www\./i;
 
 function dateLabel(isoDate) {
   const [y, m, day] = isoDate.split('-').map(Number);
@@ -121,6 +124,12 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
           placeholder={isFuture || isBeforeActiveFrom ? '' : 'Add a note…'}
         />
       </div>
+      {HAS_URL.test(noteVal) && (
+        <div className="edit-bar-note-preview">
+          <span className="edit-bar-note-preview-label">Links</span>
+          <LinkifiedText text={noteVal} />
+        </div>
+      )}
     </div>
   );
 }
