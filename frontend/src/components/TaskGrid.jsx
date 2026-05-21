@@ -144,6 +144,14 @@ function getShiftDigitIndex(e) {
   return parseInt(e.code[5], 10) - 1; // 'Digit1'→0, 'Digit9'→8
 }
 
+// True only for Shift+0 — opens the numeric jump prompt.
+// Uses event.code (layout-agnostic). Shift+0 on US keyboards produces ')' in
+// event.key; never rely on event.key for this detection.
+function isShiftZero(e) {
+  return e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey
+    && e.code === 'Digit0';
+}
+
 export default function TaskGrid() {
   // Real today — always fixed regardless of which month is displayed.
   const todayStr = toLocalDate(new Date());
@@ -182,6 +190,10 @@ export default function TaskGrid() {
 
   // Keyboard help panel — P4.
   const [helpOpen, setHelpOpen] = useState(false);
+
+  // Jump mode — Shift+0 extended numeric navigation.
+  // null = closed; or { type: 'row'|'date', value: '', error: '' }
+  const [jumpMode, setJumpMode] = useState(null);
 
   // Cell notes — P5. Parallel map to completions: `${taskId}:${date}` → string.
   const [notes, setNotes] = useState({});
@@ -441,6 +453,7 @@ export default function TaskGrid() {
   const modalOpenRef       = useRef(false);
   const handlersRef        = useRef({});
   const helpOpenRef        = useRef(false);
+  const jumpModeRef        = useRef(null);
   const helpBtnRef         = useRef(null);
   const helpPanelRef       = useRef(null);
   const helpCloseBtnRef    = useRef(null);
@@ -461,6 +474,7 @@ export default function TaskGrid() {
   completionsRef.current  = completions;
   modalOpenRef.current    = modalOpen;
   helpOpenRef.current     = helpOpen;
+  jumpModeRef.current     = jumpMode;
   keybindsRef.current     = resolvedKb;
   handlersRef.current     = { handleIncrement, handleClear, handleSetCount, openAdd, openEdit, setSelectedCell, closeModal, setHelpOpen };
 
@@ -587,6 +601,13 @@ export default function TaskGrid() {
         return;
       }
 
+      // Shift+0 — open numeric jump prompt.
+      if (isShiftZero(e)) {
+        e.preventDefault();
+        setJumpMode({ type: sel ? 'date' : 'row', value: '', error: '' });
+        return;
+      }
+
       // Arrow / Enter / Shift+Enter bootstrap selection when no cell is selected.
       const isNavKey = matchKeybind(e, kb.MOVE_LEFT)  || matchKeybind(e, kb.MOVE_RIGHT) ||
                        matchKeybind(e, kb.MOVE_UP)    || matchKeybind(e, kb.MOVE_DOWN)  ||
@@ -681,6 +702,47 @@ export default function TaskGrid() {
     setGroupMode(validGroupMode);
     setSearchQuery(view.searchQuery || '');
     setSelectedCell(null);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Jump mode handlers (Shift+0 prompt)
+  // ---------------------------------------------------------------------------
+
+  function handleJumpChange(e) {
+    const digits = e.target.value.replace(/\D/g, '');
+    setJumpMode((m) => ({ ...m, value: digits, error: '' }));
+  }
+
+  function handleJumpKeyDown(e) {
+    if (e.key === 'Escape') {
+      setJumpMode(null);
+      return;
+    }
+    if (e.key === 'Enter') {
+      const parsed = parseInt(jumpMode.value, 10);
+      if (!jumpMode.value || isNaN(parsed) || parsed < 1) {
+        setJumpMode((m) => ({ ...m, error: '1 or higher required' }));
+        return;
+      }
+      const idx = parsed - 1;
+      if (jumpMode.type === 'row') {
+        if (idx >= flatGroupedTasks.length) {
+          setJumpMode((m) => ({ ...m, error: `Only ${flatGroupedTasks.length} rows visible` }));
+          return;
+        }
+        const date = getDefaultKeyboardDate(dates);
+        if (!date) { setJumpMode(null); return; }
+        setSelectedCell({ taskId: flatGroupedTasks[idx].id, date });
+      } else {
+        if (!selectedCell) { setJumpMode(null); return; }
+        if (idx >= dates.length) {
+          setJumpMode((m) => ({ ...m, error: `Only ${dates.length} dates visible` }));
+          return;
+        }
+        setSelectedCell({ taskId: selectedCell.taskId, date: dates[idx] });
+      }
+      setJumpMode(null);
+    }
   }
 
   // Starts a drag resize for the given column key.
@@ -982,6 +1044,30 @@ export default function TaskGrid() {
         )}
       </div>
       </div>
+
+      {jumpMode && (
+        <div className="ws-jump-prompt" role="dialog" aria-label="Jump to position">
+          <div className="ws-jump-title">
+            {jumpMode.type === 'row' ? 'Jump to row:' : 'Jump to date column:'}
+          </div>
+          <input
+            className="ws-jump-input"
+            type="text"
+            inputMode="numeric"
+            pattern="\d*"
+            autoFocus
+            value={jumpMode.value}
+            onChange={handleJumpChange}
+            onKeyDown={handleJumpKeyDown}
+            onBlur={() => setJumpMode(null)}
+            aria-label={jumpMode.type === 'row' ? 'Row number' : 'Date column number'}
+          />
+          {jumpMode.error && (
+            <div className="ws-jump-error" role="alert">{jumpMode.error}</div>
+          )}
+          <div className="ws-jump-hint">Enter to jump · Esc to cancel</div>
+        </div>
+      )}
 
       {modalOpen && (
         <TaskModal

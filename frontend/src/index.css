@@ -4483,6 +4483,65 @@ select.task-modal-input {
 }
 
 /* =========================================================================
+   Jump Prompt — Ticket 2B: Shift+0 Numeric Jump Mode
+   Fixed overlay near top-right; does not shift layout.
+   ======================================================================= */
+
+.ws-jump-prompt {
+  position: fixed;
+  top: 88px;
+  right: 16px;
+  z-index: 250;
+  width: 224px;
+  background: var(--bg-panel);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16), 0 1px 4px rgba(0, 0, 0, 0.08);
+  padding: 10px 12px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ws-jump-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.ws-jump-input {
+  width: 100%;
+  padding: 4px 8px;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink-2);
+  background: var(--bg-app);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.ws-jump-input:focus {
+  border-color: var(--accent);
+}
+
+.ws-jump-error {
+  font-size: 11px;
+  color: var(--urg-crit);
+  line-height: 1.3;
+}
+
+.ws-jump-hint {
+  font-size: 10px;
+  color: var(--muted-2);
+  line-height: 1.3;
+}
+
+/* =========================================================================
    Link Popover — Ticket 2: Detected Links
    Fixed-position popover listing safe URLs from task.notes.
    ======================================================================= */

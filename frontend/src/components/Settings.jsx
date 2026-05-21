@@ -70,9 +70,10 @@ export default function Settings() {
       const binding = captureEventToBinding(e);
       if (!binding) return;
 
-      // Shift+1–9 is reserved for quick selection (event.code check is layout-agnostic).
-      if (e.shiftKey && /^Digit[1-9]$/.test(e.code)) {
-        setRecordingError('Reserved — Shift+1–9 is used for quick selection');
+      // Shift+0–9 reserved: Shift+0 opens jump mode, Shift+1–9 quick-select.
+      // event.code check is layout-agnostic (Shift+0 gives ')' in event.key on US keyboards).
+      if (e.shiftKey && /^Digit[0-9]$/.test(e.code)) {
+        setRecordingError('Reserved — Shift+0 opens jump mode; Shift+1–9 for quick selection');
         return;
       }
 

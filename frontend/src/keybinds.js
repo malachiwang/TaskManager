@@ -281,6 +281,11 @@ export const FIXED_SHORTCUTS = [
     keys: '⇧1–9',
     description: 'Jump to Nth task row or Nth date column',
   },
+  {
+    group: 'Navigation',
+    keys: '⇧0',
+    description: 'Open row / date column jump prompt',
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -295,6 +300,7 @@ export const KEYBIND_HELP = [
       { keys: '↑ / ↓', desc: 'Move selection between tasks' },
       { keys: '← / →', desc: 'Move selection between dates' },
       { keys: '⇧1–9', desc: 'Jump to Nth task row or Nth date column' },
+      { keys: '⇧0',   desc: 'Open row / date column jump prompt' },
     ],
   },
   {
