@@ -33,19 +33,70 @@ Once dependencies are installed (see setup below):
 
 ---
 
-## Packaging notes (Tauri)
+## Desktop app packaging (Tauri)
 
-When building a packaged desktop app (Tauri + PyInstaller sidecar):
+The app can be packaged as a native desktop app via Tauri. The FastAPI backend
+is bundled as a PyInstaller sidecar that Tauri launches automatically.
 
-- **Database path**: Set `TASKOS_DB_PATH` env var to redirect the SQLite file to the
-  platform app-data directory (e.g. `~/Library/Application Support/TaskManagementOS/taskos.db`).
-  Dev default is the repo-root `taskos.db` when the var is unset.
-- **API base URL**: Set the Vite build-time env var `VITE_API_BASE` to the sidecar's
-  address (e.g. `http://127.0.0.1:8000/api`). Dev default is `/api` (proxied by Vite).
-- **Health check**: `GET /health` returns `{"status": "ok"}` — use this to poll for
-  sidecar readiness before loading the frontend.
-- **CORS**: The backend allows `tauri://localhost`, `http://tauri.localhost`, and
-  `https://tauri.localhost` in addition to the standard dev origins.
+### Prerequisites (one-time)
+
+```bash
+# Rust toolchain
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Xcode command line tools (macOS)
+xcode-select --install
+
+# Python deps (includes pyinstaller)
+pip install -r requirements.txt
+
+# Node deps
+npm --prefix frontend install
+```
+
+### Packaging build sequence
+
+```bash
+# 1. Build the Python sidecar binary
+./scripts/build-sidecar.sh
+
+# 2. Build and package the Tauri app (frontend + Rust shell)
+npm --prefix frontend run tauri:build
+```
+
+The `.app` bundle is written to `src-tauri/target/release/bundle/macos/`.
+
+### Dev workflow with Tauri window (optional)
+
+Run the normal dev stack in one terminal, then open a Tauri window against it:
+
+```bash
+# Terminal 1
+./start.sh
+
+# Terminal 2
+npm --prefix frontend run tauri:dev
+```
+
+`tauri:dev` connects to the Vite dev server on port 5173. No sidecar is used in
+dev mode — the backend running via `start.sh` on port 8000 serves all requests.
+
+### Database locations
+
+| Mode | SQLite path |
+|------|-------------|
+| Dev (`./start.sh`) | `<repo-root>/taskos.db` |
+| Packaged `.app` | `~/Library/Application Support/com.taskos.app/taskos.db` |
+
+The packaged app never reads or writes the dev `taskos.db`. Both are gitignored.
+
+### Notes
+
+- `GET /health` — returns `{"status": "ok"}`, used for sidecar readiness polling
+- `TASKOS_DB_PATH` env var overrides the SQLite path (set by Tauri at launch)
+- `TASKOS_PORT` env var overrides the sidecar port (default: 8765)
+- `VITE_API_BASE` is set to `http://127.0.0.1:8765/api` during `tauri:build`
+- Sidecar binaries and Rust build outputs are gitignored — do not commit them
 
 ---
 
@@ -132,20 +183,29 @@ npm run build
 TaskManagementOS/
 ├── backend/
 │   ├── __init__.py
-│   ├── database.py     # SQLite setup, table creation
+│   ├── database.py     # SQLite setup, table creation, migrations
 │   ├── logic.py        # Pure urgency/date functions (no DB access)
 │   ├── main.py         # FastAPI app and routes
+│   ├── server.py       # Sidecar entrypoint (packaged mode, not dev)
 │   └── seed.py         # Fake seed data for development
+├── frontend/
+│   ├── src/
+│   ├── package.json
+│   └── vite.config.js
+├── scripts/
+│   └── build-sidecar.sh  # PyInstaller sidecar build + copy to src-tauri/binaries/
+├── src-tauri/            # Tauri desktop shell (Rust) — see packaging docs
 ├── tests/
 │   ├── __init__.py
-│   └── test_logic.py   # Unit tests for urgency, days_since, effective_last_done
+│   └── test_api.py
 ├── docs/
-│   ├── PRD.md          # Full product vision
-│   └── MVP_SCOPE.md    # Hard implementation boundary
+│   ├── PRD.md
+│   └── MVP_SCOPE.md
 ├── .gitignore
 ├── CLAUDE.md
 ├── README.md
-└── requirements.txt
+├── requirements.txt
+└── start.sh
 ```
 
 `taskos.db` is created automatically on first run and is gitignored.

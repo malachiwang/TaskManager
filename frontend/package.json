@@ -6,13 +6,16 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "tauri:dev": "cd .. && ./frontend/node_modules/.bin/tauri dev",
+    "tauri:build": "cd .. && ./frontend/node_modules/.bin/tauri build"
   },
   "dependencies": {
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2",
     "@vitejs/plugin-react": "^4.3.1",
     "vite": "^5.4.0"
   }

@@ -30,5 +30,14 @@ coverage/
 # System files
 .DS_Store
 
+# Tauri / Rust
+src-tauri/target/
+src-tauri/gen/
+src-tauri/binaries/
+
+# PyInstaller sidecar build output
+dist-sidecar/
+build-sidecar-tmp/
+
 # Claude local/session files
 .claude/
