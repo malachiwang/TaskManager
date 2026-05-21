@@ -4,17 +4,7 @@
 // <a> elements. Everything else renders as plain text. Dangerous schemes
 // (javascript:, data:, file:, etc.) are blocked at the href-normalization step.
 
-const URL_RE = /https?:\/\/\S+|www\.\S+/g;
-
-function stripTrailingPunct(s) {
-  return s.replace(/[.,;:!?)\]'"]+$/, '');
-}
-
-function normalizeHref(raw) {
-  if (/^https?:\/\//i.test(raw)) return raw;
-  if (/^www\./i.test(raw))       return `https://${raw}`;
-  return null; // block javascript:, data:, file:, mailto:, ftp:, etc.
-}
+import { URL_RE, stripTrailingPunct, normalizeHref } from '../linkUtils.js';
 
 export default function LinkifiedText({ text, className }) {
   if (!text) return null;

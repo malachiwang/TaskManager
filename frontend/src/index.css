@@ -4481,3 +4481,95 @@ select.task-modal-input {
     border-bottom: none;
   }
 }
+
+/* =========================================================================
+   Link Popover — Ticket 2: Detected Links
+   Fixed-position popover listing safe URLs from task.notes.
+   ======================================================================= */
+
+/* Inner wrapper for col-notes td — allows badge to sit alongside text
+   without putting display:flex on the <td> itself (breaks table model). */
+.col-notes-inner {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+}
+
+/* Note text takes remaining space and ellipsizes. */
+.notes-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Link badge — small icon button that stays visible even with long notes. */
+.task-link-badge {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0 2px;
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 13px;
+  line-height: 1;
+  border-radius: 2px;
+  opacity: 0.65;
+}
+
+.task-link-badge:hover,
+.task-link-badge--open {
+  opacity: 1;
+  background: var(--header-bg);
+}
+
+/* Popover — fixed position, escapes grid overflow:auto clipping. */
+.task-link-popover {
+  position: fixed;
+  z-index: 250;
+  background: var(--bg-panel);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16), 0 1px 4px rgba(0, 0, 0, 0.08);
+  min-width: 200px;
+  max-width: 320px;
+  padding-bottom: 4px;
+}
+
+.task-link-popover-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 7px 12px 6px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.task-link-list {
+  list-style: none;
+  padding: 4px 0 0;
+  margin: 0;
+}
+
+.task-link-item {
+  padding: 0;
+}
+
+.task-link-url {
+  display: block;
+  padding: 4px 12px;
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-link-url:hover {
+  background: var(--row-hover-bg);
+  text-decoration: underline;
+}
