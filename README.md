@@ -33,6 +33,22 @@ Once dependencies are installed (see setup below):
 
 ---
 
+## Packaging notes (Tauri)
+
+When building a packaged desktop app (Tauri + PyInstaller sidecar):
+
+- **Database path**: Set `TASKOS_DB_PATH` env var to redirect the SQLite file to the
+  platform app-data directory (e.g. `~/Library/Application Support/TaskManagementOS/taskos.db`).
+  Dev default is the repo-root `taskos.db` when the var is unset.
+- **API base URL**: Set the Vite build-time env var `VITE_API_BASE` to the sidecar's
+  address (e.g. `http://127.0.0.1:8000/api`). Dev default is `/api` (proxied by Vite).
+- **Health check**: `GET /health` returns `{"status": "ok"}` — use this to poll for
+  sidecar readiness before loading the frontend.
+- **CORS**: The backend allows `tauri://localhost`, `http://tauri.localhost`, and
+  `https://tauri.localhost` in addition to the standard dev origins.
+
+---
+
 ## Local Setup
 
 ### Requirements

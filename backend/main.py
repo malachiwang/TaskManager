@@ -91,7 +91,13 @@ app = FastAPI(title="TaskManagementOS API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "tauri://localhost",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -215,6 +221,15 @@ def _capture_daily_snapshots(conn, snapshot_date: date) -> None:
                     now, now,
                 ),
             )
+
+
+# ---------------------------------------------------------------------------
+# Health
+# ---------------------------------------------------------------------------
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
 
 # ---------------------------------------------------------------------------

@@ -3,12 +3,19 @@ SQLite database setup.
 
 The database file lives at the project root as taskos.db.
 taskos.db is excluded from git via .gitignore.
+
+In packaged (Tauri) mode, set TASKOS_DB_PATH to redirect to the
+platform app-data directory, e.g.:
+    ~/Library/Application Support/TaskManagementOS/taskos.db
+Dev default is unchanged when TASKOS_DB_PATH is not set.
 """
+import os
 import sqlite3
 from datetime import date as _date
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent.parent / "taskos.db"
+_default_db = Path(__file__).parent.parent / "taskos.db"
+DB_PATH = Path(os.environ["TASKOS_DB_PATH"]) if "TASKOS_DB_PATH" in os.environ else _default_db
 
 
 def get_connection() -> sqlite3.Connection:
