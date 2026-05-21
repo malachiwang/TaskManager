@@ -104,13 +104,46 @@ export async function deleteArchive(id) {
   return res.json();
 }
 
-// Export URL builders — used as href/window.open targets, not fetch calls.
-export function buildExportSheetUrl(startDate, endDate) {
+// ---------------------------------------------------------------------------
+// Export downloads — fetch → blob → programmatic click.
+// Direct anchor navigation (href + download) is not honored in Tauri's
+// WKWebView, which renders the response inline instead of downloading.
+// ---------------------------------------------------------------------------
+
+function buildExportSheetUrl(startDate, endDate) {
   return `${BASE}/export/sheet.csv?start=${startDate}&end=${endDate}`;
 }
 
-export function buildExportBackupUrl() {
+function buildExportBackupUrl() {
   return `${BASE}/export/backup.json`;
+}
+
+async function downloadBlob(url, fallbackFilename) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+
+  // Prefer the filename the backend sends in Content-Disposition.
+  const cd = res.headers.get('Content-Disposition');
+  const match = cd?.match(/filename="([^"]+)"/);
+  const filename = match?.[1] ?? fallbackFilename;
+
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
+
+export async function downloadExportBackup() {
+  await downloadBlob(buildExportBackupUrl(), 'taskos-backup.json');
+}
+
+export async function downloadExportSheet(startDate, endDate) {
+  await downloadBlob(buildExportSheetUrl(startDate, endDate), 'taskos-sheet.csv');
 }
 
 export async function setCompletionCount(taskId, date, count) {

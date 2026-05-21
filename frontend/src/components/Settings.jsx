@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { buildExportBackupUrl } from '../api.js';
+import { downloadExportBackup } from '../api.js';
 import {
   KEYBINDS, KB_GROUP_ORDER, FIXED_SHORTCUTS,
   loadKbOverrides, writeKbOverrides, buildResolvedFromOverrides,
@@ -343,9 +343,9 @@ export default function Settings() {
                   or bulk edits you may want to reverse.
                 </span>
               </div>
-              <a className="button-secondary ws-backup-btn" href={buildExportBackupUrl()} download>
+              <button className="button-secondary ws-backup-btn" onClick={() => downloadExportBackup()}>
                 Download JSON
-              </a>
+              </button>
             </div>
 
             <div className="ws-ctrl-row">

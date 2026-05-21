@@ -9,7 +9,7 @@ import {
   updateTask,
   deleteTask,
   createArchive,
-  buildExportSheetUrl,
+  downloadExportSheet,
   fetchNotes,
   upsertNote,
 } from '../api.js';
@@ -810,11 +810,10 @@ export default function TaskGrid() {
         <div className="ws-shelf-left">
           <button className="ws-shelf-btn ws-shelf-btn--primary" onClick={openAdd}>+ Add Task</button>
           <button className="ws-shelf-btn" onClick={handleArchive}>Archive Sheet</button>
-          <a
+          <button
             className="ws-shelf-btn"
-            href={buildExportSheetUrl(dates[0], dates[dates.length - 1])}
-            download
-          >Export CSV</a>
+            onClick={() => downloadExportSheet(dates[0], dates[dates.length - 1])}
+          >Export CSV</button>
           {confirmReset ? (
             <>
               <span className="ws-shelf-confirm-text">Reset column widths? Task data is unchanged.</span>
