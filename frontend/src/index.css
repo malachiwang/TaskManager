@@ -416,6 +416,18 @@ thead .meta-col {
   color: #c0c0c0;
 }
 
+/* Ended row — task lifecycle complete; muted but readable, not italic */
+.task-row.ended      { --row-bg: var(--paused-bg); }
+
+.task-row.ended td {
+  color: #bbb;
+  cursor: default;
+}
+
+.task-row.ended .meta-col {
+  color: #bbb;
+}
+
 /* -------------------------------------------------------------------------
    Date cells
    ---------------------------------------------------------------------- */
@@ -472,6 +484,13 @@ thead .meta-col {
 .date-cell.before-active {
   background: var(--bg-app);
   opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* After-end cell — after task's end_date; read-only, muted */
+.date-cell.after-end {
+  background: var(--bg-app);
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
@@ -3473,6 +3492,32 @@ select.task-modal-input {
   appearance: auto;
   -webkit-appearance: auto;
   padding: 4px 4px;
+}
+
+/* End today button — secondary inline action in scheduling section */
+.task-modal-end-today-btn {
+  margin-top: 4px;
+  font-size: 11px;
+  padding: 2px 7px;
+  border: 1px solid var(--rule);
+  background: none;
+  cursor: pointer;
+  border-radius: 2px;
+  color: var(--muted);
+  font-family: var(--font-ui);
+}
+
+.task-modal-end-today-btn:hover {
+  background: var(--bg-app);
+  color: var(--ink-2);
+}
+
+/* Help text below a form field */
+.task-modal-field-hint {
+  font-size: 11px;
+  color: var(--muted-2);
+  margin-top: 3px;
+  line-height: 1.35;
 }
 
 /* Range slider for priority */

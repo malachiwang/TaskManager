@@ -20,6 +20,7 @@ export default function DateCell({
   isToday,
   isPaused,
   activeFrom,
+  endDate,
   isSelected,
   hasNote,
   noteText,
@@ -28,7 +29,8 @@ export default function DateCell({
   onSelect,
 }) {
   const isBeforeActiveFrom = !!(activeFrom && date < activeFrom);
-  const isDisabled = isFuture || isPaused || isBeforeActiveFrom;
+  const isAfterEndDate = !!(endDate && date > endDate);
+  const isDisabled = isFuture || isPaused || isBeforeActiveFrom || isAfterEndDate;
 
   // Detect weekend (Saturday=6, Sunday=0) from ISO date string.
   const [wy, wm, wd] = date.split('-').map(Number);
@@ -36,7 +38,7 @@ export default function DateCell({
 
   function renderContent() {
     if (isFuture) return null;
-    if (isPaused || isBeforeActiveFrom) {
+    if (isPaused || isBeforeActiveFrom || isAfterEndDate) {
       if (count === 0) return null;
       return (
         <span className="dc-box dc-box--filled dc-box--muted">
@@ -67,9 +69,10 @@ export default function DateCell({
     isFuture          ? 'future'       : '',
     isPaused          ? 'paused'       : '',
     isBeforeActiveFrom ? 'before-active' : '',
+    isAfterEndDate    ? 'after-end'    : '',
     isToday && !isFuture ? 'today'     : '',
     isWeekend         ? 'weekend'      : '',
-    count > 0 && !isPaused && !isBeforeActiveFrom ? 'has-count' : '',
+    count > 0 && !isPaused && !isBeforeActiveFrom && !isAfterEndDate ? 'has-count' : '',
     isSelected        ? 'selected'     : '',
     hasNote           ? 'has-note'     : '',
   ]
@@ -80,7 +83,19 @@ export default function DateCell({
     <td
       className={classes}
       onClick={handleClick}
-      title={hasNote && noteText ? noteText : (isDisabled ? (isFuture ? 'Future date — not available' : isBeforeActiveFrom ? 'Before active date' : 'Task is paused') : date)}
+      title={
+        hasNote && noteText
+          ? noteText
+          : isFuture
+            ? 'Future date — not available'
+            : isBeforeActiveFrom
+              ? 'Before active date'
+              : isAfterEndDate
+                ? 'After task end date'
+                : isPaused
+                  ? 'Task is paused'
+                  : date
+      }
     >
       <span className="dc-cell-center">
         {renderContent()}

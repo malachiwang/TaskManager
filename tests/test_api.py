@@ -2475,6 +2475,7 @@ class TestSnapshotPressure:
         avgs = [r["avg_urgency"] for r in data["rows"]]
         assert avgs == sorted(avgs, reverse=True)
 
+
     # 12. Section stored in snapshot is used, not the task's current section.
     def test_section_at_snapshot_time_not_current(self, client):
         # Create a task, snapshot it under "OldSection", then change its section.
@@ -2488,3 +2489,265 @@ class TestSnapshotPressure:
         # The pressure heatmap should reflect the snapshot-time section.
         assert "OldSection" in section_keys
         assert "NewSection" not in section_keys
+
+# ---------------------------------------------------------------------------
+# End date / retire task lifecycle
+# ---------------------------------------------------------------------------
+
+class TestEndDate:
+    """Tests for end_date field: schema, API, completion cleanup, enrichment,
+    dashboard exclusions, snapshot storage, and CSV export/import."""
+
+    # ── Schema / API ────────────────────────────────────────────────────────
+
+    def test_post_task_with_end_date_stores_it(self, client):
+        data = create_task(client, name="Ending", end_date=YESTERDAY)
+        assert data["end_date"] == YESTERDAY
+
+    def test_post_task_without_end_date_is_null(self, client):
+        data = create_task(client, name="No End")
+        assert data["end_date"] is None
+
+    def test_post_task_blank_end_date_stores_null(self, client):
+        data = create_task(client, name="Blank End", end_date="")
+        assert data["end_date"] is None
+
+    def test_patch_sets_end_date(self, client):
+        t = create_task(client)
+        resp = client.patch(f"/tasks/{t['id']}", params={"end_date": YESTERDAY})
+        assert resp.status_code == 200
+        assert resp.json()["end_date"] == YESTERDAY
+
+    def test_patch_clears_end_date(self, client):
+        t = create_task(client, end_date=YESTERDAY)
+        resp = client.patch(f"/tasks/{t['id']}", params={"end_date": ""})
+        assert resp.status_code == 200
+        assert resp.json()["end_date"] is None
+
+    def test_end_date_present_in_list_tasks(self, client):
+        create_task(client, end_date=YESTERDAY)
+        tasks = client.get("/tasks").json()
+        assert "end_date" in tasks[0]
+
+    # ── Enrichment / is_ended ───────────────────────────────────────────────
+
+    def test_end_date_yesterday_is_ended_true_urgency_zero(self, client):
+        t = create_task(client, priority=9, end_date=YESTERDAY)
+        data = client.get(f"/tasks/{t['id']}").json()
+        assert data["is_ended"] is True
+        assert data["urgency"] == 0.0
+
+    def test_end_date_today_is_ended_true_urgency_zero(self, client):
+        # end_date <= today → is_ended; task no longer contributes pressure
+        t = create_task(client, priority=9, end_date=TODAY)
+        data = client.get(f"/tasks/{t['id']}").json()
+        assert data["is_ended"] is True
+        assert data["urgency"] == 0.0
+
+    def test_end_date_tomorrow_is_ended_false_urgency_nonzero(self, client):
+        t = create_task(client, priority=9, end_date=TOMORROW)
+        data = client.get(f"/tasks/{t['id']}").json()
+        assert data["is_ended"] is False
+        assert data["urgency"] > 0.0
+
+    def test_no_end_date_is_ended_false(self, client):
+        t = create_task(client, priority=9)
+        data = client.get(f"/tasks/{t['id']}").json()
+        assert data["is_ended"] is False
+        assert data["urgency"] > 0.0
+
+    def test_paused_and_ended_both_safe_urgency_zero(self, client):
+        t = create_task(client, priority=9, end_date=YESTERDAY)
+        client.patch(f"/tasks/{t['id']}", params={"is_paused": True})
+        data = client.get(f"/tasks/{t['id']}").json()
+        assert data["is_ended"] is True
+        assert data["is_paused"] == 1
+        assert data["urgency"] == 0.0
+
+    def test_clearing_end_date_restores_urgency(self, client):
+        t = create_task(client, priority=9, end_date=YESTERDAY)
+        client.patch(f"/tasks/{t['id']}", params={"end_date": ""})
+        data = client.get(f"/tasks/{t['id']}").json()
+        assert data["is_ended"] is False
+        assert data["urgency"] > 0.0
+
+    # ── Completion cleanup ──────────────────────────────────────────────────
+
+    def test_completion_before_end_date_preserved(self, client):
+        t = create_task(client)
+        # Add completion on YESTERDAY; end_date = TODAY → yesterday preserved
+        client.post("/completions", params={"task_id": t["id"], "completion_date": YESTERDAY})
+        client.patch(f"/tasks/{t['id']}", params={"end_date": TODAY})
+        comps = client.get("/completions", params={"start": YESTERDAY, "end": YESTERDAY}).json()
+        assert len(comps) == 1
+
+    def test_completion_on_end_date_preserved(self, client):
+        t = create_task(client)
+        client.post("/completions", params={"task_id": t["id"], "completion_date": TODAY})
+        client.patch(f"/tasks/{t['id']}", params={"end_date": TODAY})
+        comps = client.get("/completions", params={"start": TODAY, "end": TODAY}).json()
+        assert len(comps) == 1
+        assert comps[0]["completion_count"] == 1
+
+    def test_clearing_end_date_does_not_delete_completions(self, client):
+        t = create_task(client)
+        client.post("/completions", params={"task_id": t["id"], "completion_date": TODAY})
+        client.patch(f"/tasks/{t['id']}", params={"end_date": TODAY})
+        # Now clear end_date — should not delete the today completion
+        client.patch(f"/tasks/{t['id']}", params={"end_date": ""})
+        comps = client.get("/completions", params={"start": TODAY, "end": TODAY}).json()
+        assert len(comps) == 1
+
+    def test_cell_notes_not_deleted_when_end_date_set(self, client):
+        t = create_task(client)
+        # Add a cell note for YESTERDAY
+        client.put(f"/notes/{t['id']}/{YESTERDAY}", params={"note": "old note"})
+        # Set end_date to YESTERDAY — notes should be preserved
+        client.patch(f"/tasks/{t['id']}", params={"end_date": YESTERDAY})
+        notes = client.get("/notes", params={"start": YESTERDAY, "end": YESTERDAY}).json()
+        assert any(n["note"] == "old note" for n in notes)
+
+    # ── Dashboard exclusions ────────────────────────────────────────────────
+
+    def test_ended_task_excluded_from_active_count(self, client):
+        create_task(client, name="Active")
+        create_task(client, name="Ended", end_date=YESTERDAY)
+        data = client.get("/dashboard").json()
+        assert data["active_count"] == 1
+
+    def test_ended_task_excluded_from_top_urgent(self, client):
+        ended = create_task(client, name="Ended High", priority=10, end_date=YESTERDAY)
+        data = client.get("/dashboard").json()
+        top_ids = [t["id"] for t in data["top_5_urgent"]]
+        assert ended["id"] not in top_ids
+
+    def test_ended_task_excluded_from_urgency_distribution(self, client):
+        create_task(client, name="Active", priority=9)
+        create_task(client, name="Ended", priority=9, end_date=YESTERDAY)
+        data = client.get("/dashboard").json()
+        dist = data["urgency_distribution"]
+        assert sum(dist.values()) == 1  # only the active task
+
+    def test_ended_task_excluded_from_dormant(self, client):
+        t = create_task(client, name="Ended Dormant")
+        # Backdate effective last done far in the past via manual override
+        far_past = (date.today() - timedelta(days=60)).isoformat()
+        client.patch(f"/tasks/{t['id']}", params={
+            "manual_last_done_override": far_past,
+            "end_date": YESTERDAY,
+        })
+        data = client.get("/dashboard").json()
+        dormant_ids = [d["id"] for d in data["dormant_tasks"]]
+        assert t["id"] not in dormant_ids
+
+    def test_ended_task_excluded_from_never_done_count(self, client):
+        create_task(client, name="Never Done Active")
+        create_task(client, name="Never Done Ended", end_date=YESTERDAY)
+        data = client.get("/dashboard").json()
+        assert data["never_done_count"] == 1
+
+    def test_ended_task_excluded_from_paused_count(self, client):
+        # A paused + ended task should not count as paused
+        t = create_task(client, name="Paused Ended")
+        client.patch(f"/tasks/{t['id']}", params={"is_paused": True, "end_date": YESTERDAY})
+        data = client.get("/dashboard").json()
+        assert data["paused_count"] == 0
+
+    def test_ended_task_completions_still_in_completion_trend(self, client):
+        t = create_task(client, name="Ended With History")
+        client.post("/completions", params={"task_id": t["id"], "completion_date": TODAY})
+        client.patch(f"/tasks/{t['id']}", params={"end_date": TODAY})
+        trend = client.get("/dashboard").json()["completion_trend"]
+        today_entry = next(e for e in trend if e["date"] == TODAY)
+        assert today_entry["count"] == 1
+
+    # ── Snapshot storage ────────────────────────────────────────────────────
+
+    def test_snapshot_stores_end_date_and_is_ended(self, client):
+        t = create_task(client, name="Snap Ended", end_date=YESTERDAY)
+        # Trigger snapshot via dashboard
+        client.get("/dashboard")
+        conn = sqlite3.connect(str(db_module.DB_PATH))
+        row = conn.execute(
+            "SELECT end_date, is_ended FROM task_daily_snapshots WHERE task_id = ?",
+            (t["id"],),
+        ).fetchone()
+        conn.close()
+        assert row is not None
+        assert row[0] == YESTERDAY
+        assert row[1] == 1
+
+    def test_snapshot_pressure_excludes_ended_tasks(self, client):
+        t = create_task(client, name="Ended Pressure", priority=9, end_date=YESTERDAY)
+        client.get("/dashboard")  # capture snapshot with is_ended=1
+        resp = client.get("/snapshots/pressure")
+        # All snapshot rows for this task have is_ended=1 → excluded from pressure
+        data = resp.json()
+        assert data["rows"] == []
+
+    # ── CSV export ──────────────────────────────────────────────────────────
+
+    def test_csv_export_includes_end_date_column(self, client):
+        create_task(client, name="Export Task", end_date=YESTERDAY)
+        resp = client.get("/export/sheet.csv", params={"start": TODAY, "end": TODAY})
+        assert resp.status_code == 200
+        reader = csv.reader(io.StringIO(resp.text))
+        headers = next(reader)
+        assert "end_date" in headers
+
+    def test_csv_export_end_date_value_correct(self, client):
+        create_task(client, name="With End", end_date=YESTERDAY)
+        resp = client.get("/export/sheet.csv", params={"start": TODAY, "end": TODAY})
+        reader = csv.reader(io.StringIO(resp.text))
+        headers = next(reader)
+        row = next(reader)
+        idx = headers.index("end_date")
+        assert row[idx] == YESTERDAY
+
+    def test_csv_export_no_end_date_is_blank(self, client):
+        create_task(client, name="No End")
+        resp = client.get("/export/sheet.csv", params={"start": TODAY, "end": TODAY})
+        reader = csv.reader(io.StringIO(resp.text))
+        headers = next(reader)
+        row = next(reader)
+        idx = headers.index("end_date")
+        assert row[idx] == ""
+
+    # ── CSV import ──────────────────────────────────────────────────────────
+
+    def test_csv_import_preserves_end_date(self, client):
+        csv_content = f"name,end_date\nImported Task,{YESTERDAY}\n"
+        file = io.BytesIO(csv_content.encode())
+        resp = client.post(
+            "/import/apply",
+            files={"file": ("tasks.csv", file, "text/csv")},
+        )
+        assert resp.status_code == 200
+        tasks = client.get("/tasks").json()
+        imported = next((t for t in tasks if t["name"] == "Imported Task"), None)
+        assert imported is not None
+        assert imported["end_date"] == YESTERDAY
+
+    def test_csv_import_without_end_date_column_succeeds(self, client):
+        csv_content = "name,priority\nNo End Task,5\n"
+        file = io.BytesIO(csv_content.encode())
+        resp = client.post(
+            "/import/apply",
+            files={"file": ("tasks.csv", file, "text/csv")},
+        )
+        assert resp.status_code == 200
+        tasks = client.get("/tasks").json()
+        imported = next((t for t in tasks if t["name"] == "No End Task"), None)
+        assert imported is not None
+        assert imported["end_date"] is None
+
+    # ── Backup JSON ─────────────────────────────────────────────────────────
+
+    def test_backup_includes_end_date_on_tasks(self, client):
+        create_task(client, name="Backup Task", end_date=YESTERDAY)
+        resp = client.get("/export/backup.json")
+        assert resp.status_code == 200
+        data = resp.json()
+        task = next((t for t in data["tasks"] if t["name"] == "Backup Task"), None)
+        assert task is not None
+        assert task["end_date"] == YESTERDAY

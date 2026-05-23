@@ -2,6 +2,14 @@ import { useState } from 'react';
 
 const STATUS_OPTIONS = ['active', 'hiatus'];
 
+function getLocalToday() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function loadTaskDefaults() {
   try {
     const saved = localStorage.getItem('taskos-settings');
@@ -36,6 +44,7 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
       notes:                     task?.notes                     ?? '',
       manual_last_done_override: task?.manual_last_done_override ?? '',
       active_from:               task?.active_from               ?? '',
+      end_date:                  task?.end_date                  ?? '',
     };
   });
 
@@ -202,6 +211,26 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
                   value={form.active_from}
                   onChange={(e) => set('active_from', e.target.value)}
                 />
+              </div>
+              <div className="task-modal-field">
+                <label className="task-modal-label" htmlFor="tm-end-date">End date</label>
+                <input
+                  id="tm-end-date"
+                  className="task-modal-input"
+                  type="date"
+                  value={form.end_date}
+                  onChange={(e) => set('end_date', e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="task-modal-end-today-btn"
+                  onClick={() => set('end_date', getLocalToday())}
+                >
+                  End today
+                </button>
+                <div className="task-modal-field-hint">
+                  Dates after this are disabled; past completions are preserved.
+                </div>
               </div>
             </div>
           </div>

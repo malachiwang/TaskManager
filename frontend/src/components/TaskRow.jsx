@@ -21,9 +21,11 @@ export default function TaskRow({
 
   const isPaused = task.is_paused === 1;
   const isScheduled = task.is_scheduled === true;
+  const isEnded = task.is_ended === true;
   const isOverdue =
     !isPaused &&
     !isScheduled &&
+    !isEnded &&
     task.days_since != null &&
     task.interval_days != null &&
     task.days_since >= task.interval_days;
@@ -38,7 +40,7 @@ export default function TaskRow({
     return style;
   }
 
-  const rowClass = ['task-row', isPaused ? 'paused' : '', isScheduled ? 'scheduled' : '']
+  const rowClass = ['task-row', isPaused ? 'paused' : '', isScheduled ? 'scheduled' : '', isEnded ? 'ended' : '']
     .filter(Boolean).join(' ');
 
   const noteLinks = hasLinks(task.notes) ? extractLinks(task.notes) : [];
@@ -61,8 +63,8 @@ export default function TaskRow({
           title="Edit task"
         >✏</button>
       </td>
-      <td className={`meta-col sticky-col col-urg ${isPaused || isScheduled ? '' : urgencyClass(task.urgency)}`} style={cs('col-urg')}>
-        {isPaused || isScheduled ? '—' : task.urgency}
+      <td className={`meta-col sticky-col col-urg ${isPaused || isScheduled || isEnded ? '' : urgencyClass(task.urgency)}`} style={cs('col-urg')}>
+        {isPaused || isScheduled || isEnded ? '—' : task.urgency}
       </td>
       <td className="meta-col sticky-col col-pri" style={cs('col-pri')}>{task.priority}</td>
       <td className="meta-col sticky-col col-status" style={cs('col-status')}>{task.status}</td>
@@ -71,7 +73,7 @@ export default function TaskRow({
       <td className="meta-col sticky-col col-task" title={task.name} style={cs('col-task')}>{task.name}</td>
       <td className="meta-col sticky-col col-sub" title={task.subtask} style={cs('col-sub')}>{task.subtask || ''}</td>
       <td className="meta-col scroll-meta-col col-freq" style={cs('col-freq')}>{task.interval_days}d</td>
-      <td className={`meta-col scroll-meta-col col-days${isOverdue ? ' days-overdue' : ''}`} style={cs('col-days')}>{isPaused || isScheduled ? '—' : task.days_since}</td>
+      <td className={`meta-col scroll-meta-col col-days${isOverdue ? ' days-overdue' : ''}`} style={cs('col-days')}>{isPaused || isScheduled || isEnded ? '—' : task.days_since}</td>
       <td className="meta-col scroll-meta-col col-notes" title={task.notes} style={cs('col-notes')}>
         <div className="col-notes-inner">
           <span className="notes-text"><LinkifiedText text={task.notes || ''} /></span>
@@ -111,6 +113,7 @@ export default function TaskRow({
             isToday={date === todayStr}
             isPaused={isPaused}
             activeFrom={task.active_from || null}
+            endDate={task.end_date || null}
             isSelected={selectedCell?.taskId === task.id && selectedCell?.date === date}
             hasNote={hasNote}
             noteText={noteText}

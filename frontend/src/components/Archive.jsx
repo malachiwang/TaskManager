@@ -85,6 +85,7 @@ function ArchiveAnalytics({ snapshot }) {
   const totalTasks       = tasks.length;
   const pausedCount      = tasks.filter((t) => t.is_paused).length;
   const scheduledCount   = tasks.filter((t) => t.is_scheduled ?? false).length;
+  const endedCount       = tasks.filter((t) => t.is_ended ?? false).length;
   const totalCompletions = tasks.reduce(
     (s, t) => s + Object.values(t.completions ?? {}).reduce((a, b) => a + b, 0), 0,
   );
@@ -97,7 +98,7 @@ function ArchiveAnalytics({ snapshot }) {
 
   // ── Top urgent ────────────────────────────────────────────────────────
   const topUrgent = tasks
-    .filter((t) => !t.is_paused && !(t.is_scheduled ?? false))
+    .filter((t) => !t.is_paused && !(t.is_scheduled ?? false) && !(t.is_ended ?? false))
     .sort((a, b) => (b.urgency ?? -Infinity) - (a.urgency ?? -Infinity))
     .slice(0, 5);
 
@@ -134,6 +135,7 @@ function ArchiveAnalytics({ snapshot }) {
           { label: 'Notes',       value: noteCount },
           { label: 'Paused',      value: pausedCount },
           { label: 'Scheduled',   value: scheduledCount },
+          { label: 'Ended',       value: endedCount },
           { label: 'Range',       value: rangeDays !== null ? `${rangeDays}d` : '—' },
         ].map(({ label, value }) => (
           <div key={label} className="arch-stat-chip">
@@ -251,31 +253,44 @@ function ArchiveMiniGrid({ data }) {
           </tr>
         </thead>
         <tbody>
-          {tasks.map((task) => (
-            <tr key={task.id} className={task.is_paused ? 'task-row paused' : 'task-row'}>
-              <td className="col-urg">{task.is_paused ? '—' : task.urgency}</td>
-              <td className="col-pri">{task.priority}</td>
-              <td className="col-status">{task.status}</td>
-              <td className="col-section">{task.section || ''}</td>
-              <td className="col-cat">{task.category}</td>
-              <td className="col-task" title={task.name}>{task.name}</td>
-              <td className="col-freq">{task.interval_days}d</td>
-              <td className="col-days">{task.is_paused ? '—' : task.days_since}</td>
-              {dates.map((d) => {
-                const count = task.completions?.[d] || 0;
-                const hasNote = !!(task.cell_notes?.[d]);
-                return (
-                  <td
-                    key={d}
-                    className={`date-cell${isWeekendDate(d) ? ' weekend' : ''}${count ? ' has-count' : ''}${hasNote ? ' has-note' : ''}`}
-                    title={hasNote ? task.cell_notes[d] : undefined}
-                  >
-                    {cellDisplay(count)}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
+          {tasks.map((task) => {
+            const isEnded = task.is_ended ?? false;
+            const rowClass = ['task-row', task.is_paused ? 'paused' : '', isEnded ? 'ended' : '']
+              .filter(Boolean).join(' ');
+            return (
+              <tr key={task.id} className={rowClass}>
+                <td className="col-urg">{task.is_paused || isEnded ? '—' : task.urgency}</td>
+                <td className="col-pri">{task.priority}</td>
+                <td className="col-status">{task.status}</td>
+                <td className="col-section">{task.section || ''}</td>
+                <td className="col-cat">{task.category}</td>
+                <td className="col-task" title={task.name}>{task.name}</td>
+                <td className="col-freq">{task.interval_days}d</td>
+                <td className="col-days">{task.is_paused || isEnded ? '—' : task.days_since}</td>
+                {dates.map((d) => {
+                  const count = task.completions?.[d] || 0;
+                  const hasNote = !!(task.cell_notes?.[d]);
+                  const isAfterEnd = !!(task.end_date && d > task.end_date);
+                  const cellClass = [
+                    'date-cell',
+                    isWeekendDate(d) ? 'weekend' : '',
+                    count && !isAfterEnd ? 'has-count' : '',
+                    hasNote ? 'has-note' : '',
+                    isAfterEnd ? 'after-end' : '',
+                  ].filter(Boolean).join(' ');
+                  return (
+                    <td
+                      key={d}
+                      className={cellClass}
+                      title={hasNote ? task.cell_notes[d] : (isAfterEnd ? 'After task end date' : undefined)}
+                    >
+                      {cellDisplay(count)}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
           {tasks.length === 0 && (
             <tr>
               <td colSpan={7 + dates.length} className="dash-empty">No tasks in this snapshot.</td>

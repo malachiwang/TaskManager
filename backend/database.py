@@ -202,4 +202,28 @@ def init_db() -> None:
     """)
     conn.commit()
 
+    # ── Migration 6: add end_date column to tasks ─────────────────────────────
+    try:
+        conn.execute("ALTER TABLE tasks ADD COLUMN end_date TEXT DEFAULT NULL")
+        conn.commit()
+    except Exception:
+        pass  # Column already exists.
+
+    # ── Migration 7: add end_date and is_ended to task_daily_snapshots ────────
+    try:
+        conn.execute(
+            "ALTER TABLE task_daily_snapshots ADD COLUMN end_date TEXT DEFAULT NULL"
+        )
+        conn.commit()
+    except Exception:
+        pass  # Column already exists.
+
+    try:
+        conn.execute(
+            "ALTER TABLE task_daily_snapshots ADD COLUMN is_ended INTEGER NOT NULL DEFAULT 0"
+        )
+        conn.commit()
+    except Exception:
+        pass  # Column already exists.
+
     conn.close()

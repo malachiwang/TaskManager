@@ -24,20 +24,24 @@ export const GROUP_MODE_LABELS = {
 };
 
 // Urgency band definitions — fixed display order.
-// Paused tasks are routed by is_paused before any urgency threshold is checked,
-// so they can never appear in Low (or any numeric band).
+// Ended tasks are routed by is_ended before is_paused or any urgency threshold,
+// so they can never appear in Low or Paused bands.
 export const URGENCY_BANDS = [
   { key: 'critical',   label: 'Critical',   minUrgency: 8  },
   { key: 'high',       label: 'High',        minUrgency: 6  },
   { key: 'noticeable', label: 'Noticeable',  minUrgency: 3  },
   { key: 'low',        label: 'Low',         minUrgency: 0  },
   { key: 'paused',     label: 'Paused',      paused: true   },
+  { key: 'ended',      label: 'Ended',       ended: true    },
 ];
 
 // Derives pausedCount and avgUrgency for a task array.
 function groupMeta(tasks) {
   const pausedCount = tasks.filter((t) => t.is_paused === 1).length;
-  const active = tasks.filter((t) => t.is_paused !== 1 && typeof t.urgency === 'number');
+  // Exclude ended tasks from avgUrgency — their urgency=0 would distort the average.
+  const active = tasks.filter(
+    (t) => t.is_paused !== 1 && !t.is_ended && typeof t.urgency === 'number',
+  );
   const avgUrgency =
     active.length > 0
       ? +(active.reduce((sum, t) => sum + t.urgency, 0) / active.length).toFixed(1)
@@ -85,22 +89,28 @@ export function groupTasks(tasks, groupMode) {
     }
 
     case GROUP_MODES.STATUS: {
-      // Fixed order: Active first, Hiatus second. Uses is_paused numeric convention.
-      const active = tasks.filter((t) => t.is_paused !== 1);
-      const hiatus = tasks.filter((t) => t.is_paused === 1);
+      // Fixed order: Active, Hiatus, Ended. Ended tasks excluded from Active/Hiatus.
+      const active = tasks.filter((t) => t.is_paused !== 1 && !t.is_ended);
+      const hiatus = tasks.filter((t) => t.is_paused === 1 && !t.is_ended);
+      const ended  = tasks.filter((t) => t.is_ended === true);
       const groups = [];
       if (active.length > 0)
         groups.push({ key: 'active', label: 'Active', tasks: active, ...groupMeta(active) });
       if (hiatus.length > 0)
         groups.push({ key: 'hiatus', label: 'Hiatus', tasks: hiatus, ...groupMeta(hiatus) });
+      if (ended.length > 0)
+        groups.push({ key: 'ended', label: 'Ended', tasks: ended, ...groupMeta(ended) });
       return groups;
     }
 
     case GROUP_MODES.URGENCY: {
-      // is_paused check comes FIRST — paused tasks go to Paused, never Low.
-      const buckets = { critical: [], high: [], noticeable: [], low: [], paused: [] };
+      // is_ended check comes FIRST — ended tasks go to Ended, never Low or Paused.
+      // is_paused check is second — paused tasks go to Paused, never Low.
+      const buckets = { critical: [], high: [], noticeable: [], low: [], paused: [], ended: [] };
       for (const task of tasks) {
-        if (task.is_paused === 1) {
+        if (task.is_ended) {
+          buckets.ended.push(task);
+        } else if (task.is_paused === 1) {
           buckets.paused.push(task);
         } else {
           const urg = typeof task.urgency === 'number' ? task.urgency : 0;

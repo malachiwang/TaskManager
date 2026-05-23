@@ -108,7 +108,7 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 
 def _enrich_task(row: dict, today: date) -> dict:
-    """Add computed fields (effective_last_done, days_since, urgency, is_scheduled) to a task row."""
+    """Add computed fields (effective_last_done, days_since, urgency, is_scheduled, is_ended) to a task row."""
     t = dict(row)
     created = date.fromisoformat(t["created_at"])
     manual_iso = _normalize_date_override(t.get("manual_last_done_override"))
@@ -123,11 +123,15 @@ def _enrich_task(row: dict, today: date) -> dict:
     active_from_iso = _normalize_date_override(t.get("active_from"))
     is_scheduled = bool(active_from_iso and active_from_iso > today.isoformat())
 
+    # is_ended: end_date exists and is on or before today.
+    end_date_iso = _normalize_date_override(t.get("end_date"))
+    is_ended = bool(end_date_iso and end_date_iso <= today.isoformat())
+
     effective = calculate_effective_last_done(created, latest, manual)
     days = calculate_days_since(effective, today)
 
-    # Scheduled tasks generate no pressure, same pattern as paused.
-    if is_scheduled or bool(t["is_paused"]):
+    # Ended, scheduled, or paused tasks generate no pressure.
+    if is_ended or is_scheduled or bool(t["is_paused"]):
         urgency = 0.0
     else:
         urgency = calculate_urgency(
@@ -141,6 +145,8 @@ def _enrich_task(row: dict, today: date) -> dict:
     t["days_since"] = days
     t["urgency"] = urgency
     t["is_scheduled"] = is_scheduled
+    t["end_date"] = end_date_iso  # normalized, or None
+    t["is_ended"] = is_ended
     return t
 
 
@@ -191,8 +197,9 @@ def _capture_daily_snapshots(conn, snapshot_date: date) -> None:
                     task_id, snapshot_date, task_name, section, category,
                     status, is_paused, is_scheduled, active_from,
                     priority, interval_days, days_since, urgency,
-                    completion_count, effective_last_done, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    completion_count, effective_last_done, end_date, is_ended,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(task_id, snapshot_date) DO UPDATE SET
                     task_name        = excluded.task_name,
                     section          = excluded.section,
@@ -207,6 +214,8 @@ def _capture_daily_snapshots(conn, snapshot_date: date) -> None:
                     urgency          = excluded.urgency,
                     completion_count = excluded.completion_count,
                     effective_last_done = excluded.effective_last_done,
+                    end_date         = excluded.end_date,
+                    is_ended         = excluded.is_ended,
                     updated_at       = excluded.updated_at
                 """,
                 (
@@ -218,6 +227,7 @@ def _capture_daily_snapshots(conn, snapshot_date: date) -> None:
                     t["days_since"], t["urgency"],
                     comp_map.get(t["id"], 0),
                     t["effective_last_done"],
+                    t.get("end_date"), int(t["is_ended"]),
                     now, now,
                 ),
             )
@@ -291,6 +301,7 @@ def create_task(
     manual_last_done_override: Optional[str] = None,
     display_order: int = 0,
     active_from: Optional[str] = None,
+    end_date: Optional[str] = None,
 ):
     if not 1 <= priority <= 10:
         raise HTTPException(status_code=422, detail="Priority must be between 1 and 10")
@@ -302,6 +313,7 @@ def create_task(
     paused_at_val = datetime.now().isoformat() if is_paused_val else None
     active_from_val = _normalize_date_override(active_from)
     manual_override_val = _normalize_date_override(manual_last_done_override)
+    end_date_val = _normalize_date_override(end_date)
 
     conn = get_connection()
     today_str = date.today().isoformat()
@@ -311,13 +323,13 @@ def create_task(
             INSERT INTO tasks (
                 name, section, category, subtask, priority, interval_days,
                 status, notes, created_at, is_active, is_paused, paused_at,
-                manual_last_done_override, display_order, active_from
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+                manual_last_done_override, display_order, active_from, end_date
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
             """,
             (
                 name, section, category, subtask, priority, interval_days,
                 norm_status, notes, today_str, is_paused_val, paused_at_val,
-                manual_override_val, display_order, active_from_val,
+                manual_override_val, display_order, active_from_val, end_date_val,
             ),
         )
         task_id = cursor.lastrowid
@@ -344,6 +356,7 @@ def update_task(
     priority: Optional[int] = None,
     interval_days: Optional[int] = None,
     active_from: Optional[str] = None,
+    end_date: Optional[str] = None,
 ):
     """Update mutable task fields. Only provided fields are changed.
 
@@ -399,12 +412,25 @@ def update_task(
     if active_from is not None:
         updates["active_from"] = _normalize_date_override(active_from)
 
+    # end_date: normalize and track the resolved value for completion cleanup.
+    end_date_val: Optional[str] = None
+    if end_date is not None:
+        end_date_val = _normalize_date_override(end_date)
+        updates["end_date"] = end_date_val
+
     if updates:
         # Column names are hardcoded above — not from user input — so this is safe
         set_clause = ", ".join(f"{col} = ?" for col in updates)
         values = list(updates.values()) + [task_id]
         with conn:
             conn.execute(f"UPDATE tasks SET {set_clause} WHERE id = ?", values)
+            # When a non-null end_date is set, delete completions after it.
+            # Completions on end_date are preserved (completion_date > end_date_val).
+            if end_date is not None and end_date_val is not None:
+                conn.execute(
+                    "DELETE FROM completions WHERE task_id = ? AND completion_date > ?",
+                    (task_id, end_date_val),
+                )
 
     row = conn.execute(
         """
@@ -689,6 +715,7 @@ def dashboard():
     Only active, non-paused tasks appear in recommendations.
     """
     today = date.today()
+    today_iso = today.isoformat()
     conn = get_connection()
 
     rows = conn.execute(
@@ -699,8 +726,10 @@ def dashboard():
                 WHERE c.task_id = t.id) AS latest_completion
         FROM tasks t
         WHERE t.is_active = 1 AND t.is_paused = 0
+          AND (t.end_date IS NULL OR t.end_date > ?)
         ORDER BY t.display_order, t.id
-        """
+        """,
+        (today_iso,),
     ).fetchall()
 
     active_tasks = [_enrich_task(dict(r), today) for r in rows]
@@ -729,18 +758,21 @@ def dashboard():
 
     paused_count = conn.execute(
         "SELECT COUNT(*) FROM tasks WHERE is_active = 1 AND is_paused = 1"
+        " AND (end_date IS NULL OR end_date > ?)",
+        (today_iso,),
     ).fetchone()[0]
 
-    # Never done: excludes scheduled (not yet started) and paused tasks.
+    # Never done: excludes scheduled (not yet started), paused, and ended tasks.
     never_done_count = conn.execute(
         """
         SELECT COUNT(*) FROM tasks t
         WHERE t.is_active = 1 AND t.is_paused = 0
+          AND (t.end_date IS NULL OR t.end_date > ?)
           AND NOT EXISTS (SELECT 1 FROM completions c WHERE c.task_id = t.id)
           AND t.manual_last_done_override IS NULL
           AND (t.active_from IS NULL OR t.active_from <= ?)
         """,
-        (today.isoformat(),),
+        (today_iso, today_iso),
     ).fetchone()[0]
 
     # active_count — explicit, avoids frontend re-derivation from category_summary
@@ -892,6 +924,7 @@ def snapshot_pressure(days: int = Query(default=30, ge=1, le=90)):
         WHERE snapshot_date IN ({placeholders})
           AND is_paused    = 0
           AND is_scheduled = 0
+          AND is_ended     = 0
         GROUP BY snapshot_date, section
         """,
         date_list,
@@ -1207,7 +1240,7 @@ def export_sheet_csv(
         d += timedelta(days=1)
 
     meta_cols = ["name", "section", "category", "subtask", "priority", "interval_days",
-                 "status", "active_from", "urgency", "days_since", "notes"]
+                 "status", "active_from", "end_date", "urgency", "days_since", "notes"]
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -1216,7 +1249,8 @@ def export_sheet_csv(
         row = [
             t["name"], t.get("section", "General"), t.get("category", ""),
             t.get("subtask", ""), t["priority"], t["interval_days"], t["status"],
-            t.get("active_from") or "", t["urgency"], t["days_since"], t.get("notes", ""),
+            t.get("active_from") or "", t.get("end_date") or "",
+            t["urgency"], t["days_since"], t.get("notes", ""),
         ]
         for iso in dates:
             count = comp_map.get((t["id"], iso), 0)
@@ -1246,6 +1280,7 @@ _IMPORT_ALIASES: dict[str, list[str]] = {
     "interval_days":             ["freq", "frequency", "interval", "interval_days"],
     "status":                    ["status"],
     "active_from":               ["active_from", "active from", "relevant from", "starts"],
+    "end_date":                  ["end_date", "end date", "ends", "retire date", "retire"],
     "notes":                     ["notes", "note"],
     "manual_last_done_override": [
         "manual", "last done", "manual last done",
@@ -1534,6 +1569,7 @@ async def import_apply(file: UploadFile = File(...)):
             is_paused_val = 1 if status == 'hiatus' else 0
             paused_at_val = now if is_paused_val else None
             active_from_val = _normalize_date_override(fv("active_from"))
+            end_date_val = _normalize_date_override(fv("end_date"))
             notes = fv("notes") or ""
             manual_override = _normalize_date_override(fv("manual_last_done_override"))
 
@@ -1571,13 +1607,13 @@ async def import_apply(file: UploadFile = File(...)):
                 INSERT INTO tasks (
                     name, section, category, subtask, priority, interval_days,
                     status, notes, created_at, is_active, is_paused, paused_at,
-                    manual_last_done_override, display_order, active_from
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 0, ?)
+                    manual_last_done_override, display_order, active_from, end_date
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 0, ?, ?)
                 """,
                 (
                     name_val, section, category, subtask, priority, interval_days,
                     status, notes, today_str, is_paused_val, paused_at_val,
-                    manual_override, active_from_val,
+                    manual_override, active_from_val, end_date_val,
                 ),
             )
             task_id = cursor.lastrowid

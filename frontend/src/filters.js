@@ -14,6 +14,7 @@ export const FILTERS = {
   DORMANT:    'dormant',
   NEVER_DONE: 'never_done',
   SCHEDULED:  'scheduled',
+  ENDED:      'ended',
 };
 
 export const FILTER_LABELS = {
@@ -24,29 +25,34 @@ export const FILTER_LABELS = {
   [FILTERS.DORMANT]:    'Dormant',
   [FILTERS.NEVER_DONE]: 'Never done',
   [FILTERS.SCHEDULED]:  'Scheduled',
+  [FILTERS.ENDED]:      'Ended',
 };
 
 // Returns true if the task passes the given filter.
 export function taskPassesFilter(task, filter) {
   switch (filter) {
     case FILTERS.ACTIVE:
-      return task.is_paused !== 1;
+      return task.is_paused !== 1 && !task.is_ended;
     case FILTERS.HIATUS:
-      return task.is_paused === 1;
+      return task.is_paused === 1 && !task.is_ended;
     case FILTERS.URGENT:
       return task.is_paused !== 1
         && !task.is_scheduled
+        && !task.is_ended
         && typeof task.urgency === 'number'
         && task.urgency >= URGENT_THRESHOLD;
     case FILTERS.DORMANT:
       return task.is_paused !== 1
         && !task.is_scheduled
+        && !task.is_ended
         && task.days_since != null
         && task.days_since >= DORMANT_THRESHOLD;
     case FILTERS.NEVER_DONE:
-      return !task.latest_completion && !task.is_scheduled;
+      return !task.latest_completion && !task.is_scheduled && !task.is_ended;
     case FILTERS.SCHEDULED:
-      return task.is_scheduled === true;
+      return task.is_scheduled === true && !task.is_ended;
+    case FILTERS.ENDED:
+      return task.is_ended === true;
     default:
       return true; // FILTERS.ALL
   }
