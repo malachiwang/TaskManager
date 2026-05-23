@@ -16,7 +16,8 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import Body, FastAPI, File, HTTPException, Query, UploadFile
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
@@ -342,9 +343,31 @@ def create_task(
     return _enrich_task(dict(row), date.today())
 
 
+class TaskPatch(BaseModel):
+    """Optional JSON body for PATCH /tasks/{id}.
+
+    Callers may send fields as query parameters (existing behaviour) OR as a
+    JSON body (Content-Type: application/json).  When both are present for the
+    same field, the query-parameter value takes priority.
+    """
+    name: Optional[str] = None
+    section: Optional[str] = None
+    category: Optional[str] = None
+    subtask: Optional[str] = None
+    status: Optional[str] = None
+    is_paused: Optional[bool] = None
+    notes: Optional[str] = None
+    manual_last_done_override: Optional[str] = None
+    priority: Optional[int] = None
+    interval_days: Optional[int] = None
+    active_from: Optional[str] = None
+    end_date: Optional[str] = None
+
+
 @app.patch("/tasks/{task_id}")
 def update_task(
     task_id: int,
+    # ── query-parameter fields (original interface) ──────────────────────────
     name: Optional[str] = None,
     section: Optional[str] = None,
     category: Optional[str] = None,
@@ -357,6 +380,8 @@ def update_task(
     interval_days: Optional[int] = None,
     active_from: Optional[str] = None,
     end_date: Optional[str] = None,
+    # ── optional JSON body (new; query params take priority when both present) ─
+    body: Optional[TaskPatch] = Body(default=None),
 ):
     """Update mutable task fields. Only provided fields are changed.
 
@@ -365,6 +390,28 @@ def update_task(
     - Setting is_paused drives status (True → status='hiatus', False → status='active').
     - If both are provided in the same request, status takes priority.
     """
+    # Merge JSON body into query params.  Query-param value wins if both present.
+    # Use model_fields_set to distinguish "field explicitly sent as null" from
+    # "field not included in the body at all" — both arrive as None in Pydantic.
+    if body is not None:
+        bset = body.model_fields_set
+        if name is None and "name" in bset:                               name = body.name
+        if section is None and "section" in bset:                         section = body.section
+        if category is None and "category" in bset:                       category = body.category
+        if subtask is None and "subtask" in bset:                         subtask = body.subtask
+        if status is None and "status" in bset:                           status = body.status
+        if is_paused is None and "is_paused" in bset:                     is_paused = body.is_paused
+        if notes is None and "notes" in bset:                             notes = body.notes
+        if manual_last_done_override is None and "manual_last_done_override" in bset:
+            manual_last_done_override = body.manual_last_done_override
+        if priority is None and "priority" in bset:                       priority = body.priority
+        if interval_days is None and "interval_days" in bset:             interval_days = body.interval_days
+        if active_from is None and "active_from" in bset:                 active_from = body.active_from
+        if end_date is None and "end_date" in bset:
+            # null in JSON means "clear end_date".  Map to "" so the handler's
+            # _normalize_date_override("") → None path fires and writes NULL.
+            end_date = body.end_date if body.end_date is not None else ""
+
     conn = get_connection()
     existing = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
     if not existing:

@@ -2751,3 +2751,86 @@ class TestEndDate:
         task = next((t for t in data["tasks"] if t["name"] == "Backup Task"), None)
         assert task is not None
         assert task["end_date"] == YESTERDAY
+
+
+# ---------------------------------------------------------------------------
+# PATCH /tasks/{id} — JSON body interface (regression for json= callers)
+# ---------------------------------------------------------------------------
+
+class TestPatchTaskJsonBody:
+    """Regression tests: PATCH must accept end_date (and other fields) via
+    a JSON body (Content-Type: application/json), not only via query params.
+
+    The original bug: FastAPI silently discarded the JSON body when all params
+    were defined as query params, so end_date was always left as null.
+    """
+
+    def test_patch_json_sets_end_date(self, client):
+        """PATCH with json= sets end_date and response includes it."""
+        t = create_task(client, name="JsonPatch")
+        resp = client.patch(f"/tasks/{t['id']}", json={"end_date": TODAY})
+        assert resp.status_code == 200
+        assert resp.json()["end_date"] == TODAY
+
+    def test_patch_json_end_date_today_is_ended_true_urgency_zero(self, client):
+        """end_date == today → is_ended=True, urgency=0."""
+        t = create_task(client, name="EndedToday")
+        resp = client.patch(f"/tasks/{t['id']}", json={"end_date": TODAY})
+        data = resp.json()
+        assert data["end_date"] == TODAY
+        assert data["is_ended"] is True
+        assert data["urgency"] == 0.0
+
+    def test_patch_json_clears_end_date(self, client):
+        """PATCH with json={"end_date": None} clears end_date."""
+        t = create_task(client, name="ClearEnd", end_date=YESTERDAY)
+        resp = client.patch(f"/tasks/{t['id']}", json={"end_date": None})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["end_date"] is None
+        assert data["is_ended"] is False
+
+    def test_patch_json_end_date_blank_clears(self, client):
+        """PATCH with json={"end_date": ""} clears end_date (blank = clear)."""
+        t = create_task(client, name="BlankClear", end_date=YESTERDAY)
+        resp = client.patch(f"/tasks/{t['id']}", json={"end_date": ""})
+        assert resp.status_code == 200
+        assert resp.json()["end_date"] is None
+
+    def test_patch_json_end_date_deletes_future_completions_only(self, client):
+        """Setting end_date removes completions after it; on/before preserved."""
+        t = create_task(client, name="Cleanup")
+        client.post(f"/completions?task_id={t['id']}&completion_date={YESTERDAY}")
+        client.post(f"/completions?task_id={t['id']}&completion_date={TODAY}")
+        client.post(f"/completions?task_id={t['id']}&completion_date={TOMORROW}")
+        client.patch(f"/tasks/{t['id']}", json={"end_date": TODAY})
+        comps = client.get(f"/completions?start={YESTERDAY}&end={TOMORROW}").json()
+        dates = {c["completion_date"] for c in comps if c["task_id"] == t["id"]}
+        assert YESTERDAY in dates
+        assert TODAY in dates
+        assert TOMORROW not in dates
+
+    def test_patch_json_query_param_wins_over_body(self, client):
+        """Query param takes priority when both query param and body are present."""
+        t = create_task(client, name="Priority")
+        resp = client.patch(
+            f"/tasks/{t['id']}?end_date={YESTERDAY}",
+            json={"end_date": TOMORROW},
+        )
+        assert resp.status_code == 200
+        # Query param YESTERDAY wins over body TOMORROW.
+        assert resp.json()["end_date"] == YESTERDAY
+
+    def test_patch_json_other_fields_work(self, client):
+        """Non-end_date fields also work via JSON body."""
+        t = create_task(client, name="Original")
+        resp = client.patch(f"/tasks/{t['id']}", json={"name": "Renamed"})
+        assert resp.status_code == 200
+        assert resp.json()["name"] == "Renamed"
+
+    def test_patch_json_existing_tests_still_pass_with_params(self, client):
+        """Backward compat: params= callers continue to work unchanged."""
+        t = create_task(client, name="ParamsStillWork")
+        resp = client.patch(f"/tasks/{t['id']}", params={"end_date": TODAY})
+        assert resp.status_code == 200
+        assert resp.json()["end_date"] == TODAY
