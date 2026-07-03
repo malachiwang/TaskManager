@@ -1,3 +1,32 @@
 # Local TaskManager backups
 backups/*.db
 backups/*.json
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+backend/__pycache__/
+tests/__pycache__/
+
+# Local database and backups
+taskos.db
+backups/
+*.db
+*.sqlite
+*.sqlite3
+
+# Frontend dependencies/build output
+frontend/node_modules/
+frontend/dist/
+node_modules/
+dist/
+
+# Tauri/build artifacts
+build-sidecar-tmp/
+dist-sidecar/
+src-tauri/binaries/
+src-tauri/gen/
+src-tauri/target/

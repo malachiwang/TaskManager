@@ -11,6 +11,7 @@ import csv
 import io
 import json
 import re
+import sqlite3
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
@@ -21,7 +22,7 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
-from backend.database import get_connection, init_db
+from backend.database import DB_PATH, get_connection, init_db
 from backend.logic import (
     calculate_days_since,
     calculate_effective_last_done,
@@ -1310,6 +1311,223 @@ def export_sheet_csv(
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# Restore
+# ---------------------------------------------------------------------------
+
+_SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2, 3})
+
+
+@app.post("/restore/backup.json", status_code=200)
+async def restore_backup(file: UploadFile = File(...)):
+    """
+    Restore all data from a JSON backup produced by GET /export/backup.json.
+
+    Before overwriting anything, a safety copy of the current DB is written to
+    <db-dir>/backups/pre-restore-<timestamp>.db using the SQLite backup API.
+
+    Supported schema_versions: 1, 2, 3.
+    All existing rows are deleted and replaced with backup data in a single
+    transaction; if the insert phase fails the transaction rolls back and the
+    safety copy lets you recover manually.
+    """
+    raw = await file.read()
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}")
+
+    schema_version = payload.get("schema_version", 1)
+    if schema_version not in _SUPPORTED_SCHEMA_VERSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unsupported schema_version {schema_version!r}. "
+                f"Expected one of {sorted(_SUPPORTED_SCHEMA_VERSIONS)}."
+            ),
+        )
+
+    tasks_data = payload.get("tasks", [])
+    completions_data = payload.get("completions", [])
+    cell_notes_data = payload.get("cell_notes", [])
+    archives_data = payload.get("archive_snapshots", [])
+    snapshots_data = payload.get("task_daily_snapshots", [])
+
+    # Safety backup before any writes.
+    backup_dir = DB_PATH.parent / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    safety_path = backup_dir / f"pre-restore-{datetime.now().strftime('%Y%m%d-%H%M%S')}.db"
+    if DB_PATH.exists():
+        src = sqlite3.connect(str(DB_PATH))
+        dst = sqlite3.connect(str(safety_path))
+        src.backup(dst)
+        dst.close()
+        src.close()
+
+    conn = get_connection()
+    try:
+        with conn:
+            # Delete in dependency order (child tables first, then parent).
+            conn.execute("DELETE FROM task_daily_snapshots")
+            conn.execute("DELETE FROM cell_notes")
+            conn.execute("DELETE FROM completions")
+            conn.execute("DELETE FROM archive_snapshots")
+            conn.execute("DELETE FROM tasks")
+
+            # Insert tasks first so FK constraints hold for dependent tables.
+            for t in tasks_data:
+                conn.execute(
+                    """
+                    INSERT INTO tasks (
+                        id, name, section, category, subtask, priority,
+                        interval_days, status, notes, created_at, paused_at,
+                        is_active, is_paused, manual_last_done_override,
+                        display_order, active_from, end_date
+                    ) VALUES (
+                        :id, :name, :section, :category, :subtask, :priority,
+                        :interval_days, :status, :notes, :created_at, :paused_at,
+                        :is_active, :is_paused, :manual_last_done_override,
+                        :display_order, :active_from, :end_date
+                    )
+                    """,
+                    {
+                        "id":                      t.get("id"),
+                        "name":                    t["name"],
+                        "section":                 t.get("section", "General"),
+                        "category":                t.get("category", ""),
+                        "subtask":                 t.get("subtask", ""),
+                        "priority":                t.get("priority", 5),
+                        "interval_days":           t.get("interval_days", 7),
+                        "status":                  t.get("status", "active"),
+                        "notes":                   t.get("notes", ""),
+                        "created_at":              t.get("created_at"),
+                        "paused_at":               t.get("paused_at"),
+                        "is_active":               t.get("is_active", 1),
+                        "is_paused":               t.get("is_paused", 0),
+                        "manual_last_done_override": t.get("manual_last_done_override"),
+                        "display_order":           t.get("display_order", 0),
+                        "active_from":             t.get("active_from"),
+                        "end_date":                t.get("end_date"),
+                    },
+                )
+
+            for c in completions_data:
+                conn.execute(
+                    """
+                    INSERT INTO completions (
+                        id, task_id, completion_date, completion_count,
+                        created_timestamp, updated_timestamp
+                    ) VALUES (
+                        :id, :task_id, :completion_date, :completion_count,
+                        :created_timestamp, :updated_timestamp
+                    )
+                    """,
+                    {
+                        "id":                c.get("id"),
+                        "task_id":           c["task_id"],
+                        "completion_date":   c["completion_date"],
+                        "completion_count":  c.get("completion_count", 1),
+                        "created_timestamp": c.get("created_timestamp"),
+                        "updated_timestamp": c.get("updated_timestamp"),
+                    },
+                )
+
+            for n in cell_notes_data:
+                conn.execute(
+                    """
+                    INSERT INTO cell_notes (
+                        id, task_id, note_date, note, created_at, updated_at
+                    ) VALUES (
+                        :id, :task_id, :note_date, :note, :created_at, :updated_at
+                    )
+                    """,
+                    {
+                        "id":         n.get("id"),
+                        "task_id":    n["task_id"],
+                        "note_date":  n["note_date"],
+                        "note":       n.get("note", ""),
+                        "created_at": n.get("created_at"),
+                        "updated_at": n.get("updated_at"),
+                    },
+                )
+
+            for a in archives_data:
+                snap = a.get("snapshot_data_json", {})
+                if not isinstance(snap, str):
+                    snap = json.dumps(snap)
+                conn.execute(
+                    """
+                    INSERT INTO archive_snapshots (
+                        id, name, start_date, end_date, archived_at, snapshot_data_json
+                    ) VALUES (
+                        :id, :name, :start_date, :end_date, :archived_at, :snapshot_data_json
+                    )
+                    """,
+                    {
+                        "id":                 a.get("id"),
+                        "name":               a["name"],
+                        "start_date":         a["start_date"],
+                        "end_date":           a["end_date"],
+                        "archived_at":        a["archived_at"],
+                        "snapshot_data_json": snap,
+                    },
+                )
+
+            for s in snapshots_data:
+                conn.execute(
+                    """
+                    INSERT INTO task_daily_snapshots (
+                        id, task_id, snapshot_date, task_name, section, category,
+                        status, is_paused, is_scheduled, active_from, priority,
+                        interval_days, days_since, urgency, completion_count,
+                        effective_last_done, end_date, is_ended, created_at, updated_at
+                    ) VALUES (
+                        :id, :task_id, :snapshot_date, :task_name, :section, :category,
+                        :status, :is_paused, :is_scheduled, :active_from, :priority,
+                        :interval_days, :days_since, :urgency, :completion_count,
+                        :effective_last_done, :end_date, :is_ended, :created_at, :updated_at
+                    )
+                    """,
+                    {
+                        "id":                 s.get("id"),
+                        "task_id":            s["task_id"],
+                        "snapshot_date":      s["snapshot_date"],
+                        "task_name":          s["task_name"],
+                        "section":            s.get("section"),
+                        "category":           s.get("category"),
+                        "status":             s["status"],
+                        "is_paused":          s.get("is_paused", 0),
+                        "is_scheduled":       s.get("is_scheduled", 0),
+                        "active_from":        s.get("active_from"),
+                        "priority":           s["priority"],
+                        "interval_days":      s["interval_days"],
+                        "days_since":         s.get("days_since"),
+                        "urgency":            s.get("urgency"),
+                        "completion_count":   s.get("completion_count", 0),
+                        "effective_last_done": s.get("effective_last_done"),
+                        "end_date":           s.get("end_date"),
+                        "is_ended":           s.get("is_ended", 0),
+                        "created_at":         s.get("created_at"),
+                        "updated_at":         s.get("updated_at"),
+                    },
+                )
+    except Exception as exc:
+        conn.close()
+        raise HTTPException(status_code=500, detail=f"Restore failed: {exc}")
+
+    conn.close()
+    return {
+        "restored": True,
+        "schema_version": schema_version,
+        "tasks": len(tasks_data),
+        "completions": len(completions_data),
+        "cell_notes": len(cell_notes_data),
+        "archive_snapshots": len(archives_data),
+        "task_daily_snapshots": len(snapshots_data),
+        "safety_backup": str(safety_path),
+    }
 
 
 # ---------------------------------------------------------------------------
