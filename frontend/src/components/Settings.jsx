@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { downloadExportBackup } from '../api.js';
+import { downloadExportBackup, fetchDoc } from '../api.js';
 import {
   KEYBINDS, KB_GROUP_ORDER, FIXED_SHORTCUTS,
   loadKbOverrides, writeKbOverrides, buildResolvedFromOverrides,
@@ -17,6 +17,36 @@ function loadSettings() {
   } catch {
     return {};
   }
+}
+
+function DocSection({ name, label }) {
+  const [open,    setOpen]    = useState(false);
+  const [content, setContent] = useState(null);
+  const [err,     setErr]     = useState(false);
+
+  function handleToggle() {
+    if (!open && content === null && !err) {
+      fetchDoc(name)
+        .then(setContent)
+        .catch(() => setErr(true));
+    }
+    setOpen((v) => !v);
+  }
+
+  return (
+    <div className="ws-doc-section">
+      <button type="button" className="ws-doc-toggle" onClick={handleToggle}>
+        {label} {open ? '▴' : '▾'}
+      </button>
+      {open && (
+        err
+          ? <pre className="ws-doc-pre" style={{ color: 'var(--urg-crit)' }}>Could not load {label.toLowerCase()} document.</pre>
+          : content !== null
+            ? <pre className="ws-doc-pre">{content}</pre>
+            : <pre className="ws-doc-pre" style={{ color: 'var(--muted-2)' }}>Loading…</pre>
+      )}
+    </div>
+  );
 }
 
 export default function Settings() {
@@ -506,8 +536,9 @@ D = days_since   I = interval_days`}</pre>
             </div>
             <div className="ws-frame-body settings-prose">
               <p>
-                <strong>TaskManager</strong> is a local-first task pressure tracker. Spreadsheet-style
-                grid, FastAPI backend, SQLite storage. Built as a personal productivity instrument.
+                <strong>TaskManager</strong> is a spreadsheet-style task pressure tracker.
+                FastAPI backend, SQLite storage, React/Vite frontend. Built as a personal
+                productivity instrument.
               </p>
               <p style={{ marginTop: '8px' }}>
                 All data is stored in <code>taskos.db</code> at the project root. Gitignored,
@@ -517,24 +548,11 @@ D = days_since   I = interval_days`}</pre>
                 Personal tool — not a public SaaS product. No notifications, no mobile, no
                 multi-user support. Current limitations are known and intentional.
               </p>
-              <p style={{ marginTop: '12px', fontSize: '11px', color: 'var(--muted)' }}>
-                <a
-                  href="https://github.com"
-                  style={{ color: 'inherit', textDecoration: 'underline', marginRight: '12px' }}
-                  onClick={(e) => { e.preventDefault(); }}
-                >Privacy</a>
-                <a
-                  href="https://github.com"
-                  style={{ color: 'inherit', textDecoration: 'underline', marginRight: '12px' }}
-                  onClick={(e) => { e.preventDefault(); }}
-                >Accessibility</a>
-                <a
-                  href="https://github.com"
-                  style={{ color: 'inherit', textDecoration: 'underline' }}
-                  onClick={(e) => { e.preventDefault(); }}
-                >Terms</a>
-                <span style={{ marginLeft: '12px' }}>— see project root docs</span>
-              </p>
+              <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <DocSection name="privacy"       label="Privacy" />
+                <DocSection name="accessibility" label="Accessibility" />
+                <DocSection name="terms"         label="Terms" />
+              </div>
             </div>
           </div>
 

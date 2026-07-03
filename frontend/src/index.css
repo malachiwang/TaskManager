@@ -24,6 +24,8 @@
   /* App surfaces — currently in use */
   --bg-app:       #f5f5f5;   /* body background, toolbar background        */
   --bg-panel:     #fff;      /* grid cells, card backgrounds                */
+  --bg-surface:   #efefef;   /* filter bar, secondary toolbar backgrounds   */
+  --bg-hover:     #e8e8e8;   /* pill/button hover fill                      */
   --header-bg:    #efefef;   /* thead, dash-section-title                   */
   --paused-bg:    #fafafa;   /* paused row background                       */
   --row-hover-bg: #f9f9f9;   /* task row hover, dashboard table hover       */
@@ -34,6 +36,7 @@
   /* Ink */
   --ink:          #1c1c1c;   /* dark header/button fill, stat numbers       */
   --ink-2:        #222;      /* body text, primary readable content         */
+  --ink-3:        #555;      /* hover border, focus ring                    */
   --muted:        #555;      /* meta labels, secondary text                 */
   --muted-2:      #888;      /* action buttons, modal close, icon hints     */
 
@@ -82,6 +85,8 @@
 html[data-theme="paper"] {
   --bg-app:       var(--paper);    /* #f4f1ea — warm page background     */
   --bg-panel:     var(--panel);    /* #fbfaf6 — warm cell/card bg        */
+  --bg-surface:   var(--panel-2);  /* #efece4 — warm filter bar bg       */
+  --bg-hover:     #dedad0;         /* warm pill/button hover fill        */
   --header-bg:    var(--panel-2);  /* #efece4 — warm thead/section title */
   --grid-border:  var(--rule-2);   /* #e6e0d2 — warm cell borders        */
   --rule:         var(--rule-2);
@@ -4477,9 +4482,14 @@ select.task-modal-input {
   font-size: 11px;
   color: var(--muted);
   white-space: nowrap;
-  cursor: default;
+  cursor: pointer;
   user-select: none;
-  transition: border-color 0.1s;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.ws-group-label:hover {
+  background: var(--bg-hover);
+  border-color: var(--ink-3);
 }
 
 .ws-group-label > span {
@@ -4497,12 +4507,45 @@ select.task-modal-input {
   cursor: pointer;
   line-height: 1.4;
   outline: none;
-  transition: color 0.1s;
 }
 
-.ws-group-select:hover,
-.ws-group-select:focus {
+/* ── In-settings doc viewer ── */
+.ws-doc-section {
+  margin-top: 6px;
+}
+
+.ws-doc-toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border: 1px solid var(--rule);
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.ws-doc-toggle:hover {
+  background: var(--bg-hover);
   color: var(--ink);
+  border-color: var(--ink-3);
+}
+
+.ws-doc-pre {
+  margin-top: 6px;
+  padding: 10px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--rule);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 260px;
+  overflow-y: auto;
 }
 
 /* Collapse to single column on narrow screens */

@@ -12,6 +12,7 @@ import io
 import json
 import re
 import sqlite3
+from pathlib import Path
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
@@ -1187,6 +1188,27 @@ def delete_archive(archive_id: int):
     conn.close()
     return {"deleted": archive_id}
 
+
+# ---------------------------------------------------------------------------
+# Project docs (Privacy, Accessibility, Terms)
+# ---------------------------------------------------------------------------
+
+_DOCS_ROOT = Path(__file__).parent.parent
+_ALLOWED_DOCS: dict[str, str] = {
+    "privacy":       "PRIVACY.md",
+    "accessibility": "ACCESSIBILITY.md",
+    "terms":         "TERMS.md",
+}
+
+@app.get("/docs/{name}", response_class=Response)
+def serve_doc(name: str):
+    filename = _ALLOWED_DOCS.get(name)
+    if not filename:
+        raise HTTPException(status_code=404, detail="Document not found")
+    path = _DOCS_ROOT / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Document file missing")
+    return Response(content=path.read_text(encoding="utf-8"), media_type="text/plain; charset=utf-8")
 
 # ---------------------------------------------------------------------------
 # Export

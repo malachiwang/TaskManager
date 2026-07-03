@@ -1,5 +1,11 @@
 const BASE = import.meta.env.VITE_API_BASE ?? '/api';
 
+export async function fetchDoc(name) {
+  const res = await fetch(`${BASE}/docs/${name}`);
+  if (!res.ok) throw new Error(`fetchDoc failed: ${res.status}`);
+  return res.text();
+}
+
 export async function fetchTasks() {
   const res = await fetch(`${BASE}/tasks`);
   if (!res.ok) throw new Error(`fetchTasks failed: ${res.status}`);

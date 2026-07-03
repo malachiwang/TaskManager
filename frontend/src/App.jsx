@@ -8,7 +8,7 @@ export default function App() {
   const [tab, setTab] = useState('grid');
 
   // Apply saved theme on mount — reads before first paint would require an
-  // inline <script> in index.html; for a local-first app a one-frame flash
+  // inline <script> in index.html; avoids a one-frame theme flash
   // is acceptable and this keeps the implementation self-contained.
   useEffect(() => {
     const saved = localStorage.getItem('taskos-theme') || 'sheets';
@@ -20,7 +20,7 @@ export default function App() {
       <header className="app-header">
         <div className="app-identity">
           <span className="app-title">TaskManager</span>
-          <span className="app-tagline">Pressure Tracker · Local-First</span>
+          <span className="app-tagline">Pressure Tracker</span>
         </div>
         <nav className="app-tabs">
           <button className={`tab${tab === 'grid' ? ' active' : ''}`} onClick={() => setTab('grid')}>Grid</button>
