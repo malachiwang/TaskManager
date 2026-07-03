@@ -18,9 +18,10 @@ import TaskModal from './TaskModal.jsx';
 import EditBar from './EditBar.jsx';
 import KeyboardHelp from './KeyboardHelp.jsx';
 import { FILTERS, FILTER_LABELS, taskPassesFilter } from '../filters.js';
-import { GROUP_MODES, GROUP_MODE_LABELS, groupTasks } from '../grouping.js';
+import { GROUP_MODES, groupTasks } from '../grouping.js';
 import { matchKeybind, resolveKeybinds } from '../keybinds.js';
 import SavedViewsControl from './SavedViewsControl.jsx';
+import GroupSelect from './GroupSelect.jsx';
 
 // ---------------------------------------------------------------------------
 // Date helpers
@@ -879,18 +880,7 @@ export default function TaskGrid() {
             {filteredTasks.length} of {tasks.length}
           </span>
         )}
-        <label className="ws-group-label">
-          <span>Group</span>
-          <select
-            className="ws-group-select"
-            value={groupMode}
-            onChange={(e) => setGroupMode(e.target.value)}
-          >
-            {Object.values(GROUP_MODES).map((mode) => (
-              <option key={mode} value={mode}>{GROUP_MODE_LABELS[mode]}</option>
-            ))}
-          </select>
-        </label>
+        <GroupSelect value={groupMode} onChange={setGroupMode} />
         <SavedViewsControl
           activeFilter={activeFilter}
           groupMode={groupMode}

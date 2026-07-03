@@ -4471,42 +4471,68 @@ select.task-modal-input {
   line-height: 1.4;
 }
 
-/* Group by selector — Grouping Modes Phase 3 */
-.ws-group-label {
+/* Group custom dropdown — replaces native <select> */
+.ws-group-ctrl {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.ws-group-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0;
+  padding: 2px 10px;
   border: 1px solid var(--rule);
   background: transparent;
   font-family: var(--font-sans);
   font-size: 11px;
   color: var(--muted);
-  white-space: nowrap;
   cursor: pointer;
-  user-select: none;
-  transition: background 0.1s, border-color 0.1s;
+  white-space: nowrap;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
 }
 
-.ws-group-label:hover {
+.ws-group-btn:hover,
+.ws-group-btn--open {
   background: var(--bg-hover);
+  color: var(--ink);
   border-color: var(--ink-3);
 }
 
-.ws-group-label > span {
-  padding: 2px 6px 2px 10px;
+.ws-group-panel {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  background: var(--bg-panel);
+  border: 1px solid var(--rule);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  min-width: 110px;
 }
 
-.ws-group-select {
+.ws-group-option {
+  display: block;
+  width: 100%;
+  padding: 5px 12px;
+  text-align: left;
+  border: none;
+  background: transparent;
   font-family: var(--font-sans);
   font-size: 11px;
   color: var(--muted);
-  background: transparent;
-  border: none;
-  border-left: 1px solid var(--rule);
-  padding: 2px 6px;
   cursor: pointer;
-  line-height: 1.4;
-  outline: none;
+  transition: background 0.1s, color 0.1s;
+}
+
+.ws-group-option:hover {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+
+.ws-group-option--active {
+  color: var(--ink);
+  font-weight: 600;
 }
 
 /* ── In-settings doc viewer ── */
