@@ -19,8 +19,8 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <div className="app-identity">
-          <span className="app-title">TaskManagementOS</span>
-          <span className="app-tagline">Task Manager · Productivity Tracker</span>
+          <span className="app-title">TaskManager</span>
+          <span className="app-tagline">Pressure Tracker · Local-First</span>
         </div>
         <nav className="app-tabs">
           <button className={`tab${tab === 'grid' ? ' active' : ''}`} onClick={() => setTab('grid')}>Grid</button>

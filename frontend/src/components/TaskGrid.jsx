@@ -178,7 +178,6 @@ export default function TaskGrid() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [selectedCell, setSelectedCell] = useState(null);
-  const [confirmReset, setConfirmReset] = useState(false);
 
   // Filtering / search state — Phase 1.
   const [activeFilter, setActiveFilter] = useState(FILTERS.ALL);
@@ -683,15 +682,6 @@ export default function TaskGrid() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentionally reads from refs
 
-  // ---------------------------------------------------------------------------
-  // Column resize
-  // ---------------------------------------------------------------------------
-
-  function resetColWidths() {
-    setColWidths({});
-    localStorage.removeItem(LS_KEY);
-  }
-
   // Saved views
   // ---------------------------------------------------------------------------
 
@@ -816,15 +806,6 @@ export default function TaskGrid() {
             className="ws-shelf-btn"
             onClick={() => downloadExportSheet(dates[0], dates[dates.length - 1])}
           >Export CSV</button>
-          {confirmReset ? (
-            <>
-              <span className="ws-shelf-confirm-text">Reset column widths? Task data is unchanged.</span>
-              <button className="ws-shelf-btn ws-shelf-btn--confirm" onClick={() => { resetColWidths(); setConfirmReset(false); }}>Confirm reset</button>
-              <button className="ws-shelf-btn" onClick={() => setConfirmReset(false)}>Cancel</button>
-            </>
-          ) : (
-            <button className="ws-shelf-btn" onClick={() => setConfirmReset(true)}>Reset Column Widths</button>
-          )}
         </div>
       </div>
 
@@ -849,7 +830,6 @@ export default function TaskGrid() {
         <div className="ws-sheet-header-right">
           <span className="ws-status-pill ws-status-pill--ok">local</span>
           <span className="ws-status-pill ws-status-pill--ok">SQLite</span>
-          <span className="ws-status-pill ws-status-pill--dim">synced: never</span>
           <div className="ws-kbd-help-anchor">
             <button
               ref={helpBtnRef}

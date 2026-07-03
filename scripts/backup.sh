@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# backup.sh — Offline SQLite backup for TaskManagementOS.
+# backup.sh — Offline SQLite backup for TaskManager.
 #
 # Uses the SQLite online backup API (safe while the server is running).
 # Backup lands in <db-dir>/backups/ with a timestamp suffix.

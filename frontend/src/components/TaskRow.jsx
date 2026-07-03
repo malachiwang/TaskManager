@@ -4,6 +4,18 @@ import LinkifiedText from './LinkifiedText.jsx';
 import LinkPopover from './LinkPopover.jsx';
 import { hasLinks, extractLinks } from '../linkUtils.js';
 
+function displayStatus(task) {
+  if (task.is_ended) return 'Finished';
+  if (task.is_paused === 1) return 'Hiatus';
+  return 'Active';
+}
+
+function formatActiveFrom(isoDate) {
+  if (!isoDate) return '';
+  const [, m, d] = isoDate.split('-').map(Number);
+  return `${m}/${d}`;
+}
+
 // Map urgency value to a CSS class for color coding.
 function urgencyClass(urgency) {
   if (urgency >= 8) return 'urg-critical';
@@ -67,12 +79,12 @@ export default function TaskRow({
         {isPaused || isScheduled || isEnded ? '—' : task.urgency}
       </td>
       <td className="meta-col sticky-col col-pri" style={cs('col-pri')}>{task.priority}</td>
-      <td className="meta-col sticky-col col-status" style={cs('col-status')}>{task.status}</td>
-      <td className="meta-col sticky-col col-active-from" style={cs('col-active-from')}>{task.active_from || ''}</td>
+      <td className="meta-col sticky-col col-status" style={cs('col-status')}>{displayStatus(task)}</td>
+      <td className="meta-col sticky-col col-active-from" style={cs('col-active-from')}>{formatActiveFrom(task.active_from)}</td>
       <td className="meta-col sticky-col col-cat" style={cs('col-cat')}>{task.category}</td>
       <td className="meta-col sticky-col col-task" title={task.name} style={cs('col-task')}>{task.name}</td>
       <td className="meta-col sticky-col col-sub" title={task.subtask} style={cs('col-sub')}>{task.subtask || ''}</td>
-      <td className="meta-col scroll-meta-col col-freq" style={cs('col-freq')}>{task.interval_days}d</td>
+      <td className="meta-col scroll-meta-col col-freq" style={cs('col-freq')}>{task.interval_days}</td>
       <td className={`meta-col scroll-meta-col col-days${isOverdue ? ' days-overdue' : ''}`} style={cs('col-days')}>{isPaused || isScheduled || isEnded ? '—' : task.days_since}</td>
       <td className="meta-col scroll-meta-col col-notes" title={task.notes} style={cs('col-notes')}>
         <div className="col-notes-inner">

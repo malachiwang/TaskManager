@@ -34,7 +34,7 @@ if [ ! -f "$DB_PATH" ]; then
   exit 1
 fi
 
-echo "=== TaskManagementOS DB Verification ==="
+echo "=== TaskManager DB Verification ==="
 echo ""
 echo "DB path:  $DB_PATH"
 echo "Size:     $(du -sh "$DB_PATH" | cut -f1)"

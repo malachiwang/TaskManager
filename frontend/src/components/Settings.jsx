@@ -205,7 +205,6 @@ export default function Settings() {
             <div className="ws-frame-header">
               <span className="ws-frame-kicker">01</span>
               <span>Appearance</span>
-              <span className="ws-frame-header-sub">color token set</span>
             </div>
             <div className="ws-ctrl-row">
               <div className="ws-ctrl-info">
@@ -442,7 +441,7 @@ export default function Settings() {
             <div className="ws-frame-header">
               <span className="ws-frame-kicker">06</span>
               <span>System behavior</span>
-              <span className="ws-frame-header-sub">read only · reference card</span>
+              <span className="ws-frame-header-sub">reference</span>
             </div>
 
             <div className="ws-settings-group">Urgency formula</div>
@@ -507,16 +506,34 @@ D = days_since   I = interval_days`}</pre>
             </div>
             <div className="ws-frame-body settings-prose">
               <p>
-                <strong>TaskManagementOS</strong> is a local-first task pressure tracker built as a
-                personal productivity instrument. FastAPI backend with SQLite storage, React/Vite frontend.
+                <strong>TaskManager</strong> is a local-first task pressure tracker. Spreadsheet-style
+                grid, FastAPI backend, SQLite storage. Built as a personal productivity instrument.
               </p>
               <p style={{ marginTop: '8px' }}>
                 All data is stored in <code>taskos.db</code> at the project root. Gitignored,
                 never leaves your machine. No cloud, no account, no external runtime dependencies.
               </p>
               <p style={{ marginTop: '8px', color: 'var(--muted)' }}>
-                Personal MVP — not a public SaaS product. No notifications, no mobile, no
+                Personal tool — not a public SaaS product. No notifications, no mobile, no
                 multi-user support. Current limitations are known and intentional.
+              </p>
+              <p style={{ marginTop: '12px', fontSize: '11px', color: 'var(--muted)' }}>
+                <a
+                  href="https://github.com"
+                  style={{ color: 'inherit', textDecoration: 'underline', marginRight: '12px' }}
+                  onClick={(e) => { e.preventDefault(); }}
+                >Privacy</a>
+                <a
+                  href="https://github.com"
+                  style={{ color: 'inherit', textDecoration: 'underline', marginRight: '12px' }}
+                  onClick={(e) => { e.preventDefault(); }}
+                >Accessibility</a>
+                <a
+                  href="https://github.com"
+                  style={{ color: 'inherit', textDecoration: 'underline' }}
+                  onClick={(e) => { e.preventDefault(); }}
+                >Terms</a>
+                <span style={{ marginLeft: '12px' }}>— see project root docs</span>
               </p>
             </div>
           </div>
