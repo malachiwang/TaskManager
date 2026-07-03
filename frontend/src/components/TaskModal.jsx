@@ -43,7 +43,7 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
       interval_days:             task?.interval_days             ?? d.defaultIntervalDays ?? 7,
       notes:                     task?.notes                     ?? '',
       manual_last_done_override: task?.manual_last_done_override ?? '',
-      active_from:               task?.active_from               ?? '',
+      active_from:               task?.active_from               ?? (isEdit ? '' : getLocalToday()),
       end_date:                  task?.end_date                  ?? '',
     };
   });

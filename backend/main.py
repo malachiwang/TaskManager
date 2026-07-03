@@ -314,12 +314,11 @@ def create_task(
     norm_status = _normalize_status(status)
     is_paused_val = 1 if norm_status == 'hiatus' else 0
     paused_at_val = datetime.now().isoformat() if is_paused_val else None
-    active_from_val = _normalize_date_override(active_from)
-    manual_override_val = _normalize_date_override(manual_last_done_override)
-    end_date_val = _normalize_date_override(end_date)
-
     conn = get_connection()
     today_str = date.today().isoformat()
+    active_from_val = _normalize_date_override(active_from) or today_str
+    manual_override_val = _normalize_date_override(manual_last_done_override)
+    end_date_val = _normalize_date_override(end_date)
     with conn:
         cursor = conn.execute(
             """
