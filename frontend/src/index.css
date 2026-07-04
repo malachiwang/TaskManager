@@ -443,7 +443,7 @@ thead .meta-col {
   position: relative;
   text-align: center;
   vertical-align: middle;
-  cursor: pointer;
+  cursor: default;   /* cell click = select only; dc-box is the action zone */
   user-select: none;
   min-width: 50px;
 }
@@ -461,8 +461,8 @@ thead .meta-col {
   pointer-events: none;
 }
 
-.date-cell:hover:not(.future):not(.paused) {
-  background: var(--accent-soft);
+.date-cell:hover:not(.future):not(.paused):not(.before-active):not(.after-end) {
+  background: var(--row-hover-bg);  /* neutral — signals selectable, not mutable */
 }
 
 .date-cell.today {
@@ -532,10 +532,16 @@ thead .meta-col {
 /* Empty affordance — subtle border outline, no fill */
 .dc-box--empty {
   border: 1.5px solid var(--rule-2);
+  cursor: pointer;   /* explicit action zone */
 }
 
-.date-cell:hover:not(.future):not(.paused) .dc-box--empty {
-  border-color: var(--muted-2);
+.date-cell:hover:not(.future):not(.paused):not(.before-active):not(.after-end) .dc-box--empty {
+  border-color: var(--ink-2);  /* stronger signal on cell hover */
+}
+
+.dc-box--empty:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
 }
 
 /* Filled — neutral ink, not green. Used for ✓ and count > 1. */
@@ -544,9 +550,18 @@ thead .meta-col {
   color: #fff;
 }
 
-/* Muted — paused task with existing completions */
+.dc-box--filled:not(.dc-box--muted) {
+  cursor: pointer;   /* explicit action zone */
+}
+
+.dc-box--filled:not(.dc-box--muted):hover {
+  opacity: 0.72;
+}
+
+/* Muted — paused task with existing completions; display only */
 .dc-box--muted {
   background: var(--muted-2);
+  cursor: default;
 }
 
 /* Selected cell (EditBar selection) — must come after other .date-cell.* rules */

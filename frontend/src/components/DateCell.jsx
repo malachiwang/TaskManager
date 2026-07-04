@@ -1,16 +1,18 @@
 // A single date-grid cell.
 //
-// Behavior:
-//   click           → increment completion count (POST /completions)
-//   shift+click     → clear completion count (DELETE /completions)
-//   future or paused → disabled, no interaction
+// Interaction model (P2.0A):
+//   click cell body  → select/focus cell only — no data mutation
+//   click dc-box     → explicit increment (POST /completions)
+//   shift+click dc-box → clear completion count (DELETE /completions)
+//   future / before-active / after-end → disabled; dc-box display only
+//   paused → disabled; existing counts shown muted, no interaction
 //
 // Display:
 //   count 0, active   → dc-box--empty  (15×15 border outline)
 //   count 0, disabled → blank
 //   count 1           → dc-box--filled (neutral ink, white ✓, 15×15)
 //   count 2+          → dc-box--filled (neutral ink, white number, 15×15)
-//   paused + count    → dc-box--filled dc-box--muted (same size, muted color)
+//   paused + count    → dc-box--filled dc-box--muted (muted color, no interaction)
 
 export default function DateCell({
   taskId,
@@ -36,26 +38,14 @@ export default function DateCell({
   const [wy, wm, wd] = date.split('-').map(Number);
   const isWeekend = new Date(wy, wm - 1, wd).getDay() % 6 === 0;
 
-  function renderContent() {
-    if (isFuture) return null;
-    if (isPaused || isBeforeActiveFrom || isAfterEndDate) {
-      if (count === 0) return null;
-      return (
-        <span className="dc-box dc-box--filled dc-box--muted">
-          {count === 1 ? '✓' : count}
-        </span>
-      );
-    }
-    if (count === 0) return <span className="dc-box dc-box--empty" />;
-    return (
-      <span className="dc-box dc-box--filled">
-        {count === 1 ? '✓' : count}
-      </span>
-    );
+  // Cell body click: select only. No data mutation.
+  function handleCellClick() {
+    onSelect(taskId, date);
   }
 
-  function handleClick(e) {
-    onSelect(taskId, date);
+  // dc-box click: explicit completion action.
+  // Bubbles up to <td> so the cell also becomes selected as a side effect.
+  function handleBoxClick(e) {
     if (isDisabled) return;
     if (e.shiftKey) {
       if (count > 0) onClear(taskId, date);
@@ -64,17 +54,57 @@ export default function DateCell({
     }
   }
 
+  function renderContent() {
+    if (isFuture) return null;
+
+    // Disabled with existing completions — display only, no action.
+    if (isPaused || isBeforeActiveFrom || isAfterEndDate) {
+      if (count === 0) return null;
+      return (
+        <span className="dc-box dc-box--filled dc-box--muted">
+          {count === 1 ? '✓' : count}
+        </span>
+      );
+    }
+
+    // Active empty cell — box is the increment action zone.
+    if (count === 0) {
+      return (
+        <span
+          className="dc-box dc-box--empty"
+          onClick={handleBoxClick}
+          role="button"
+          tabIndex={-1}
+          aria-label="Add completion"
+        />
+      );
+    }
+
+    // Active filled cell — box is the increment / shift-clear action zone.
+    return (
+      <span
+        className="dc-box dc-box--filled"
+        onClick={handleBoxClick}
+        role="button"
+        tabIndex={-1}
+        aria-label={`${count} completion${count !== 1 ? 's' : ''}. Click to add, Shift+click to clear.`}
+      >
+        {count === 1 ? '✓' : count}
+      </span>
+    );
+  }
+
   const classes = [
     'date-cell',
-    isFuture          ? 'future'       : '',
-    isPaused          ? 'paused'       : '',
+    isFuture           ? 'future'        : '',
+    isPaused           ? 'paused'        : '',
     isBeforeActiveFrom ? 'before-active' : '',
-    isAfterEndDate    ? 'after-end'    : '',
-    isToday && !isFuture ? 'today'     : '',
-    isWeekend         ? 'weekend'      : '',
+    isAfterEndDate     ? 'after-end'     : '',
+    isToday && !isFuture ? 'today'       : '',
+    isWeekend          ? 'weekend'       : '',
     count > 0 && !isPaused && !isBeforeActiveFrom && !isAfterEndDate ? 'has-count' : '',
-    isSelected        ? 'selected'     : '',
-    hasNote           ? 'has-note'     : '',
+    isSelected         ? 'selected'      : '',
+    hasNote            ? 'has-note'      : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -82,7 +112,7 @@ export default function DateCell({
   return (
     <td
       className={classes}
-      onClick={handleClick}
+      onClick={handleCellClick}
       title={
         hasNote && noteText
           ? noteText
