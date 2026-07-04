@@ -181,6 +181,7 @@ export default function TaskGrid() {
   const [selectedCell, setSelectedCell] = useState(null);
   const [selectedMetaCell, setSelectedMetaCell] = useState(null);
   const [editingTextCell, setEditingTextCell] = useState(null);
+  const [armedCell, setArmedCell] = useState(null); // P2.0D: armed for two-step keyboard clear
 
   // Filtering / search state — Phase 1.
   const [activeFilter, setActiveFilter] = useState(FILTERS.ALL);
@@ -369,11 +370,13 @@ export default function TaskGrid() {
   const handleSelect = useCallback((taskId, date) => {
     setSelectedCell({ taskId, date });
     setSelectedMetaCell(null);
+    setArmedCell(null);
   }, []);
 
   const handleSelectMeta = useCallback((taskId, col) => {
     setSelectedMetaCell({ taskId, col });
     setSelectedCell(null);
+    setArmedCell(null);
   }, []);
 
   const handleStartTextEdit = useCallback((taskId, col) => {
@@ -457,6 +460,7 @@ export default function TaskGrid() {
       month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 },
     );
     setSelectedCell(null);
+    setArmedCell(null);
   }
 
   function goToNextMonth() {
@@ -464,12 +468,14 @@ export default function TaskGrid() {
       month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 },
     );
     setSelectedCell(null);
+    setArmedCell(null);
   }
 
   function goToCurrentMonth() {
     const now = new Date();
     setViewMonth({ year: now.getFullYear(), month: now.getMonth() + 1 });
     setSelectedCell(null);
+    setArmedCell(null);
   }
 
   // ---------------------------------------------------------------------------
@@ -478,9 +484,10 @@ export default function TaskGrid() {
   // re-registering on every render. Assigned synchronously each render cycle.
   // ---------------------------------------------------------------------------
 
-  const selectedCellRef    = useRef(null);
+  const selectedCellRef     = useRef(null);
   const selectedMetaCellRef = useRef(null);
   const editingTextCellRef  = useRef(null);
+  const armedCellRef        = useRef(null);
   const tasksRef           = useRef([]);
   const datesRef           = useRef([]);
   const completionsRef     = useRef({});
@@ -502,23 +509,25 @@ export default function TaskGrid() {
 
   // Sync refs each render — always current before any async event fires.
   // tasksRef uses flatGroupedTasks so keyboard nav follows visual render order.
-  selectedCellRef.current    = selectedCell;
+  selectedCellRef.current     = selectedCell;
   selectedMetaCellRef.current = selectedMetaCell;
   editingTextCellRef.current  = editingTextCell;
-  tasksRef.current           = flatGroupedTasks;
-  datesRef.current           = dates;
-  completionsRef.current     = completions;
-  modalOpenRef.current       = modalOpen;
-  helpOpenRef.current        = helpOpen;
-  jumpModeRef.current        = jumpMode;
-  keybindsRef.current        = resolvedKb;
-  handlersRef.current        = { handleIncrement, handleClear, handleSetCount, openAdd, openEdit, setSelectedCell, closeModal, setHelpOpen, setSelectedMetaCell, setEditingTextCell };
+  armedCellRef.current        = armedCell;
+  tasksRef.current            = flatGroupedTasks;
+  datesRef.current            = dates;
+  completionsRef.current      = completions;
+  modalOpenRef.current        = modalOpen;
+  helpOpenRef.current         = helpOpen;
+  jumpModeRef.current         = jumpMode;
+  keybindsRef.current         = resolvedKb;
+  handlersRef.current         = { handleIncrement, handleClear, handleSetCount, openAdd, openEdit, setSelectedCell, closeModal, setHelpOpen, setSelectedMetaCell, setEditingTextCell, setArmedCell };
 
   // Clear selectedCell when the selected task is no longer in the flat grouped list.
   // Covers: soft-delete, filter change hiding the row, search hiding the row.
   useEffect(() => {
     if (selectedCellRef.current && !flatGroupedTasks.find((t) => t.id === selectedCellRef.current.taskId)) {
       setSelectedCell(null);
+      setArmedCell(null);
     }
   }, [flatGroupedTasks]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -526,11 +535,13 @@ export default function TaskGrid() {
   // since the new filter may show a completely different task set.
   useEffect(() => {
     setSelectedCell(null);
+    setArmedCell(null);
   }, [activeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Clear selectedCell when groupMode changes — render order may change completely.
   useEffect(() => {
     setSelectedCell(null);
+    setArmedCell(null);
   }, [groupMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close help panel when user clicks outside both the panel and the trigger button.
@@ -567,7 +578,7 @@ export default function TaskGrid() {
       const {
         handleIncrement, handleClear, handleSetCount,
         openAdd, openEdit, setSelectedCell, closeModal, setHelpOpen,
-        setSelectedMetaCell, setEditingTextCell,
+        setSelectedMetaCell, setEditingTextCell, setArmedCell,
       } = handlersRef.current;
       const kb    = keybindsRef.current;
       const sel   = selectedCellRef.current;
@@ -587,6 +598,8 @@ export default function TaskGrid() {
         if (!isTyping) {
           if (helpOpenRef.current) {
             setHelpOpen(false);
+          } else if (armedCellRef.current) {
+            setArmedCell(null); // cancel armed state; press Esc again to clear selection
           } else if (sel) {
             setSelectedCell(null);
           } else if (selectedMetaCellRef.current) {
@@ -668,6 +681,28 @@ export default function TaskGrid() {
       }
 
       if (!sel) return;
+
+      // Delete / Backspace — guarded two-step keyboard clear for DateCell completions.
+      // First press arms the cell (shows amber indicator + hint); second press confirms.
+      // Changing selection, navigating away, or pressing Escape cancels armed state.
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        const task = tasks.find((t) => t.id === sel.taskId);
+        if (!task || task.is_paused === 1) return;
+        if (sel.date > toLocalDate(new Date())) return;
+        if (task.active_from && sel.date < task.active_from) return;
+        if (task.end_date && sel.date > task.end_date) return;
+        const count = completionsRef.current[`${sel.taskId}:${sel.date}`] || 0;
+        if (count === 0) return;
+        const armed = armedCellRef.current;
+        if (armed && armed.taskId === sel.taskId && armed.date === sel.date) {
+          setArmedCell(null);
+          handleClear(sel.taskId, sel.date);
+        } else {
+          setArmedCell({ taskId: sel.taskId, date: sel.date });
+        }
+        return;
+      }
 
       const rowIdx  = tasks.findIndex((t) => t.id === sel.taskId);
       const dateIdx = dates.indexOf(sel.date);
@@ -947,6 +982,7 @@ export default function TaskGrid() {
             completions={completions}
             notes={notes}
             todayStr={todayStr}
+            armedCell={armedCell}
             onIncrement={handleIncrement}
             onClear={handleClear}
             onSetCount={handleSetCount}
@@ -1041,6 +1077,7 @@ export default function TaskGrid() {
                     colLayout={colLayout}
                     selectedMetaCell={selectedMetaCell}
                     editingTextCell={editingTextCell}
+                    armedCell={armedCell}
                     onIncrement={handleIncrement}
                     onClear={handleClear}
                     onEdit={openEdit}

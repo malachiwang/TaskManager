@@ -565,6 +565,14 @@ thead .meta-col {
   background: var(--accent-soft);
 }
 
+/* P2.0D — armed cell: awaiting second Delete/Backspace to confirm clear.
+   Must come after .date-cell.selected so the amber outline overrides blue. */
+.date-cell.armed {
+  outline: 2px solid var(--urg-mid);
+  outline-offset: -2px;
+  background: var(--caution-bg);
+}
+
 /* P2.0B — selected text (meta) cell — mirrors .date-cell.selected */
 .meta-col.meta-selected {
   outline: 2px solid var(--accent);
@@ -683,6 +691,15 @@ thead .meta-col {
   color: #999;
   font-style: italic;
   flex-shrink: 0;
+}
+
+/* P2.0D — armed-cell hint shown in inspector strip */
+.edit-bar-armed-hint {
+  font-size: 11px;
+  color: var(--urg-mid);
+  font-weight: 600;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .edit-bar-actions {

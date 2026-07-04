@@ -308,6 +308,7 @@ export const KEYBIND_HELP = [
     items: [
       { action: 'INCREMENT', desc: 'Increment completion for selected date cell' },
       { action: 'DECREMENT', desc: 'Decrement completion for selected date cell' },
+      { keys: 'Del / ⌫',    desc: 'Arm clear (1st press) · confirm clear (2nd press)' },
       { action: 'EDIT_TASK', desc: 'Edit the selected task (modal)' },
       { action: 'NEW_TASK',  desc: 'Add a new task' },
     ],
@@ -315,7 +316,7 @@ export const KEYBIND_HELP = [
   {
     group: 'View',
     items: [
-      { action: 'CLEAR_SELECTION', desc: 'Close modal / help / clear selection' },
+      { action: 'CLEAR_SELECTION', desc: 'Cancel armed clear / close modal / clear selection' },
       { action: 'TOGGLE_HELP',     desc: 'Show or hide keyboard shortcuts' },
     ],
   },

@@ -99,7 +99,7 @@ function urgencyClass(urgency) {
 
 export default function TaskRow({
   task, dates, todayStr, completions, notes, selectedCell, colLayout,
-  selectedMetaCell, editingTextCell,
+  selectedMetaCell, editingTextCell, armedCell,
   onIncrement, onClear, onEdit, onSelect,
   onSelectMeta, onStartTextEdit, onCommitTextEdit, onCancelTextEdit,
 }) {
@@ -222,6 +222,7 @@ export default function TaskRow({
             activeFrom={task.active_from || null}
             endDate={task.end_date || null}
             isSelected={selectedCell?.taskId === task.id && selectedCell?.date === date}
+            isArmed={armedCell?.taskId === task.id && armedCell?.date === date}
             hasNote={hasNote}
             noteText={noteText}
             onIncrement={onIncrement}

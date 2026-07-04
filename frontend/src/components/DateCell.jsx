@@ -24,6 +24,7 @@ export default function DateCell({
   activeFrom,
   endDate,
   isSelected,
+  isArmed,
   hasNote,
   noteText,
   onIncrement,
@@ -104,6 +105,7 @@ export default function DateCell({
     isWeekend          ? 'weekend'       : '',
     count > 0 && !isPaused && !isBeforeActiveFrom && !isAfterEndDate ? 'has-count' : '',
     isSelected         ? 'selected'      : '',
+    isArmed            ? 'armed'         : '',
     hasNote            ? 'has-note'      : '',
   ]
     .filter(Boolean)

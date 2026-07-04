@@ -8,7 +8,7 @@ function dateLabel(isoDate) {
   return new Date(y, m - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-export default function EditBar({ selectedCell, tasks, completions, notes, todayStr, onIncrement, onClear, onSetCount, onSaveNote }) {
+export default function EditBar({ selectedCell, tasks, completions, notes, todayStr, armedCell, onIncrement, onClear, onSetCount, onSaveNote }) {
   const [setMode, setSetMode] = useState(false);
   const [inputVal, setInputVal] = useState('');
   const [noteVal, setNoteVal] = useState('');
@@ -41,6 +41,7 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
   const isBeforeActiveFrom = !!(task?.active_from && date < task.active_from);
   const isAfterEndDate = !!(task?.end_date && date > task.end_date);
   const isDisabled = isFuture || isPaused || isBeforeActiveFrom || isAfterEndDate;
+  const isArmed = !!(armedCell && armedCell.taskId === taskId && armedCell.date === date);
 
   function handleNoteBlur() {
     if (skipSaveRef.current) { skipSaveRef.current = false; return; }
@@ -87,6 +88,11 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
           <span className="edit-bar-count">count: {count}</span>
         )}
       </div>
+      {isArmed && (
+        <div className="edit-bar-armed-hint">
+          Del again to clear · Esc to cancel
+        </div>
+      )}
       {!isDisabled && (
         <div className="edit-bar-actions">
           <button className="edit-bar-btn primary" onClick={() => onIncrement(taskId, date)}>+1</button>
