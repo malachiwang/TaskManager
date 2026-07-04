@@ -146,12 +146,53 @@ function getShiftDigitIndex(e) {
   return parseInt(e.code[5], 10) - 1; // 'Digit1'→0, 'Digit9'→8
 }
 
-// True only for Shift+0 — opens the numeric jump prompt.
+// True only for Shift+0 — opens the quick jump prompt.
 // Uses event.code (layout-agnostic). Shift+0 on US keyboards produces ')' in
 // event.key; never rely on event.key for this detection.
 function isShiftZero(e) {
   return e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey
     && e.code === 'Digit0';
+}
+
+// Parse a jump input string into a { task } | { date } | { error } result.
+// Accepts: integer row number, ISO date YYYY-MM-DD, M/D date, or task name fragment.
+function resolveJump(raw, dates, tasks) {
+  const v = raw.trim();
+  if (!v) return null;
+
+  // Pure integer → 1-indexed row number
+  if (/^\d+$/.test(v)) {
+    const idx = parseInt(v, 10) - 1;
+    if (idx < 0 || idx >= tasks.length) {
+      return { error: `Only ${tasks.length} row${tasks.length !== 1 ? 's' : ''} visible` };
+    }
+    return { task: tasks[idx] };
+  }
+
+  // ISO date YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+    if (dates.includes(v)) return { date: v };
+    return { error: `${v} not in current view` };
+  }
+
+  // M/D or M-D → resolve against current view's year
+  const mdMatch = v.match(/^(\d{1,2})[\/\-](\d{1,2})$/);
+  if (mdMatch) {
+    const year = dates.length > 0 ? dates[0].substring(0, 4) : String(new Date().getFullYear());
+    const candidate = `${year}-${mdMatch[1].padStart(2, '0')}-${mdMatch[2].padStart(2, '0')}`;
+    if (dates.includes(candidate)) return { date: candidate };
+    return { error: `${v} not in current view` };
+  }
+
+  // Text search — case-insensitive fragment match on name, subtask, category
+  const q = v.toLowerCase();
+  const match = tasks.find(
+    (t) => (t.name     && t.name.toLowerCase().includes(q))
+        || (t.subtask  && t.subtask.toLowerCase().includes(q))
+        || (t.category && t.category.toLowerCase().includes(q)),
+  );
+  if (match) return { task: match };
+  return { error: `No match for "${v}"` };
 }
 
 export default function TaskGrid() {
@@ -653,10 +694,11 @@ export default function TaskGrid() {
         return;
       }
 
-      // Shift+0 — open numeric jump prompt.
+      // Shift+0 — open quick jump prompt (row#, task name, or date).
       if (isShiftZero(e)) {
         e.preventDefault();
-        setJumpMode({ type: sel ? 'date' : 'row', value: '', error: '' });
+        setArmedCell(null);
+        setJumpMode({ type: 'quick', value: '', error: '' });
         return;
       }
 
@@ -787,8 +829,7 @@ export default function TaskGrid() {
   // ---------------------------------------------------------------------------
 
   function handleJumpChange(e) {
-    const digits = e.target.value.replace(/\D/g, '');
-    setJumpMode((m) => ({ ...m, value: digits, error: '' }));
+    setJumpMode((m) => ({ ...m, value: e.target.value, error: '' }));
   }
 
   function handleJumpKeyDown(e) {
@@ -796,31 +837,41 @@ export default function TaskGrid() {
       setJumpMode(null);
       return;
     }
-    if (e.key === 'Enter') {
-      const parsed = parseInt(jumpMode.value, 10);
-      if (!jumpMode.value || isNaN(parsed) || parsed < 1) {
-        setJumpMode((m) => ({ ...m, error: '1 or higher required' }));
-        return;
-      }
-      const idx = parsed - 1;
-      if (jumpMode.type === 'row') {
-        if (idx >= flatGroupedTasks.length) {
-          setJumpMode((m) => ({ ...m, error: `Only ${flatGroupedTasks.length} rows visible` }));
-          return;
-        }
-        const date = getDefaultKeyboardDate(dates);
-        if (!date) { setJumpMode(null); return; }
-        setSelectedCell({ taskId: flatGroupedTasks[idx].id, date });
-      } else {
-        if (!selectedCell) { setJumpMode(null); return; }
-        if (idx >= dates.length) {
-          setJumpMode((m) => ({ ...m, error: `Only ${dates.length} dates visible` }));
-          return;
-        }
-        setSelectedCell({ taskId: selectedCell.taskId, date: dates[idx] });
-      }
-      setJumpMode(null);
+    if (e.key !== 'Enter') return;
+
+    const result = resolveJump(jumpMode.value, dates, flatGroupedTasks);
+    if (!result) { setJumpMode(null); return; }
+
+    if (result.error) {
+      setJumpMode((m) => ({ ...m, error: result.error }));
+      return;
     }
+
+    setArmedCell(null);
+
+    if (result.task) {
+      const date = getDefaultKeyboardDate(dates);
+      if (date) {
+        setSelectedCell({ taskId: result.task.id, date });
+        const tid = result.task.id;
+        requestAnimationFrame(() => {
+          document.querySelector(`tr[data-task-id="${tid}"]`)
+            ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          document.querySelector(`th[data-date="${date}"]`)
+            ?.scrollIntoView({ inline: 'nearest', behavior: 'smooth' });
+        });
+      }
+    } else if (result.date) {
+      const taskId = selectedCell?.taskId;
+      if (taskId) setSelectedCell({ taskId, date: result.date });
+      const d = result.date;
+      requestAnimationFrame(() => {
+        document.querySelector(`th[data-date="${d}"]`)
+          ?.scrollIntoView({ inline: 'nearest', behavior: 'smooth' });
+      });
+    }
+
+    setJumpMode(null);
   }
 
   // Starts a drag resize for the given column key.
@@ -972,6 +1023,14 @@ export default function TaskGrid() {
           searchQuery={searchQuery}
           onApplyView={handleApplyView}
         />
+        <button
+          type="button"
+          className="ws-filter-pill"
+          onClick={() => { setArmedCell(null); setJumpMode({ type: 'quick', value: '', error: '' }); }}
+          title="Quick jump to row, task name, or date (⇧0)"
+        >
+          Jump
+        </button>
       </div>
 
       {/* ── Inspector strip — compositionally framed EditBar ── */}
@@ -1034,6 +1093,7 @@ export default function TaskGrid() {
               {dates.map((d) => (
                 <th
                   key={d}
+                  data-date={d}
                   className={[
                     'date-col-header',
                     d === todayStr ? 'col-today' : '',
@@ -1110,26 +1170,23 @@ export default function TaskGrid() {
       </div>
 
       {jumpMode && (
-        <div className="ws-jump-prompt" role="dialog" aria-label="Jump to position">
-          <div className="ws-jump-title">
-            {jumpMode.type === 'row' ? 'Jump to row:' : 'Jump to date column:'}
-          </div>
+        <div className="ws-jump-prompt" role="dialog" aria-label="Quick jump">
+          <div className="ws-jump-title">Quick Jump</div>
           <input
             className="ws-jump-input"
             type="text"
-            inputMode="numeric"
-            pattern="\d*"
+            placeholder="row#, name, or date"
             autoFocus
             value={jumpMode.value}
             onChange={handleJumpChange}
             onKeyDown={handleJumpKeyDown}
             onBlur={() => setJumpMode(null)}
-            aria-label={jumpMode.type === 'row' ? 'Row number' : 'Date column number'}
+            aria-label="Jump to row number, task name, or date"
           />
           {jumpMode.error && (
             <div className="ws-jump-error" role="alert">{jumpMode.error}</div>
           )}
-          <div className="ws-jump-hint">Enter to jump · Esc to cancel</div>
+          <div className="ws-jump-hint">3 · gym · 7/15 · 2026-07-15 — Enter · Esc</div>
         </div>
       )}
 

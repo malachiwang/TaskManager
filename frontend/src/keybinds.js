@@ -300,7 +300,7 @@ export const KEYBIND_HELP = [
       { keys: '↑ / ↓', desc: 'Move selection between tasks' },
       { keys: '← / →', desc: 'Move selection between dates' },
       { keys: '⇧1–9', desc: 'Jump to Nth task row or Nth date column' },
-      { keys: '⇧0',   desc: 'Open row / date column jump prompt' },
+      { keys: '⇧0',   desc: 'Quick jump: row#, task name, or date' },
     ],
   },
   {

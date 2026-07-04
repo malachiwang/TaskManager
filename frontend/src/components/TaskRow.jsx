@@ -145,7 +145,7 @@ export default function TaskRow({
   }
 
   return (
-    <tr className={rowClass}>
+    <tr className={rowClass} data-task-id={task.id}>
       <td className="meta-col sticky-col col-actions" style={cs('col-actions')}>
         <button
           className="action-btn"
