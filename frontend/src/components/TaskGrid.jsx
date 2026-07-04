@@ -709,12 +709,14 @@ export default function TaskGrid() {
 
       if (matchKeybind(e, kb.MOVE_LEFT)) {
         e.preventDefault();
+        setArmedCell(null);
         const next = Math.max(0, dateIdx - 1);
         setSelectedCell({ taskId: sel.taskId, date: dates[next] });
         return;
       }
       if (matchKeybind(e, kb.MOVE_RIGHT)) {
         e.preventDefault();
+        setArmedCell(null);
         const next = Math.min(dates.length - 1, dateIdx + 1);
         setSelectedCell({ taskId: sel.taskId, date: dates[next] });
         return;
@@ -722,6 +724,7 @@ export default function TaskGrid() {
       if (matchKeybind(e, kb.MOVE_UP)) {
         e.preventDefault();
         if (rowIdx < 0) return;
+        setArmedCell(null);
         const next = Math.max(0, rowIdx - 1);
         setSelectedCell({ taskId: tasks[next].id, date: sel.date });
         return;
@@ -729,6 +732,7 @@ export default function TaskGrid() {
       if (matchKeybind(e, kb.MOVE_DOWN)) {
         e.preventDefault();
         if (rowIdx < 0) return;
+        setArmedCell(null);
         const next = Math.min(tasks.length - 1, rowIdx + 1);
         setSelectedCell({ taskId: tasks[next].id, date: sel.date });
         return;
