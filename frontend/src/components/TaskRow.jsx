@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import DateCell from './DateCell.jsx';
 import LinkifiedText from './LinkifiedText.jsx';
 import LinkPopover from './LinkPopover.jsx';
@@ -16,6 +16,79 @@ function formatActiveFrom(isoDate) {
   return `${m}/${d}`;
 }
 
+// Inline editable text cell — single click selects (via td class), double click edits.
+// Blur commits; Escape cancels; Enter commits. Blank task names are rejected.
+function InlineTextCell({
+  value, colKey, taskId,
+  isEditing,
+  onSelectMeta, onStartTextEdit, onCommitTextEdit, onCancelTextEdit,
+}) {
+  const [draft, setDraft] = useState(value ?? '');
+  const inputRef = useRef(null);
+  const cancelledRef = useRef(false);
+
+  useEffect(() => {
+    if (isEditing) {
+      setDraft(value ?? '');
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [isEditing]); // intentionally omits `value` — only reset on mode entry
+
+  function commit() {
+    const trimmed = draft.trim();
+    if (colKey === 'col-task' && !trimmed) {
+      onCancelTextEdit();
+      return;
+    }
+    onCommitTextEdit(taskId, colKey, trimmed);
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      cancelledRef.current = false;
+      commit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      cancelledRef.current = true;
+      onCancelTextEdit();
+    }
+  }
+
+  function handleBlur() {
+    if (cancelledRef.current) {
+      cancelledRef.current = false;
+      return;
+    }
+    commit();
+  }
+
+  if (isEditing) {
+    return (
+      <input
+        ref={inputRef}
+        className="cell-edit-input"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={handleKeyDown}
+        onBlur={handleBlur}
+      />
+    );
+  }
+
+  return (
+    <span
+      onClick={() => onSelectMeta(taskId, colKey)}
+      onDoubleClick={() => onStartTextEdit(taskId, colKey)}
+    >
+      {value ?? ''}
+    </span>
+  );
+}
+
 // Map urgency value to a CSS class for color coding.
 function urgencyClass(urgency) {
   if (urgency >= 8) return 'urg-critical';
@@ -26,7 +99,9 @@ function urgencyClass(urgency) {
 
 export default function TaskRow({
   task, dates, todayStr, completions, notes, selectedCell, colLayout,
+  selectedMetaCell, editingTextCell,
   onIncrement, onClear, onEdit, onSelect,
+  onSelectMeta, onStartTextEdit, onCommitTextEdit, onCancelTextEdit,
 }) {
   const [anchorRect, setAnchorRect] = useState(null); // non-null = popover open
   const badgeRef = useRef(null);
@@ -51,6 +126,9 @@ export default function TaskRow({
     if (colLayout.offsets[col] !== undefined) style.left = colLayout.offsets[col];
     return style;
   }
+
+  const isSelectedMeta = (col) => selectedMetaCell?.taskId === task.id && selectedMetaCell?.col === col;
+  const isEditingMeta  = (col) => editingTextCell?.taskId  === task.id && editingTextCell?.col  === col;
 
   const rowClass = ['task-row', isPaused ? 'paused' : '', isScheduled ? 'scheduled' : '', isEnded ? 'ended' : '']
     .filter(Boolean).join(' ');
@@ -81,9 +159,26 @@ export default function TaskRow({
       <td className="meta-col sticky-col col-pri" style={cs('col-pri')}>{task.priority}</td>
       <td className="meta-col sticky-col col-status" style={cs('col-status')}>{displayStatus(task)}</td>
       <td className="meta-col sticky-col col-active-from" style={cs('col-active-from')}>{formatActiveFrom(task.active_from)}</td>
-      <td className="meta-col sticky-col col-cat" style={cs('col-cat')}>{task.category}</td>
-      <td className="meta-col sticky-col col-task" title={task.name} style={cs('col-task')}>{task.name}</td>
-      <td className="meta-col sticky-col col-sub" title={task.subtask} style={cs('col-sub')}>{task.subtask || ''}</td>
+      <td className={`meta-col sticky-col col-cat${isSelectedMeta('col-cat') ? ' meta-selected' : ''}`} style={cs('col-cat')}>
+        <InlineTextCell value={task.category} colKey="col-cat" taskId={task.id}
+          isEditing={isEditingMeta('col-cat')}
+          onSelectMeta={onSelectMeta} onStartTextEdit={onStartTextEdit}
+          onCommitTextEdit={onCommitTextEdit} onCancelTextEdit={onCancelTextEdit} />
+      </td>
+      <td className={`meta-col sticky-col col-task${isSelectedMeta('col-task') ? ' meta-selected' : ''}`}
+          title={isEditingMeta('col-task') ? undefined : task.name} style={cs('col-task')}>
+        <InlineTextCell value={task.name} colKey="col-task" taskId={task.id}
+          isEditing={isEditingMeta('col-task')}
+          onSelectMeta={onSelectMeta} onStartTextEdit={onStartTextEdit}
+          onCommitTextEdit={onCommitTextEdit} onCancelTextEdit={onCancelTextEdit} />
+      </td>
+      <td className={`meta-col sticky-col col-sub${isSelectedMeta('col-sub') ? ' meta-selected' : ''}`}
+          title={isEditingMeta('col-sub') ? undefined : (task.subtask || undefined)} style={cs('col-sub')}>
+        <InlineTextCell value={task.subtask || ''} colKey="col-sub" taskId={task.id}
+          isEditing={isEditingMeta('col-sub')}
+          onSelectMeta={onSelectMeta} onStartTextEdit={onStartTextEdit}
+          onCommitTextEdit={onCommitTextEdit} onCancelTextEdit={onCancelTextEdit} />
+      </td>
       <td className="meta-col scroll-meta-col col-freq" style={cs('col-freq')}>{task.interval_days}</td>
       <td className={`meta-col scroll-meta-col col-days${isOverdue ? ' days-overdue' : ''}`} style={cs('col-days')}>{isPaused || isScheduled || isEnded ? '—' : task.days_since}</td>
       <td className="meta-col scroll-meta-col col-notes" title={task.notes} style={cs('col-notes')}>

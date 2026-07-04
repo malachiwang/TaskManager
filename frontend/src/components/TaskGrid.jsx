@@ -179,6 +179,8 @@ export default function TaskGrid() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [selectedCell, setSelectedCell] = useState(null);
+  const [selectedMetaCell, setSelectedMetaCell] = useState(null);
+  const [editingTextCell, setEditingTextCell] = useState(null);
 
   // Filtering / search state — Phase 1.
   const [activeFilter, setActiveFilter] = useState(FILTERS.ALL);
@@ -366,7 +368,36 @@ export default function TaskGrid() {
 
   const handleSelect = useCallback((taskId, date) => {
     setSelectedCell({ taskId, date });
+    setSelectedMetaCell(null);
   }, []);
+
+  const handleSelectMeta = useCallback((taskId, col) => {
+    setSelectedMetaCell({ taskId, col });
+    setSelectedCell(null);
+  }, []);
+
+  const handleStartTextEdit = useCallback((taskId, col) => {
+    setEditingTextCell({ taskId, col });
+    setSelectedMetaCell({ taskId, col });
+    setSelectedCell(null);
+  }, []);
+
+  async function handleCommitTextEdit(taskId, col, value) {
+    const fieldMap = { 'col-task': 'name', 'col-sub': 'subtask', 'col-cat': 'category' };
+    const field = fieldMap[col];
+    if (!field) { setEditingTextCell(null); return; }
+    try {
+      await updateTask(taskId, { [field]: value });
+      refreshTasks();
+    } catch (e) {
+      console.error('inline text edit failed:', e);
+    }
+    setEditingTextCell(null);
+  }
+
+  function handleCancelTextEdit() {
+    setEditingTextCell(null);
+  }
 
   const handleSaveNote = useCallback(async (taskId, date, noteText) => {
     try {
@@ -448,6 +479,8 @@ export default function TaskGrid() {
   // ---------------------------------------------------------------------------
 
   const selectedCellRef    = useRef(null);
+  const selectedMetaCellRef = useRef(null);
+  const editingTextCellRef  = useRef(null);
   const tasksRef           = useRef([]);
   const datesRef           = useRef([]);
   const completionsRef     = useRef({});
@@ -469,15 +502,17 @@ export default function TaskGrid() {
 
   // Sync refs each render — always current before any async event fires.
   // tasksRef uses flatGroupedTasks so keyboard nav follows visual render order.
-  selectedCellRef.current = selectedCell;
-  tasksRef.current        = flatGroupedTasks;
-  datesRef.current        = dates;
-  completionsRef.current  = completions;
-  modalOpenRef.current    = modalOpen;
-  helpOpenRef.current     = helpOpen;
-  jumpModeRef.current     = jumpMode;
-  keybindsRef.current     = resolvedKb;
-  handlersRef.current     = { handleIncrement, handleClear, handleSetCount, openAdd, openEdit, setSelectedCell, closeModal, setHelpOpen };
+  selectedCellRef.current    = selectedCell;
+  selectedMetaCellRef.current = selectedMetaCell;
+  editingTextCellRef.current  = editingTextCell;
+  tasksRef.current           = flatGroupedTasks;
+  datesRef.current           = dates;
+  completionsRef.current     = completions;
+  modalOpenRef.current       = modalOpen;
+  helpOpenRef.current        = helpOpen;
+  jumpModeRef.current        = jumpMode;
+  keybindsRef.current        = resolvedKb;
+  handlersRef.current        = { handleIncrement, handleClear, handleSetCount, openAdd, openEdit, setSelectedCell, closeModal, setHelpOpen, setSelectedMetaCell, setEditingTextCell };
 
   // Clear selectedCell when the selected task is no longer in the flat grouped list.
   // Covers: soft-delete, filter change hiding the row, search hiding the row.
@@ -532,6 +567,7 @@ export default function TaskGrid() {
       const {
         handleIncrement, handleClear, handleSetCount,
         openAdd, openEdit, setSelectedCell, closeModal, setHelpOpen,
+        setSelectedMetaCell, setEditingTextCell,
       } = handlersRef.current;
       const kb    = keybindsRef.current;
       const sel   = selectedCellRef.current;
@@ -553,6 +589,8 @@ export default function TaskGrid() {
             setHelpOpen(false);
           } else if (sel) {
             setSelectedCell(null);
+          } else if (selectedMetaCellRef.current) {
+            setSelectedMetaCell(null);
           }
         }
         return;
@@ -606,6 +644,14 @@ export default function TaskGrid() {
       if (isShiftZero(e)) {
         e.preventDefault();
         setJumpMode({ type: sel ? 'date' : 'row', value: '', error: '' });
+        return;
+      }
+
+      // Enter on a selected text (meta) cell → enter inline edit mode.
+      // Must be checked before the isNavKey bootstrap so it takes priority.
+      if (matchKeybind(e, kb.INCREMENT) && !sel && selectedMetaCellRef.current && !editingTextCellRef.current) {
+        e.preventDefault();
+        setEditingTextCell({ ...selectedMetaCellRef.current });
         return;
       }
 
@@ -993,10 +1039,16 @@ export default function TaskGrid() {
                     notes={notes}
                     selectedCell={selectedCell}
                     colLayout={colLayout}
+                    selectedMetaCell={selectedMetaCell}
+                    editingTextCell={editingTextCell}
                     onIncrement={handleIncrement}
                     onClear={handleClear}
                     onEdit={openEdit}
                     onSelect={handleSelect}
+                    onSelectMeta={handleSelectMeta}
+                    onStartTextEdit={handleStartTextEdit}
+                    onCommitTextEdit={handleCommitTextEdit}
+                    onCancelTextEdit={handleCancelTextEdit}
                   />
                 ))}
               </Fragment>

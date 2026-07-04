@@ -562,6 +562,28 @@ thead .meta-col {
   background: var(--accent-soft);
 }
 
+/* P2.0B — selected text (meta) cell — mirrors .date-cell.selected */
+.meta-col.meta-selected {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: var(--accent-soft);
+}
+
+/* P2.0B — inline edit input inside a meta-col td */
+.cell-edit-input {
+  width: 100%;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--ink-2);
+  background: var(--bg-panel);
+  border: none;
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  padding: 0 2px;
+  box-sizing: border-box;
+  line-height: inherit;
+}
+
 /* -------------------------------------------------------------------------
    Urgency color bands
    ---------------------------------------------------------------------- */
