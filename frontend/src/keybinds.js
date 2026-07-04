@@ -306,17 +306,35 @@ export const KEYBIND_HELP = [
   {
     group: 'Editing',
     items: [
-      { action: 'INCREMENT', desc: 'Increment completion for selected cell' },
-      { action: 'DECREMENT', desc: 'Decrement completion for selected cell' },
-      { action: 'EDIT_TASK', desc: 'Edit the selected task' },
+      { action: 'INCREMENT', desc: 'Increment completion for selected date cell' },
+      { action: 'DECREMENT', desc: 'Decrement completion for selected date cell' },
+      { action: 'EDIT_TASK', desc: 'Edit the selected task (modal)' },
       { action: 'NEW_TASK',  desc: 'Add a new task' },
     ],
   },
   {
     group: 'View',
     items: [
-      { action: 'CLEAR_SELECTION', desc: 'Close modal, close help, or clear selection' },
+      { action: 'CLEAR_SELECTION', desc: 'Close modal / help / clear selection' },
       { action: 'TOGGLE_HELP',     desc: 'Show or hide keyboard shortcuts' },
+    ],
+  },
+  {
+    group: 'Mouse',
+    items: [
+      { keys: 'Click cell',   desc: 'Select date cell (no mutation)' },
+      { keys: 'Click ☐ / ✓', desc: 'Increment completion count' },
+      { keys: '⇧Click ✓',    desc: 'Clear completion count' },
+      { keys: 'Click text',   desc: 'Select text cell (task / subtask / category)' },
+      { keys: 'Dbl-click',    desc: 'Enter inline edit mode for text cell' },
+    ],
+  },
+  {
+    group: 'Inline Edit',
+    items: [
+      { keys: '↵',          desc: 'Commit text edit' },
+      { keys: 'Esc',        desc: 'Cancel edit, restore original value' },
+      { keys: 'Click away', desc: 'Commit text edit (blur)' },
     ],
   },
 ];

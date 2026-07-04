@@ -485,17 +485,20 @@ thead .meta-col {
   cursor: default;
 }
 
-/* Pre-active cell — before task's active_from date; read-only, muted */
+/* Pre-active cell — before task's active_from date; read-only, muted.
+   Opacity was removed: it faded the cell borders unevenly (border-collapse:separate
+   means each cell owns its own border), creating a broken-boundary look where the
+   dimmed border-right met the full-opacity next cell. Plain bg-app gives a clean
+   intentional "not yet started" stripe without the jagged edge artefact. */
 .date-cell.before-active {
   background: var(--bg-app);
-  opacity: 0.45;
   cursor: not-allowed;
 }
 
-/* After-end cell — after task's end_date; read-only, muted */
+/* After-end cell — after task's end_date; read-only, muted.
+   Same reasoning as before-active: opacity removed to avoid broken border artefact. */
 .date-cell.after-end {
   background: var(--bg-app);
-  opacity: 0.35;
   cursor: not-allowed;
 }
 
