@@ -3597,6 +3597,18 @@ thead .meta-col {
   background: transparent;
 }
 
+/* Uppercase the native empty date placeholder (mm/dd/yyyy → MM/DD/YYYY) in the
+   Task Details date fields. text-transform applies to the browser-rendered
+   datetime-edit placeholder letters only; entered digits/slashes are unaffected,
+   and the calendar picker, typing, clearing, and the ISO value sent to the API
+   all remain unchanged. Harmless on engines that don't transform the placeholder. */
+.task-modal-input[type="date"] {
+  text-transform: uppercase;
+}
+.task-modal-input[type="date"]::-webkit-datetime-edit {
+  text-transform: uppercase;
+}
+
 /* Preserve native select arrow */
 select.task-modal-input {
   appearance: auto;

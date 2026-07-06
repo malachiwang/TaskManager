@@ -89,11 +89,29 @@ function InlineTextCell({
   );
 }
 
-// Map urgency value to a CSS class for color coding.
+// Urgency → color-band thresholds. DISPLAY ONLY — this maps a computed urgency
+// to a CSS color class; it does not change the urgency value or any stored data.
+//
+// Recalibrated in P4.0A. The urgency formula (backend logic.py) saturates fast:
+// a task at exactly its interval (days_since ≈ interval_days) already scores
+// ~8.7–9.2, so the previous critical>=8 cutoff painted nearly every due/overdue
+// task full red — the grid looked uniformly "red 10" and gave no ranking.
+// These bands (for a default priority-5 task) mean, in overdue terms:
+//   critical (red):   >= 9.5  → ~1.5× interval overdue and beyond
+//   high (amber):     >= 8.0  → around the due point
+//   noticeable:       >= 5.0  → approaching due (~0.4× interval)
+//   low (muted):      <  5.0  → fresh
+// NOTE: the formula still compresses everything past ~2.5× interval into ~10,
+// so very-overdue tasks remain indistinguishable numerically — differentiating
+// those requires a scoring change (deferred to Pressure V2 / P4.0B), not display.
+const URG_CRITICAL   = 9.5;
+const URG_HIGH       = 8.0;
+const URG_NOTICEABLE = 5.0;
+
 function urgencyClass(urgency) {
-  if (urgency >= 8) return 'urg-critical';
-  if (urgency >= 6) return 'urg-high';
-  if (urgency >= 3) return 'urg-noticeable';
+  if (urgency >= URG_CRITICAL)   return 'urg-critical';
+  if (urgency >= URG_HIGH)       return 'urg-high';
+  if (urgency >= URG_NOTICEABLE) return 'urg-noticeable';
   return 'urg-low';
 }
 
