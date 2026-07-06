@@ -314,9 +314,9 @@ thead .meta-col {
   widths and are overridden by inline styles at runtime.
 
   Default sticky layout (px):
-  col-actions: 36  → left: 0
-  col-urg:     40  → left: 36
-  col-pri:     28  → left: 76
+  col-actions: 46  → left: 0
+  col-urg:     40  → left: 46
+  col-pri:     28  → left: 86
   col-status:      62  → left: 96
   col-active-from: 72  → left: 158  (UI-22)
   col-cat:         82  → left: 230
@@ -327,9 +327,8 @@ thead .meta-col {
   min-width and max-width are intentionally omitted — JS enforces MIN_COL_WIDTH.
 */
 
-.task-grid td.col-drag    { left: 0; padding: 0; text-align: center; vertical-align: middle; }
 .task-grid td.col-actions { left: 0; padding: 0; text-align: center; vertical-align: middle; }
-.col-urg     { left: 36px;  text-align: center; }
+.col-urg     { left: 46px;  text-align: center; }
 .col-pri     { left: 68px;  text-align: center; }
 .col-status      { left: 96px;  overflow: hidden; text-overflow: ellipsis; }
 .col-section     { left: 158px; overflow: hidden; text-overflow: ellipsis; } /* kept for archive-grid compatibility */
@@ -901,13 +900,22 @@ thead .meta-col {
   opacity: 0.75;
 }
 
+.row-action-group {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+}
+
 .drag-handle {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   cursor: grab;
   color: var(--muted-2);
   font-size: 11px;
   line-height: 1;
-  padding: 2px 3px;
+  padding: 2px 2px;
   user-select: none;
 }
 

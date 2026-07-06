@@ -152,23 +152,22 @@ export default function TaskRow({
       onDragOver={reorderEnabled ? (e) => onDragOver(e, task.id) : undefined}
       onDrop={reorderEnabled ? (e) => onDrop(e, task.id) : undefined}
     >
-      {reorderEnabled && (
-        <td
-          className="meta-col sticky-col col-drag"
-          style={cs('col-drag')}
-          draggable
-          onDragStart={(e) => onDragStart(e, task.id)}
-          onDragEnd={onDragEnd}
-        >
-          <span className="drag-handle">⠿</span>
-        </td>
-      )}
       <td className="meta-col sticky-col col-actions" style={cs('col-actions')}>
-        <button
-          className="action-btn"
-          onClick={() => onEdit(task)}
-          title="Task details"
-        >EDIT</button>
+        <span className="row-action-group">
+          {reorderEnabled && (
+            <span
+              className="drag-handle"
+              draggable
+              onDragStart={(e) => onDragStart(e, task.id)}
+              onDragEnd={onDragEnd}
+            >⠿</span>
+          )}
+          <button
+            className="action-btn"
+            onClick={() => onEdit(task)}
+            title="Task details"
+          >EDIT</button>
+        </span>
       </td>
       <td className={`meta-col sticky-col col-urg ${isPaused || isScheduled || isEnded ? '' : urgencyClass(task.urgency)}`} style={cs('col-urg')}>
         {isPaused || isScheduled || isEnded ? '—' : task.urgency}

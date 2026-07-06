@@ -75,8 +75,7 @@ const MIN_COL_WIDTH = 24;
 
 // Default widths (px) matching the original CSS layout.
 export const DEFAULT_WIDTHS = {
-  'col-drag':        18,
-  'col-actions':     36,
+  'col-actions':     46,
   'col-urg':         40,
   'col-pri':         28,
   'col-status':      62,
@@ -101,13 +100,11 @@ const NON_STICKY_META_COLS = ['col-freq', 'col-days', 'col-notes'];
 // Compute { widths, offsets } from current user overrides.
 // widths: every meta col → px value
 // offsets: sticky cols only → cumulative left offset
-// When reorderEnabled, col-drag is prepended to the sticky column list.
-function computeColLayout(colWidths, reorderEnabled) {
+function computeColLayout(colWidths) {
   const widths = {};
   const offsets = {};
   let acc = 0;
-  const stickyCols = reorderEnabled ? ['col-drag', ...STICKY_COLS] : STICKY_COLS;
-  for (const col of stickyCols) {
+  for (const col of STICKY_COLS) {
     widths[col] = colWidths[col] ?? DEFAULT_WIDTHS[col];
     offsets[col] = acc;
     acc += widths[col];
@@ -271,8 +268,7 @@ export default function TaskGrid() {
   const [dragOverId, setDragOverId] = useState(null);
 
   // Derive computed layout (widths + sticky offsets) from overrides.
-  // col-drag is included in the layout only when reorderEnabled.
-  const colLayout = useMemo(() => computeColLayout(colWidths, reorderEnabled), [colWidths, reorderEnabled]);
+  const colLayout = useMemo(() => computeColLayout(colWidths), [colWidths]);
 
   // ---------------------------------------------------------------------------
   // Filtering — applied client-side over the full tasks array.
@@ -1236,9 +1232,6 @@ export default function TaskGrid() {
         <table className="task-grid">
           <thead>
             <tr>
-              {reorderEnabled && (
-                <th className="meta-col sticky-col col-drag" style={thStyle('col-drag')}></th>
-              )}
               <th className="meta-col sticky-col col-actions" style={thStyle('col-actions')}></th>
               <th className="meta-col sticky-col col-urg" title="Urgency" style={thStyle('col-urg')}>
                 Urg{rh('col-urg')}
@@ -1296,7 +1289,7 @@ export default function TaskGrid() {
                     {/* Frozen td: sticky left, spans all 8 frozen columns.
                         Uses the same position:sticky mechanism as TaskRow sticky cells —
                         directly on the <td>, not a child element. Avoids jank. */}
-                    <td className="ws-section-frozen" colSpan={reorderEnabled ? 9 : 8}>
+                    <td className="ws-section-frozen" colSpan={8}>
                       <span className="ws-section-title">{group.label}</span>
                       <span className="ws-section-meta">
                         {group.tasks.length} task{group.tasks.length !== 1 ? 's' : ''}
