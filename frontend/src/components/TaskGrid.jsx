@@ -457,6 +457,22 @@ export default function TaskGrid() {
     dragSrcIdRef.current = taskId;
     setDragSrcId(taskId);
     e.dataTransfer.effectAllowed = 'move';
+
+    const task = tasks.find((t) => t.id === taskId);
+    if (task) {
+      const label = task.category ? `${task.category}  ·  ${task.name}` : task.name;
+      const el = document.createElement('div');
+      el.className = 'drag-preview';
+      el.textContent = label;
+      // Position off-screen so it doesn't flash before the browser captures it.
+      el.style.position = 'fixed';
+      el.style.top = '0px';
+      el.style.left = '-9999px';
+      document.body.appendChild(el);
+      // Cursor appears 20px from left, 14px from top of the preview pill.
+      e.dataTransfer.setDragImage(el, 20, 14);
+      requestAnimationFrame(() => el.remove());
+    }
   }
 
   function handleDragOver(e, taskId) {

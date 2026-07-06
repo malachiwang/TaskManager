@@ -928,6 +928,24 @@ thead .meta-col {
   background: var(--accent-soft) !important;
 }
 
+/* Drag preview pill — created imperatively in handleDragStart and removed next frame. */
+.drag-preview {
+  background: var(--bg-panel);
+  border: 1px solid var(--grid-border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+  border-radius: 2px;
+  padding: 5px 12px;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--ink-2);
+  white-space: nowrap;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  opacity: 0.95;
+}
+
 .ws-snap-delete-confirm {
   font-size: 11px;
   color: var(--urg-crit);
