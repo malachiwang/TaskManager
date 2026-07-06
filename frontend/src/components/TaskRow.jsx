@@ -150,8 +150,8 @@ export default function TaskRow({
         <button
           className="action-btn"
           onClick={() => onEdit(task)}
-          title="Edit task"
-        >✏</button>
+          title="Task details"
+        >EDIT</button>
       </td>
       <td className={`meta-col sticky-col col-urg ${isPaused || isScheduled || isEnded ? '' : urgencyClass(task.urgency)}`} style={cs('col-urg')}>
         {isPaused || isScheduled || isEnded ? '—' : task.urgency}

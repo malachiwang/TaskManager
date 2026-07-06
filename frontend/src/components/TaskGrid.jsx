@@ -74,7 +74,7 @@ const MIN_COL_WIDTH = 24;
 
 // Default widths (px) matching the original CSS layout.
 export const DEFAULT_WIDTHS = {
-  'col-actions':     28,
+  'col-actions':     36,
   'col-urg':         40,
   'col-pri':         28,
   'col-status':      62,
@@ -661,7 +661,7 @@ export default function TaskGrid() {
         return;
       }
 
-      // E — open Edit Task modal (requires selection; no auto-edit on bootstrap)
+      // E — open Task Details modal (requires selection; no auto-edit on bootstrap)
       if (matchKeybind(e, kb.EDIT_TASK)) {
         if (!sel) return;
         const task = tasks.find((t) => t.id === sel.taskId);
