@@ -259,8 +259,12 @@ export default function TaskGrid() {
     localStorage.setItem('taskos-group-mode', groupMode);
   }, [groupMode]);
 
-  // Reorder is available only in flat (NONE) mode with no active filter or search.
-  const reorderEnabled = groupMode === GROUP_MODES.NONE && !activeFilter && !searchQuery.trim();
+  // FILTERS.ALL ('all') is the default chip — treat it as "no meaningful filter".
+  const hasMeaningfulFilter = activeFilter && activeFilter !== FILTERS.ALL;
+  // Reorder is available in flat (NONE) or section-grouped (SECTION) mode,
+  // with no meaningful filter and no search active.
+  const canReorderInGroupMode = groupMode === GROUP_MODES.NONE || groupMode === GROUP_MODES.SECTION;
+  const reorderEnabled = canReorderInGroupMode && !hasMeaningfulFilter && !searchQuery.trim();
 
   // Drag-and-drop reorder state — refs avoid stale-closure issues in handlers.
   const dragSrcIdRef = useRef(null);
@@ -458,8 +462,18 @@ export default function TaskGrid() {
 
   function handleDragOver(e, taskId) {
     e.preventDefault();
+    if (taskId === dragSrcIdRef.current) return;
+    // In Section mode, suppress the drop indicator for cross-section targets.
+    if (groupMode === GROUP_MODES.SECTION) {
+      const src = tasks.find((t) => t.id === dragSrcIdRef.current);
+      const tgt = tasks.find((t) => t.id === taskId);
+      if (src && tgt && src.section !== tgt.section) {
+        e.dataTransfer.dropEffect = 'none';
+        return;
+      }
+    }
     e.dataTransfer.dropEffect = 'move';
-    if (taskId !== dragSrcIdRef.current) setDragOverId(taskId);
+    setDragOverId(taskId);
   }
 
   function handleDrop(e, targetTaskId) {
@@ -468,6 +482,12 @@ export default function TaskGrid() {
     dragSrcIdRef.current = null;
     setDragOverId(null);
     if (!srcId || srcId === targetTaskId) return;
+    // In Section mode, block cross-section drops — we never change task.section.
+    if (groupMode === GROUP_MODES.SECTION) {
+      const src = tasks.find((t) => t.id === srcId);
+      const tgt = tasks.find((t) => t.id === targetTaskId);
+      if (src && tgt && src.section !== tgt.section) return;
+    }
     const prev = tasks;
     const srcIdx = prev.findIndex((t) => t.id === srcId);
     const targetIdx = prev.findIndex((t) => t.id === targetTaskId);
