@@ -1,6 +1,8 @@
 import { useState } from 'react';
 
 const STATUS_OPTIONS = ['active', 'hiatus'];
+// Display labels only — the stored status value stays lowercase ('active'/'hiatus').
+const STATUS_LABELS = { active: 'Active', hiatus: 'Hiatus' };
 
 function getLocalToday() {
   const d = new Date();
@@ -146,7 +148,7 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
                     className={`task-modal-seg-btn${form.status === s ? ' task-modal-seg-btn--active' : ''}`}
                     onClick={() => set('status', s)}
                   >
-                    {s}
+                    {STATUS_LABELS[s] ?? s}
                   </button>
                 ))}
               </div>

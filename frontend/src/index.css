@@ -397,13 +397,12 @@ thead .meta-col {
 .task-row.scheduled   { --row-bg: var(--bg-panel); }
 .task-row:hover       { --row-bg: var(--row-hover-bg); }
 
-/* Paused row: muted and italic.
-   Background is driven by --row-bg set on <tr>.paused above — no per-cell
-   background override needed. Explicit color instead of opacity keeps sticky
-   cells fully opaque. */
+/* Paused row: muted, not italic.
+   Distinction comes from the muted text color + --paused-bg tint set on <tr>.paused
+   above — no italics. Explicit color instead of opacity keeps sticky cells fully
+   opaque. */
 .task-row.paused td {
   color: #bbb;
-  font-style: italic;
   cursor: default;
 }
 
