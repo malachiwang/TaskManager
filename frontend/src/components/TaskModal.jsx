@@ -69,13 +69,13 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
         <div className="task-modal-header">
           <div className="task-modal-header-left">
             <div className="task-modal-kicker">
-              {isEdit ? 'Edit Task' : 'Add Task'}
+              {isEdit ? 'Task Details' : 'Add Task'}
             </div>
             <div className="task-modal-title">
               {isEdit ? (task.name || 'Untitled') : 'New task record'}
             </div>
             <div className="task-modal-subtitle">
-              {isEdit ? 'spreadsheet row editor' : 'local task record · SQLite'}
+              {isEdit ? 'scheduling · status · priority · notes' : 'local task record · SQLite'}
             </div>
           </div>
           <button className="task-modal-close" type="button" onClick={onClose} aria-label="Close">×</button>

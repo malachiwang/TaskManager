@@ -121,8 +121,9 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
         </div>
       )}
       <div className="edit-bar-note-row">
-        <span className="edit-bar-note-label">Note</span>
+        <label className="edit-bar-note-label" htmlFor="eb-note">Note</label>
         <input
+          id="eb-note"
           type="text"
           className="edit-bar-note-input"
           value={noteVal}

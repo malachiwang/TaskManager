@@ -56,7 +56,7 @@ export const KEYBINDS = {
   EDIT_TASK: {
     key: 'e', shift: false, meta: false, ctrl: false, alt: false,
     label: 'E',
-    description: 'Edit the selected task',
+    description: 'Open task details',
     group: 'Editing', customizable: true, requiresSelection: true,
   },
   NEW_TASK: {
@@ -303,7 +303,7 @@ export const KEYBIND_HELP = [
       { action: 'INCREMENT', desc: 'Increment completion for selected date cell' },
       { action: 'DECREMENT', desc: 'Decrement completion for selected date cell' },
       { keys: 'Del / ⌫',    desc: 'Arm clear (1st press) · confirm clear (2nd press)' },
-      { action: 'EDIT_TASK', desc: 'Edit the selected task (modal)' },
+      { action: 'EDIT_TASK', desc: 'Open task details (scheduling, status, priority, notes)' },
       { action: 'NEW_TASK',  desc: 'Add a new task' },
     ],
   },
