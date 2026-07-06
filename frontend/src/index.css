@@ -4907,3 +4907,84 @@ select.task-modal-input {
   background: var(--row-hover-bg);
   text-decoration: underline;
 }
+
+/* ===========================================================================
+   Reading Sheet (P5.0) — dense grid, sibling of the task grid
+   =========================================================================== */
+.reading-grid {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  font-size: 12px;
+}
+.reading-grid th,
+.reading-grid td {
+  border-right: 1px solid var(--grid-border);
+  border-bottom: 1px solid var(--grid-border);
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.reading-grid th:first-child,
+.reading-grid td:first-child { border-left: 1px solid var(--grid-border); }
+.reading-grid thead th {
+  border-top: 1px solid var(--grid-border);
+  background: var(--header-bg);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.reading-row:hover td { background: var(--row-hover-bg); }
+.reading-row.status-archived td,
+.reading-row.status-finished td { color: var(--muted); }
+
+.rd-col-title   { font-weight: 500; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+.rd-col-author  { color: var(--muted); max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.rd-col-page    { width: 96px; text-align: right; }
+.rd-col-total   { width: 60px; text-align: right; color: var(--muted); }
+.rd-col-progress { width: 170px; }
+.rd-col-updated { width: 92px; color: var(--muted); }
+.rd-col-status  { width: 92px; }
+.rd-col-actions { width: 1%; white-space: nowrap; }
+
+.rd-page-input {
+  width: 64px;
+  font-size: 12px;
+  text-align: right;
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 2px 4px;
+  color: var(--ink);
+  border-radius: 2px;
+}
+.rd-page-input:hover { border-color: var(--grid-border); }
+.rd-page-input:focus { outline: none; border-color: var(--accent); background: var(--bg-panel); }
+
+.rd-progress { display: flex; align-items: center; gap: 6px; }
+.rd-progress-bar { flex: 1; height: 6px; background: var(--grid-border); border-radius: 3px; overflow: hidden; }
+.rd-progress-fill { height: 100%; background: var(--good); }
+.rd-progress-pct { font-size: 11px; color: var(--muted); min-width: 34px; text-align: right; }
+.rd-progress-unknown { color: var(--muted-2); }
+
+.rd-stale { color: var(--urg-hi); }
+
+.rd-status-badge {
+  display: inline-block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: var(--muted);
+  background: var(--paused-bg);
+}
+.rd-status-active   { color: var(--good); }
+.rd-status-finished { color: var(--accent); }
+.rd-status-archived { color: var(--muted-2); }
+
+.rd-action-group { display: flex; gap: 4px; justify-content: flex-end; }

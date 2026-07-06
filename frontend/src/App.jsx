@@ -3,6 +3,7 @@ import TaskGrid from './components/TaskGrid.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import Archive from './components/Archive.jsx';
 import Settings from './components/Settings.jsx';
+import ReadingSheet from './components/ReadingSheet.jsx';
 
 export default function App() {
   const [tab, setTab] = useState('grid');
@@ -24,6 +25,7 @@ export default function App() {
         </div>
         <nav className="app-tabs">
           <button className={`tab${tab === 'grid' ? ' active' : ''}`} onClick={() => setTab('grid')}>Grid</button>
+          <button className={`tab${tab === 'reading' ? ' active' : ''}`} onClick={() => setTab('reading')}>Reading</button>
           <button className={`tab${tab === 'dashboard' ? ' active' : ''}`} onClick={() => setTab('dashboard')}>Dashboard</button>
           <button className={`tab${tab === 'archive' ? ' active' : ''}`} onClick={() => setTab('archive')}>Archive</button>
           <button className={`tab${tab === 'settings' ? ' active' : ''}`} onClick={() => setTab('settings')}>Settings</button>
@@ -31,6 +33,7 @@ export default function App() {
       </header>
       <main className="app-main" data-tab={tab}>
         {tab === 'grid' && <TaskGrid />}
+        {tab === 'reading' && <ReadingSheet />}
         {tab === 'dashboard' && <Dashboard />}
         {tab === 'archive' && <Archive />}
         {tab === 'settings' && <Settings />}

@@ -813,7 +813,7 @@ class TestExport:
 
     def test_backup_schema_version_is_2(self, client):
         data = client.get("/export/backup.json").json()
-        assert data["schema_version"] == 3
+        assert data["schema_version"] == 4  # P5.0 bumped to 4 (added reading tables)
 
     def test_backup_empty_db_returns_valid_empty_arrays(self, client):
         data = client.get("/export/backup.json").json()
@@ -2138,12 +2138,12 @@ class TestDailySnapshots:
         snap_ids = [s["task_id"] for s in self._get_snapshots(client)]
         assert task["id"] not in snap_ids
 
-    # 11. task_daily_snapshots array appears in backup JSON with schema_version=3.
+    # 11. task_daily_snapshots array appears in backup JSON (schema_version 4 as of P5.0).
     def test_snapshots_in_backup_json(self, client):
         create_task(client)
         self._trigger(client)
         backup = client.get("/export/backup.json").json()
-        assert backup["schema_version"] == 3
+        assert backup["schema_version"] == 4
         assert "task_daily_snapshots" in backup
         assert len(backup["task_daily_snapshots"]) >= 1
 
