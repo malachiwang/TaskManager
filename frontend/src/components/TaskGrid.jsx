@@ -886,6 +886,23 @@ export default function TaskGrid() {
       return;
     }
 
+    // Backspace in numeric mode: manually trim last digit and stay numeric.
+    // preventDefault blocks the browser input event so handleJumpChange doesn't fire
+    // and exit numeric mode. If last digit is removed, cancel the jump entirely.
+    if (e.key === 'Backspace' && jumpMode?.type === 'numeric' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      const current = numericBufferRef.current ?? jumpMode.value ?? '';
+      const trimmed = current.slice(0, -1);
+      if (trimmed.length === 0) {
+        numericBufferRef.current = null;
+        setJumpMode(null);
+      } else {
+        numericBufferRef.current = trimmed;
+        setJumpMode((m) => ({ ...m, type: 'numeric', value: trimmed, error: '' }));
+      }
+      return;
+    }
+
     if (e.key === 'Escape') {
       numericBufferRef.current = null;
       setJumpMode(null);
