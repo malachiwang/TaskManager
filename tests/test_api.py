@@ -2441,13 +2441,14 @@ class TestSnapshotPressure:
 
     # 9. critical_days counts dates where any task in section had urgency >= 8.
     def test_critical_days_counted(self, client):
-        self._insert_snap(1, "2024-01-01", urgency=9.0, section="S")
+        # Critical threshold is the unified band cutoff (P4.0B: urgency >= 9.5).
+        self._insert_snap(1, "2024-01-01", urgency=9.8, section="S")
         self._insert_snap(1, "2024-01-02", urgency=5.0, section="S")
-        self._insert_snap(1, "2024-01-03", urgency=8.0, section="S")
+        self._insert_snap(1, "2024-01-03", urgency=9.6, section="S")
         resp = client.get("/snapshots/pressure")
         data = resp.json()
         row = next(r for r in data["rows"] if r["key"] == "S")
-        assert row["critical_days"] == 2  # Jan 1 (9) and Jan 3 (8)
+        assert row["critical_days"] == 2  # Jan 1 (9.8) and Jan 3 (9.6), both ≥ 9.5
 
     # 10. Section missing on a date produces null in that date's slot.
     def test_null_for_missing_section_date(self, client):

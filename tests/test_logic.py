@@ -110,8 +110,8 @@ class TestUrgency:
         assert result < 2.0
 
     def test_overdue_high_priority_high_urgency(self):
-        # Double the interval, high priority
-        result = calculate_urgency(priority=9, days_since=14, interval_days=7)
+        # Well overdue (3× interval), high priority → high/critical band (V2)
+        result = calculate_urgency(priority=9, days_since=21, interval_days=7)
         assert result > 8.0
 
     def test_approaches_ten_never_exceeds(self):
@@ -136,19 +136,36 @@ class TestUrgency:
         result = calculate_urgency(priority=5, days_since=5, interval_days=0)
         assert isinstance(result, float)
 
-    def test_at_double_interval_near_max(self):
-        # At D=2I, urgency should be well past the midpoint
+    def test_at_double_interval_midrange(self):
+        # V2: at D=2I the task is meaningfully overdue but not yet maxed out —
+        # it sits in the noticeable/high midrange, not pinned near 10.
         result = calculate_urgency(priority=7, days_since=14, interval_days=7)
-        assert result > 7.0
+        assert 5.0 < result < 8.0
 
     def test_formula_manual_verification(self):
-        # Manually compute expected value for P=5, D=7, I=7, k=2
-        p, d, i, k = 5, 7, 7, 2.0
-        base = 0.35 + 0.15 * (p - 5)   # 0.35
-        floor = base / 2                 # 0.175
-        growth = 1 - exp(-k * (d / i))  # 1 - exp(-2)
-        expected = round(min(10 * (floor + (1 - floor) * growth), 10.0), 1)
+        # Manually compute expected V2 value for P=5, D=7, I=7
+        p, d, i = 5, 7, 7
+        ratio = d / i
+        p_norm = (p - 1) / 9
+        overdue = 10 / (1 + exp(-1.4 * (ratio - 1.5)))
+        prio_factor = 0.75 + 0.4 * p_norm
+        expected = round(min(overdue * prio_factor, 10.0), 1)
         assert calculate_urgency(p, d, i) == expected
+
+    def test_v2_spread_not_saturated(self):
+        # V2 regression guard: a mid-priority task at exactly its interval must
+        # NOT be critical (the V1 saturation bug), but severe neglect should be.
+        due = calculate_urgency(priority=5, days_since=7, interval_days=7)
+        neglected = calculate_urgency(priority=5, days_since=70, interval_days=7)
+        assert due < 5.0            # around-due is low/noticeable, not red
+        assert neglected > due      # long-neglected ranks strictly higher
+
+    def test_v2_frequency_sensitivity(self):
+        # Same elapsed days: a frequent (short-interval) task should build more
+        # pressure than an infrequent one.
+        frequent = calculate_urgency(priority=5, days_since=3, interval_days=1)
+        infrequent = calculate_urgency(priority=5, days_since=3, interval_days=30)
+        assert frequent > infrequent
 
     def test_higher_priority_higher_urgency_same_overdue(self):
         low = calculate_urgency(priority=3, days_since=7, interval_days=7)

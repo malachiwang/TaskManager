@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { fetchArchives, fetchArchive, deleteArchive, renameArchive, previewImport, applyImport } from '../api.js';
+import { urgencyClass } from '../urgency.js';
 
 function buildDates(start, end) {
   const dates = [];
@@ -29,12 +30,6 @@ function isWeekendDate(isoDate) {
   return new Date(y, m - 1, day).getDay() % 6 === 0;
 }
 
-function urgencyClass(u) {
-  if (u >= 8) return 'urg-critical';
-  if (u >= 6) return 'urg-high';
-  if (u >= 3) return 'urg-noticeable';
-  return 'urg-low';
-}
 
 // Local sparkline — no Dashboard import to avoid coupling.
 function ArchiveSparkline({ trend }) {
@@ -133,9 +128,9 @@ function ArchiveAnalytics({ snapshot }) {
           { label: 'Tasks',       value: totalTasks },
           { label: 'Completions', value: totalCompletions },
           { label: 'Notes',       value: noteCount },
-          { label: 'Paused',      value: pausedCount },
+          { label: 'Hiatus',      value: pausedCount },
           { label: 'Scheduled',   value: scheduledCount },
-          { label: 'Ended',       value: endedCount },
+          { label: 'Finished',    value: endedCount },
           { label: 'Range',       value: rangeDays !== null ? `${rangeDays}d` : '—' },
         ].map(({ label, value }) => (
           <div key={label} className="arch-stat-chip">

@@ -193,12 +193,6 @@ function resolveRowIdAt(clientX, clientY, excludeId) {
   return null;
 }
 
-// Normalized section key — mirrors grouping.js so the same-section reorder guard
-// compares the exact value used to build Section-view groups.
-function sectionKey(task) {
-  return task.section?.trim() || '(no section)';
-}
-
 export default function TaskGrid() {
   // Real today — always fixed regardless of which month is displayed.
   const todayStr = toLocalDate(new Date());
@@ -276,12 +270,11 @@ export default function TaskGrid() {
     localStorage.setItem('taskos-group-mode', groupMode);
   }, [groupMode]);
 
-  // FILTERS.ALL ('all') is the default chip — treat it as "no meaningful filter".
-  const hasMeaningfulFilter = activeFilter && activeFilter !== FILTERS.ALL;
-  // Reorder is available in flat (NONE) or section-grouped (SECTION) mode,
-  // with no meaningful filter and no search active.
-  const canReorderInGroupMode = groupMode === GROUP_MODES.NONE || groupMode === GROUP_MODES.SECTION;
-  const reorderEnabled = canReorderInGroupMode && !hasMeaningfulFilter && !searchQuery.trim();
+  // P4.0A-fix1: reorder handles are available in every view (all filters, search,
+  // and all group modes). Reorder only ever changes display_order — never task
+  // fields — and the drop handler restricts drops within grouped views to the same
+  // rendered group, so a task can never appear to cross a semantic boundary.
+  const reorderEnabled = true;
 
   // Pointer-based row drag state.
   // dragStateRef holds drag geometry — mutated imperatively, no re-render on move.
@@ -302,7 +295,14 @@ export default function TaskGrid() {
   // ---------------------------------------------------------------------------
 
   const filteredTasks = useMemo(() => {
-    let result = tasks;
+    // Finished-task month visibility (P3.0B): a task marked Finished (end_date set)
+    // is hidden in month views AFTER its finish month, but stays visible in the
+    // finish month and all earlier months. Keyed strictly on end_date — a plain
+    // completion entry never sets end_date, so completing a cell never hides a task.
+    const viewYearMonth = `${viewMonth.year}-${String(viewMonth.month).padStart(2, '0')}`;
+    let result = tasks.filter(
+      (t) => !t.end_date || t.end_date.slice(0, 7) >= viewYearMonth,
+    );
     if (activeFilter !== FILTERS.ALL) {
       result = result.filter((t) => taskPassesFilter(t, activeFilter));
     }
@@ -317,7 +317,7 @@ export default function TaskGrid() {
       );
     }
     return result;
-  }, [tasks, activeFilter, searchQuery]);
+  }, [tasks, activeFilter, searchQuery, viewMonth.year, viewMonth.month]);
 
   // Group filtered tasks by the current groupMode.
   // groupTasks() suppresses empty groups automatically and computes metadata.
@@ -332,6 +332,17 @@ export default function TaskGrid() {
     () => groupedTasks.flatMap((g) => g.tasks),
     [groupedTasks],
   );
+
+  // taskId → rendered group key, using the exact grouping that draws the headers.
+  // Used by the drop handler to keep reorder within a semantic group (see below).
+  // In NONE mode every task shares the single '__none__' group, so nothing is blocked.
+  const groupKeyById = useMemo(() => {
+    const m = new Map();
+    for (const g of groupedTasks) {
+      for (const t of g.tasks) m.set(t.id, g.key);
+    }
+    return m;
+  }, [groupedTasks]);
 
   // ---------------------------------------------------------------------------
   // Data fetching — reruns when month changes (dates reference changes)
@@ -549,7 +560,16 @@ export default function TaskGrid() {
       if (ghostElRef.current) {
         ghostElRef.current.style.top = (ev.clientY - dragStateRef.current.pointerOffsetY) + 'px';
       }
-      const newOverId = resolveRowIdAt(ev.clientX, ev.clientY, taskId);
+      let newOverId = resolveRowIdAt(ev.clientX, ev.clientY, taskId);
+      // In grouped views, only show the insertion line on a same-group target so
+      // the indicator matches where a drop will actually land (cross-group no-ops).
+      if (newOverId != null && groupMode !== GROUP_MODES.NONE) {
+        const srcGroup = groupKeyById.get(taskId);
+        const tgtGroup = groupKeyById.get(newOverId);
+        if (srcGroup === undefined || tgtGroup === undefined || srcGroup !== tgtGroup) {
+          newOverId = null;
+        }
+      }
       if (newOverId !== dragOverIdRef.current) {
         dragOverIdRef.current = newOverId;
         setDragOverId(newOverId);
@@ -584,8 +604,17 @@ export default function TaskGrid() {
       const src = prev.find((t) => t.id === srcId);
       const tgt = prev.find((t) => t.id === targetId);
       if (!src || !tgt) return;
-      // Section view: allow same-section reorder, reject cross-section (never mutate section).
-      if (groupMode === GROUP_MODES.SECTION && sectionKey(src) !== sectionKey(tgt)) return;
+      // Grouped views: allow reorder only within the same rendered group; reject
+      // cross-group drops cleanly. Reorder never mutates task fields (section,
+      // category, status, urgency band, dates), so a task can never jump a semantic
+      // boundary — a cross-group drop simply no-ops. NONE mode has one group so
+      // free reorder applies; filtered/search flat views reorder among visible rows
+      // while the full-list move below preserves every hidden task's relative order.
+      if (groupMode !== GROUP_MODES.NONE) {
+        const srcGroup = groupKeyById.get(srcId);
+        const tgtGroup = groupKeyById.get(targetId);
+        if (srcGroup === undefined || tgtGroup === undefined || srcGroup !== tgtGroup) return;
+      }
       // Insert source immediately before target — matches the black top insertion line.
       const next = [...prev];
       const srcIdx = next.findIndex((t) => t.id === srcId);

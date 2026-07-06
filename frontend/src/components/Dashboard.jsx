@@ -1,16 +1,10 @@
 import { useState, useEffect } from 'react';
 import { fetchDashboard, fetchSnapshotPressure } from '../api.js';
+import { urgencyClass } from '../urgency.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function urgencyClass(u) {
-  if (u >= 8) return 'urg-critical';
-  if (u >= 6) return 'urg-high';
-  if (u >= 3) return 'urg-noticeable';
-  return 'urg-low';
-}
 
 // CSS-only micro-bar — no chart library.
 function UrgencyBar({ value, wide = false }) {
@@ -438,9 +432,9 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* 5. Paused */}
+        {/* 5. Hiatus */}
         <div className="ws-stat-cell">
-          <div className="ws-stat-label">Paused</div>
+          <div className="ws-stat-label">Hiatus</div>
           <div className="ws-stat-value">{paused_count}</div>
           <div className="ws-stat-delta">excluded from pressure</div>
         </div>
@@ -482,9 +476,9 @@ export default function Dashboard() {
         </div>
 
         <div className="ws-graph-card">
-          <div className="ws-graph-title">Active / paused</div>
+          <div className="ws-graph-title">Active / Hiatus</div>
           <RatioBar activeCount={active_count} pausedCount={paused_count} />
-          <div className="ws-graph-sub">{active_count} active · {paused_count} paused</div>
+          <div className="ws-graph-sub">{active_count} active · {paused_count} hiatus</div>
         </div>
 
       </div>
@@ -682,7 +676,7 @@ export default function Dashboard() {
           <div className="ws-frame-header">
             <span>Pressure history</span>
             <span className="ws-frame-header-sub">
-              section × snapshot date · avg urgency · paused &amp; scheduled excluded
+              section × snapshot date · avg urgency · hiatus &amp; scheduled excluded
             </span>
           </div>
           <div className="ws-frame-body">

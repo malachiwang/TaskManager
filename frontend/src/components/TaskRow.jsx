@@ -3,6 +3,7 @@ import DateCell from './DateCell.jsx';
 import LinkifiedText from './LinkifiedText.jsx';
 import LinkPopover from './LinkPopover.jsx';
 import { hasLinks, extractLinks } from '../linkUtils.js';
+import { urgencyClass, urgencyReason } from '../urgency.js';
 
 function displayStatus(task) {
   if (task.is_ended) return 'Finished';
@@ -89,13 +90,6 @@ function InlineTextCell({
   );
 }
 
-// Map urgency value to a CSS class for color coding.
-function urgencyClass(urgency) {
-  if (urgency >= 8) return 'urg-critical';
-  if (urgency >= 6) return 'urg-high';
-  if (urgency >= 3) return 'urg-noticeable';
-  return 'urg-low';
-}
 
 export default function TaskRow({
   task, dates, todayStr, completions, notes, selectedCell, colLayout,
@@ -165,7 +159,7 @@ export default function TaskRow({
           >EDIT</button>
         </div>
       </td>
-      <td className={`meta-col sticky-col col-urg ${isPaused || isScheduled || isEnded ? '' : urgencyClass(task.urgency)}`} style={cs('col-urg')}>
+      <td className={`meta-col sticky-col col-urg ${isPaused || isScheduled || isEnded ? '' : urgencyClass(task.urgency)}`} style={cs('col-urg')} title={urgencyReason(task)}>
         {isPaused || isScheduled || isEnded ? '—' : task.urgency}
       </td>
       <td className="meta-col sticky-col col-pri" style={cs('col-pri')}>{task.priority}</td>

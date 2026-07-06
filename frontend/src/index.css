@@ -397,13 +397,12 @@ thead .meta-col {
 .task-row.scheduled   { --row-bg: var(--bg-panel); }
 .task-row:hover       { --row-bg: var(--row-hover-bg); }
 
-/* Paused row: muted and italic.
-   Background is driven by --row-bg set on <tr>.paused above — no per-cell
-   background override needed. Explicit color instead of opacity keeps sticky
-   cells fully opaque. */
+/* Paused row: muted, not italic.
+   Distinction comes from the muted text color + --paused-bg tint set on <tr>.paused
+   above — no italics. Explicit color instead of opacity keeps sticky cells fully
+   opaque. */
 .task-row.paused td {
   color: #bbb;
-  font-style: italic;
   cursor: default;
 }
 
@@ -580,7 +579,12 @@ thead .meta-col {
   background: var(--accent-soft);
 }
 
-/* P2.0B — inline edit input inside a meta-col td */
+/* P2.0B — inline edit input inside a meta-col td.
+   The input has no focus ring of its own: while editing, the parent td carries
+   .meta-selected which draws the single (outer) blue outline. Removing the input's
+   own outline/border/box-shadow eliminates the doubled blue rectangle (P4.0A-fix1).
+   Scoped to grid inline-edit inputs only — modal/date/settings/search/Jump inputs
+   are unaffected. */
 .cell-edit-input {
   width: 100%;
   font-family: var(--font-sans);
@@ -588,8 +592,8 @@ thead .meta-col {
   color: var(--ink-2);
   background: var(--bg-panel);
   border: none;
-  outline: 2px solid var(--accent);
-  outline-offset: -1px;
+  outline: none;
+  box-shadow: none;
   padding: 0 2px;
   box-sizing: border-box;
   line-height: inherit;
@@ -599,9 +603,14 @@ thead .meta-col {
    Urgency color bands
    ---------------------------------------------------------------------- */
 
+/* Urgency color ladder (P4.0B). Calm at the bottom, escalating restraint upward:
+   none/low are plain muted text, noticeable is a subtle amber (no bold), high is
+   a semibold orange, and only critical uses red + a faint tinted cell. Pressure
+   V2 already yields far fewer top-band rows, so the grid stays calm overall. */
+.urg-none       { color: var(--muted-2); }
 .urg-low        { color: var(--urg-low); }
-.urg-noticeable { color: var(--urg-mid); font-weight: 600; }
-.urg-high       { color: var(--urg-hi); font-weight: 700; }
+.urg-noticeable { color: var(--urg-mid); }
+.urg-high       { color: var(--urg-hi); font-weight: 600; }
 .urg-critical   { color: var(--urg-crit); font-weight: 700; background: var(--crit-bg); }
 
 /* UI-11: Inset left bar for urgency cells — box-shadow has no layout footprint. */
@@ -1308,6 +1317,7 @@ thead .meta-col {
 .dash-microbar-fill--urg-high       { background: var(--urg-hi); }
 .dash-microbar-fill--urg-noticeable { background: var(--urg-mid); }
 .dash-microbar-fill--urg-low        { background: var(--muted-2); }
+.dash-microbar-fill--urg-none       { background: var(--hair); }
 
 /* Urgency cell: number + microbar stacked vertically, or side-by-side */
 .dash-urg-cell {
@@ -2086,6 +2096,7 @@ thead .meta-col {
 .dash-urgdist-fill.urg-high       { background: var(--urg-hi); }
 .dash-urgdist-fill.urg-noticeable { background: var(--urg-mid); }
 .dash-urgdist-fill.urg-low        { background: var(--urg-low); }
+.dash-urgdist-fill.urg-none       { background: var(--hair); }
 
 .dash-urgdist-count {
   font-family: var(--font-mono);
@@ -3495,6 +3506,30 @@ thead .meta-col {
   letter-spacing: 0.04em;
 }
 
+/* Read-only urgency decomposition chip in the (dark) modal header — P4.0B.
+   Monochrome/light so it stays readable on the dark header; the band label and
+   reason text carry the meaning (grid cells carry the color). */
+.task-modal-urgency {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 3px 9px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.85);
+}
+.task-modal-urgency-val { font-weight: 700; font-size: 13px; }
+.task-modal-urgency-band {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+  opacity: 0.85;
+}
+.task-modal-urgency-reason { color: rgba(255, 255, 255, 0.55); }
+
 /* Close button */
 .task-modal-close {
   background: none;
@@ -3596,6 +3631,18 @@ thead .meta-col {
   outline: none;
   border-bottom: 2px solid var(--accent);
   background: transparent;
+}
+
+/* Uppercase the native empty date placeholder (mm/dd/yyyy → MM/DD/YYYY) in the
+   Task Details date fields. text-transform applies to the browser-rendered
+   datetime-edit placeholder letters only; entered digits/slashes are unaffected,
+   and the calendar picker, typing, clearing, and the ISO value sent to the API
+   all remain unchanged. Harmless on engines that don't transform the placeholder. */
+.task-modal-input[type="date"] {
+  text-transform: uppercase;
+}
+.task-modal-input[type="date"]::-webkit-datetime-edit {
+  text-transform: uppercase;
 }
 
 /* Preserve native select arrow */

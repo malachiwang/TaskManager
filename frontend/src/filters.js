@@ -1,9 +1,12 @@
 // Centralized filter definitions for the task grid — Filtering/Search Phase 1.
 //
-// URGENT_THRESHOLD  matches the urg-high/urg-critical CSS bands (urgency >= 6).
+// URGENT_THRESHOLD  aligns with the shared urgency model — "Urgent" = High band
+//   and above (urgency >= URG_HIGH), so it agrees with the grid's amber/red rows.
 // DORMANT_THRESHOLD mirrors the backend dashboard definition (days_since >= 30).
 
-export const URGENT_THRESHOLD  = 6;
+import { URG_HIGH } from './urgency.js';
+
+export const URGENT_THRESHOLD  = URG_HIGH;
 export const DORMANT_THRESHOLD = 30;
 
 export const FILTERS = {
@@ -25,7 +28,7 @@ export const FILTER_LABELS = {
   [FILTERS.DORMANT]:    'Dormant',
   [FILTERS.NEVER_DONE]: 'Never done',
   [FILTERS.SCHEDULED]:  'Scheduled',
-  [FILTERS.ENDED]:      'Ended',
+  [FILTERS.ENDED]:      'Finished',
 };
 
 // Returns true if the task passes the given filter.

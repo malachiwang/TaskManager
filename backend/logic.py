@@ -47,39 +47,41 @@ def calculate_urgency(
     days_since: int,
     interval_days: int,
     is_paused: bool = False,
-    k: float = 2.0,
 ) -> float:
     """
-    Asymptotic urgency model. Urgency approaches 10 but never exceeds it.
+    Pressure Scoring V2 (P4.0B). Urgency on a 0–10 scale with useful spread.
 
-    Formula (from PRD):
-        base  = f(priority)        — sets the urgency floor
-        floor = base / 2
-        growth = 1 - exp(-k * D/I)
-        urgency = 10 * (floor + (1 - floor) * growth)
+    The V1 model (asymptotic exp with k=2) saturated almost every due/overdue
+    task toward 10, so the grid read as a wall of red. V2 uses a gentler logistic
+    on the overdue ratio, tilted by priority, so tasks differentiate across the
+    low → noticeable → high → critical bands instead of all pinning at the top.
 
-    At D = 2I (double the interval), growth ≈ 0.9817, so urgency is ~98% of
-    the way from floor to 10.
+    Model:
+        ratio  = days_since / interval_days        (overdue ratio; interval ≥ 1)
+        p_norm = (priority - 1) / 9                 (0 at P1 … 1 at P10)
+        overdue     = 10 / (1 + exp(-1.4 * (ratio - 1.5)))   # 0..10, centred at 1.5×
+        prio_factor = 0.75 + 0.4 * p_norm                    # 0.75 (P1) .. 1.15 (P10)
+        urgency     = min(overdue * prio_factor, 10)
 
-    Paused tasks always return 0.0 — they accumulate no pressure.
+    Behaviour (default priority 5): not-due → ~1 (low); at due (ratio 1) → ~3
+    (low); 1 interval overdue (ratio 2) → ~6 (noticeable); 2 intervals (ratio 3)
+    → ~8 (high). Critical (≥9.5) is reserved for high-priority-overdue or severe
+    neglect. Frequency falls out of the ratio: a daily task builds pressure far
+    faster in elapsed days than a monthly one.
+
+    Paused tasks always return 0.0 — they accumulate no pressure. Callers also
+    force 0 for Finished/scheduled tasks (see main._enrich_task).
     interval_days is clamped to 1 minimum to guard against division by zero.
     """
     if is_paused:
         return 0.0
 
-    # Guard: interval must be at least 1 day
     i = max(1, interval_days)
+    ratio = days_since / i
+    p_norm = (priority - 1) / 9
 
-    # Priority base mapping
-    if priority >= 8:
-        base = 0.8 + 0.05 * (priority - 8)
-    elif priority >= 5:
-        base = 0.35 + 0.15 * (priority - 5)
-    else:
-        base = 0.05 + 0.1 * (priority - 1)
-
-    floor = base / 2
-    growth = 1 - exp(-k * (days_since / i))
-    urgency = 10 * (floor + (1 - floor) * growth)
+    overdue = 10 / (1 + exp(-1.4 * (ratio - 1.5)))
+    prio_factor = 0.75 + 0.4 * p_norm
+    urgency = overdue * prio_factor
 
     return round(min(urgency, 10.0), 1)

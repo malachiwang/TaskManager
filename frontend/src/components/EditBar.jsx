@@ -82,7 +82,7 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
         <span className="edit-bar-sep">·</span>
         {isDisabled ? (
           <span className="edit-bar-disabled">
-            {isFuture ? 'future date' : isAfterEndDate ? 'after task end date' : isBeforeActiveFrom ? 'before active date' : 'paused'}
+            {isFuture ? 'future date' : isAfterEndDate ? 'after task end date' : isBeforeActiveFrom ? 'before active date' : 'on hiatus'}
           </span>
         ) : (
           <span className="edit-bar-count">count: {count}</span>

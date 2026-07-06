@@ -1,6 +1,9 @@
 import { useState } from 'react';
+import { urgencyLabel, urgencyReason } from '../urgency.js';
 
 const STATUS_OPTIONS = ['active', 'hiatus'];
+// Display labels only — the stored status value stays lowercase ('active'/'hiatus').
+const STATUS_LABELS = { active: 'Active', hiatus: 'Hiatus' };
 
 function getLocalToday() {
   const d = new Date();
@@ -77,6 +80,18 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
             <div className="task-modal-subtitle">
               {isEdit ? 'scheduling · status · priority · notes' : 'local task record · SQLite'}
             </div>
+            {isEdit && (() => {
+              // Read-only urgency decomposition (P4.0B) — explains the current
+              // pressure. Inactive tasks (Hiatus/Finished/scheduled) show '—'.
+              const inactive = task.is_paused === 1 || task.is_ended || task.is_scheduled;
+              return (
+                <div className="task-modal-urgency">
+                  <span className="task-modal-urgency-val">{inactive ? '—' : task.urgency}</span>
+                  {!inactive && <span className="task-modal-urgency-band">{urgencyLabel(task.urgency)}</span>}
+                  <span className="task-modal-urgency-reason">{urgencyReason(task)}</span>
+                </div>
+              );
+            })()}
           </div>
           <button className="task-modal-close" type="button" onClick={onClose} aria-label="Close">×</button>
         </div>
@@ -146,7 +161,7 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
                     className={`task-modal-seg-btn${form.status === s ? ' task-modal-seg-btn--active' : ''}`}
                     onClick={() => set('status', s)}
                   >
-                    {s}
+                    {STATUS_LABELS[s] ?? s}
                   </button>
                 ))}
               </div>
@@ -201,6 +216,7 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
                   value={form.manual_last_done_override}
                   onChange={(e) => set('manual_last_done_override', e.target.value)}
                 />
+                <div className="task-modal-field-hint">MM/DD/YYYY</div>
               </div>
               <div className="task-modal-field">
                 <label className="task-modal-label" htmlFor="tm-active-from">Active from</label>
@@ -211,6 +227,7 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
                   value={form.active_from}
                   onChange={(e) => set('active_from', e.target.value)}
                 />
+                <div className="task-modal-field-hint">MM/DD/YYYY</div>
               </div>
               <div className="task-modal-field">
                 <label className="task-modal-label" htmlFor="tm-end-date">End date</label>
@@ -229,7 +246,7 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
                   End today
                 </button>
                 <div className="task-modal-field-hint">
-                  Dates after this are disabled; past completions are preserved.
+                  MM/DD/YYYY · Dates after this are disabled; past completions are preserved.
                 </div>
               </div>
             </div>
