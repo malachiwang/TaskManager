@@ -54,6 +54,7 @@ export default function Settings() {
   const [defaultSection, setDefaultSection]   = useState(() => loadSettings().defaultSection      ?? 'General');
   const [defaultPriority, setDefaultPriority] = useState(() => loadSettings().defaultPriority     ?? 5);
   const [defaultInterval, setDefaultInterval] = useState(() => loadSettings().defaultIntervalDays ?? 7);
+  const [quickJumpEnabled, setQuickJumpEnabled] = useState(() => loadSettings().quickJumpEnabled  ?? true);
   const [savedMsg, setSavedMsg]               = useState(false);
   const [colResetMsg, setColResetMsg]         = useState(false);
 
@@ -100,10 +101,10 @@ export default function Settings() {
       const binding = captureEventToBinding(e);
       if (!binding) return;
 
-      // Shift+0–9 reserved: Shift+0 opens jump mode, Shift+1–9 quick-select.
+      // Shift+0–9 reserved for Quick Jump (row/column navigation and jump prompt).
       // event.code check is layout-agnostic (Shift+0 gives ')' in event.key on US keyboards).
       if (e.shiftKey && /^Digit[0-9]$/.test(e.code)) {
-        setRecordingError('Reserved — Shift+0 opens jump mode; Shift+1–9 for quick selection');
+        setRecordingError('Reserved — Shift+digits are used by Quick Jump navigation');
         return;
       }
 
@@ -167,6 +168,15 @@ export default function Settings() {
     cancelRecording();
   }
 
+  function handleQuickJumpToggle(e) {
+    const value = e.target.checked;
+    setQuickJumpEnabled(value);
+    try {
+      const current = loadSettings();
+      localStorage.setItem(LS_SETTINGS_KEY, JSON.stringify({ ...current, quickJumpEnabled: value }));
+    } catch {}
+  }
+
   function handleSaveDefaults(e) {
     e.preventDefault();
     try {
@@ -174,6 +184,7 @@ export default function Settings() {
         defaultSection:      defaultSection.trim() || 'General',
         defaultPriority:     Math.min(10, Math.max(1, Number(defaultPriority) || 5)),
         defaultIntervalDays: Math.max(1, Number(defaultInterval) || 7),
+        quickJumpEnabled,
       }));
       setSavedMsg(true);
       setTimeout(() => setSavedMsg(false), 2000);
@@ -329,6 +340,26 @@ export default function Settings() {
               <span className="ws-frame-kicker">03</span>
               <span>Grid preferences</span>
               <span className="ws-frame-header-sub">layout only · no task data changed</span>
+            </div>
+            <div className="ws-ctrl-row">
+              <div className="ws-ctrl-info">
+                <span className="ws-ctrl-label">Quick Jump</span>
+                <span className="ws-ctrl-desc">
+                  Use Shift+number shortcuts and the Jump button to navigate the grid.
+                  No selection: Shift+digits jumps to that row. With a cell selected:
+                  Shift+digits jumps to that date column in the current row.
+                </span>
+              </div>
+              <div className="ws-ctrl-action">
+                <label className="settings-checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={quickJumpEnabled}
+                    onChange={handleQuickJumpToggle}
+                  />
+                  <span>{quickJumpEnabled ? 'Enabled' : 'Disabled'}</span>
+                </label>
+              </div>
             </div>
             <div className="ws-ctrl-row">
               <div className="ws-ctrl-info">
