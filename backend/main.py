@@ -515,6 +515,31 @@ def delete_task(task_id: int):
     return {"deleted": task_id}
 
 
+class ReorderBody(BaseModel):
+    order: list[int]
+
+
+@app.post("/tasks/reorder", status_code=200)
+def reorder_tasks(body: ReorderBody):
+    """Set display_order for tasks in bulk.
+
+    Accepts an ordered list of task IDs.  Each task's display_order is set to
+    its index in the list (0-based).  Tasks not included in the list are
+    unchanged.
+    """
+    if not body.order:
+        return {"reordered": 0}
+    conn = get_connection()
+    with conn:
+        for i, task_id in enumerate(body.order):
+            conn.execute(
+                "UPDATE tasks SET display_order = ? WHERE id = ? AND is_active = 1",
+                (i, task_id),
+            )
+    conn.close()
+    return {"reordered": len(body.order)}
+
+
 # ---------------------------------------------------------------------------
 # Completions
 # ---------------------------------------------------------------------------

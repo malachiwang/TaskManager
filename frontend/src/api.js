@@ -187,6 +187,16 @@ export async function previewImport(file) {
   return res.json();
 }
 
+export async function reorderTasks(orderedIds) {
+  const res = await fetch(`${BASE}/tasks/reorder`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ order: orderedIds }),
+  });
+  if (!res.ok) throw new Error(`reorderTasks failed: ${res.status}`);
+  return res.json();
+}
+
 export async function applyImport(file) {
   const formData = new FormData();
   formData.append('file', file);

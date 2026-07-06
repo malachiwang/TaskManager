@@ -100,6 +100,7 @@ function urgencyClass(urgency) {
 export default function TaskRow({
   task, dates, todayStr, completions, notes, selectedCell, colLayout,
   selectedMetaCell, editingTextCell, armedCell,
+  reorderEnabled, isDragOver, onDragStart, onDragOver, onDrop, onDragEnd,
   onIncrement, onClear, onEdit, onSelect,
   onSelectMeta, onStartTextEdit, onCommitTextEdit, onCancelTextEdit,
 }) {
@@ -130,7 +131,7 @@ export default function TaskRow({
   const isSelectedMeta = (col) => selectedMetaCell?.taskId === task.id && selectedMetaCell?.col === col;
   const isEditingMeta  = (col) => editingTextCell?.taskId  === task.id && editingTextCell?.col  === col;
 
-  const rowClass = ['task-row', isPaused ? 'paused' : '', isScheduled ? 'scheduled' : '', isEnded ? 'ended' : '']
+  const rowClass = ['task-row', isPaused ? 'paused' : '', isScheduled ? 'scheduled' : '', isEnded ? 'ended' : '', isDragOver ? 'drag-over' : '']
     .filter(Boolean).join(' ');
 
   const noteLinks = hasLinks(task.notes) ? extractLinks(task.notes) : [];
@@ -145,7 +146,23 @@ export default function TaskRow({
   }
 
   return (
-    <tr className={rowClass} data-task-id={task.id}>
+    <tr
+      className={rowClass}
+      data-task-id={task.id}
+      onDragOver={reorderEnabled ? (e) => onDragOver(e, task.id) : undefined}
+      onDrop={reorderEnabled ? (e) => onDrop(e, task.id) : undefined}
+    >
+      {reorderEnabled && (
+        <td
+          className="meta-col sticky-col col-drag"
+          style={cs('col-drag')}
+          draggable
+          onDragStart={(e) => onDragStart(e, task.id)}
+          onDragEnd={onDragEnd}
+        >
+          <span className="drag-handle">⠿</span>
+        </td>
+      )}
       <td className="meta-col sticky-col col-actions" style={cs('col-actions')}>
         <button
           className="action-btn"
