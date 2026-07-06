@@ -528,8 +528,11 @@ export default function TaskGrid() {
   const handlersRef        = useRef({});
   const helpOpenRef        = useRef(false);
   const jumpModeRef          = useRef(null);
-  // Row jump buffer — mutable ref only (no state; no overlay, so no re-render needed).
-  const rowJumpBufferRef     = useRef(null);
+  // Numeric buffer — synchronous digit accumulation for Shift+digit jump.
+  // Updated on every Shift+digit keydown so onKeyUp sees the current value
+  // even if React hasn't re-rendered yet. Cleared on manual panel edit or close.
+  const numericBufferRef     = useRef(null);
+  const jumpInputRef         = useRef(null);
   const quickJumpEnabledRef  = useRef(quickJumpEnabled);
   const helpBtnRef           = useRef(null);
   const helpPanelRef       = useRef(null);
@@ -557,7 +560,7 @@ export default function TaskGrid() {
   jumpModeRef.current           = jumpMode;
   quickJumpEnabledRef.current   = quickJumpEnabled;
   keybindsRef.current           = resolvedKb;
-  handlersRef.current           = { handleIncrement, handleClear, handleSetCount, openAdd, openEdit, setSelectedCell, closeModal, setHelpOpen, setSelectedMetaCell, setEditingTextCell, setArmedCell };
+  handlersRef.current           = { handleIncrement, handleClear, handleSetCount, openAdd, openEdit, setSelectedCell, closeModal, setHelpOpen, setSelectedMetaCell, setEditingTextCell, setArmedCell, setJumpMode };
 
   // Clear selectedCell when the selected task is no longer in the flat grouped list.
   // Covers: soft-delete, filter change hiding the row, search hiding the row.
@@ -633,9 +636,7 @@ export default function TaskGrid() {
         const isTyping = ['input', 'textarea', 'select'].includes(tag2)
           || document.activeElement?.isContentEditable;
         if (!isTyping) {
-          if (rowJumpBufferRef.current !== null) {
-            rowJumpBufferRef.current = null;
-          } else if (helpOpenRef.current) {
+          if (helpOpenRef.current) {
             setHelpOpen(false);
           } else if (armedCellRef.current) {
             setArmedCell(null); // cancel armed state; press Esc again to clear selection
@@ -649,24 +650,10 @@ export default function TaskGrid() {
       }
 
       // For all non-Escape keys: ignore while typing or modal is open.
-      // If a row jump buffer is active and focus just moved into an input, cancel it.
       const tag = document.activeElement?.tagName?.toLowerCase();
-      if (['input', 'textarea', 'select'].includes(tag)) {
-        rowJumpBufferRef.current = null;
-        return;
-      }
-      if (document.activeElement?.isContentEditable) {
-        rowJumpBufferRef.current = null;
-        return;
-      }
+      if (['input', 'textarea', 'select'].includes(tag)) return;
+      if (document.activeElement?.isContentEditable) return;
       if (modalOpenRef.current) return;
-
-      // Enter while row jump buffer active → confirm jump immediately.
-      if (e.key === 'Enter' && rowJumpBufferRef.current !== null) {
-        e.preventDefault();
-        confirmRowJump(rowJumpBufferRef.current);
-        return;
-      }
 
       // N — open Add Task modal (no selection required)
       if (matchKeybind(e, kb.NEW_TASK)) {
@@ -688,22 +675,20 @@ export default function TaskGrid() {
         return;
       }
 
-      // Shift+digit (0–9) — context-aware Quick Jump buffer (requires Quick Jump enabled).
+      // Shift+digit (0–9) — opens/fills the Jump panel for context-aware Quick Jump.
       // Uses event.code (layout-agnostic) because Shift+3 → '#' in event.key on US keyboards.
-      // No selection: buffer resolves to a row number.
-      // With selection: buffer resolves to a date-column index in the current row.
-      // Shift+0 with empty buffer opens the full jump prompt instead.
+      // Fires only when no other input is focused (panel not yet open); subsequent digits
+      // while panel is open are handled by the panel input's own onKeyDown.
+      // Shift+0 is now just a digit — no longer opens a separate prompt.
       if (quickJumpEnabledRef.current && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && /^Digit[0-9]$/.test(e.code)) {
         const digit = e.code[5]; // '0'–'9'
-        if (digit === '0' && rowJumpBufferRef.current === null) {
-          e.preventDefault();
-          setArmedCell(null);
-          setJumpMode({ type: 'quick', value: '', error: '' });
-          return;
-        }
         e.preventDefault();
-        rowJumpBufferRef.current = (rowJumpBufferRef.current ?? '') + digit;
+        numericBufferRef.current = (numericBufferRef.current ?? '') + digit;
         setArmedCell(null);
+        setJumpMode((m) => m === null
+          ? { type: 'numeric', value: digit, error: '' }
+          : { ...m, value: m.value + digit, error: '' }
+        );
         return;
       }
 
@@ -728,14 +713,6 @@ export default function TaskGrid() {
       }
 
       if (!sel) return;
-
-      // Backspace with active row jump buffer → remove the last digit.
-      if (e.key === 'Backspace' && !e.metaKey && !e.ctrlKey && !e.altKey && rowJumpBufferRef.current !== null) {
-        e.preventDefault();
-        const trimmed = rowJumpBufferRef.current.slice(0, -1);
-        rowJumpBufferRef.current = trimmed.length > 0 ? trimmed : null;
-        return;
-      }
 
       // Delete / Backspace — guarded two-step keyboard clear for DateCell completions.
       // First press arms the cell (shows amber indicator + hint); second press confirms.
@@ -823,12 +800,13 @@ export default function TaskGrid() {
     // Context-aware: with a selected cell, jumps to date column N in that row;
     // without a selection, jumps to row N.
     function confirmRowJump(buf) {
-      const { setSelectedCell, setArmedCell } = handlersRef.current;
+      const { setSelectedCell, setArmedCell, setJumpMode } = handlersRef.current;
       const tasks = tasksRef.current;
       const dates = datesRef.current;
       const sel = selectedCellRef.current;
       const idx = parseInt(buf, 10) - 1;
-      rowJumpBufferRef.current = null;
+      numericBufferRef.current = null;
+      setJumpMode(null);
       if (idx < 0) return;
 
       if (sel) {
@@ -861,7 +839,7 @@ export default function TaskGrid() {
 
     function onKeyUp(e) {
       if (e.key === 'Shift') {
-        const buf = rowJumpBufferRef.current;
+        const buf = numericBufferRef.current;
         if (buf !== null) confirmRowJump(buf);
       }
     }
@@ -889,19 +867,66 @@ export default function TaskGrid() {
   }
 
   // ---------------------------------------------------------------------------
-  // Jump mode handlers (Shift+0 prompt)
+  // Jump mode handlers (Quick Jump panel)
   // ---------------------------------------------------------------------------
 
   function handleJumpChange(e) {
-    setJumpMode((m) => ({ ...m, value: e.target.value, error: '' }));
+    // Manual edit transitions panel to 'quick' mode so Shift-release won't confirm.
+    numericBufferRef.current = null;
+    setJumpMode((m) => ({ ...m, type: 'quick', value: e.target.value, error: '' }));
   }
 
   function handleJumpKeyDown(e) {
+    // Allow additional Shift+digits to accumulate in the panel while it's open.
+    if (quickJumpEnabled && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && /^Digit[0-9]$/.test(e.code)) {
+      const digit = e.code[5];
+      e.preventDefault();
+      numericBufferRef.current = (numericBufferRef.current ?? '') + digit;
+      setJumpMode((m) => ({ ...m, type: 'numeric', value: (m?.value ?? '') + digit, error: '' }));
+      return;
+    }
+
     if (e.key === 'Escape') {
+      numericBufferRef.current = null;
       setJumpMode(null);
       return;
     }
     if (e.key !== 'Enter') return;
+
+    // Enter in numeric mode: context-aware jump (same logic as Shift-release).
+    if (jumpMode?.type === 'numeric') {
+      const buf = numericBufferRef.current ?? jumpMode.value;
+      numericBufferRef.current = null;
+      const idx = parseInt(buf, 10) - 1;
+      setJumpMode(null);
+      if (idx < 0) return;
+      const sel = selectedCell;
+      if (sel) {
+        if (idx >= dates.length) return;
+        setArmedCell(null);
+        setSelectedCell({ taskId: sel.taskId, date: dates[idx] });
+        const d = dates[idx];
+        requestAnimationFrame(() => {
+          document.querySelector(`th[data-date="${d}"]`)
+            ?.scrollIntoView({ inline: 'nearest', behavior: 'smooth' });
+        });
+      } else {
+        if (idx >= flatGroupedTasks.length) return;
+        const task = flatGroupedTasks[idx];
+        const date = getDefaultKeyboardDate(dates);
+        if (!date) return;
+        setArmedCell(null);
+        setSelectedCell({ taskId: task.id, date });
+        const tid = task.id;
+        requestAnimationFrame(() => {
+          document.querySelector(`tr[data-task-id="${tid}"]`)
+            ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          document.querySelector(`th[data-date="${date}"]`)
+            ?.scrollIntoView({ inline: 'nearest', behavior: 'smooth' });
+        });
+      }
+      return;
+    }
 
     const result = resolveJump(jumpMode.value, dates, flatGroupedTasks);
     if (!result) { setJumpMode(null); return; }
@@ -1091,8 +1116,8 @@ export default function TaskGrid() {
           <button
             type="button"
             className="ws-filter-pill"
-            onClick={() => { setArmedCell(null); rowJumpBufferRef.current = null; setJumpMode({ type: 'quick', value: '', error: '' }); }}
-            title="Quick jump to row, task name, or date (⇧0)"
+            onClick={() => { setArmedCell(null); numericBufferRef.current = null; setJumpMode({ type: 'quick', value: '', error: '' }); }}
+            title="Quick jump to row, task name, or date"
           >
             Jump
           </button>
@@ -1239,6 +1264,7 @@ export default function TaskGrid() {
         <div className="ws-jump-prompt" role="dialog" aria-label="Quick jump">
           <div className="ws-jump-title">Quick Jump</div>
           <input
+            ref={jumpInputRef}
             className="ws-jump-input"
             type="text"
             placeholder="row#, name, or date"
@@ -1246,7 +1272,7 @@ export default function TaskGrid() {
             value={jumpMode.value}
             onChange={handleJumpChange}
             onKeyDown={handleJumpKeyDown}
-            onBlur={() => setJumpMode(null)}
+            onBlur={() => { numericBufferRef.current = null; setJumpMode(null); }}
             aria-label="Jump to row number, task name, or date"
           />
           {jumpMode.error && (

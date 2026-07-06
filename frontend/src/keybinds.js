@@ -279,12 +279,7 @@ export const FIXED_SHORTCUTS = [
   {
     group: 'Navigation',
     keys: '⇧ + digits',
-    description: 'Quick Jump: no cell selected → jump to row N; cell selected → jump to date column N in current row. Hold ⇧, type digits, release ⇧ or press ↵.',
-  },
-  {
-    group: 'Navigation',
-    keys: '⇧0',
-    description: 'Open Jump prompt (name, date, row#) — only when digit buffer is empty. Requires Quick Jump enabled.',
+    description: 'Opens the Jump panel and fills it live. No selection: Enter confirms row jump N. With selection: Enter confirms date column N. Hold ⇧, type digits, release ⇧ or press ↵.',
   },
 ];
 
@@ -299,8 +294,7 @@ export const KEYBIND_HELP = [
     items: [
       { keys: '↑ / ↓', desc: 'Move selection between tasks' },
       { keys: '← / →', desc: 'Move selection between dates' },
-      { keys: '⇧ + digits', desc: 'No selection: jump to row N · With selection: jump to date column N in current row' },
-      { keys: '⇧0',         desc: 'Jump prompt (name, date, row#) — when digit buffer empty · requires Quick Jump enabled' },
+      { keys: '⇧ + digits', desc: 'Opens Jump panel live · release ⇧ or ↵ to confirm · no selection: row N · with selection: date column N' },
     ],
   },
   {
