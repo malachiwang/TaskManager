@@ -266,10 +266,10 @@ export default function TaskGrid() {
   // Pointer-based row drag state.
   // dragStateRef holds drag geometry — mutated imperatively, no re-render on move.
   // dragOverIdRef mirrors dragOverId for synchronous reads in event handlers.
+  // ghostElRef holds the imperative full-row clone overlay DOM node (position:fixed).
   const dragStateRef = useRef({ active: false });
   const dragOverIdRef = useRef(null);
-  const ghostRef = useRef(null);
-  const [rowDragActive, setRowDragActive] = useState(false);
+  const ghostElRef = useRef(null);
   const [dragSrcId, setDragSrcId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
 
@@ -455,8 +455,10 @@ export default function TaskGrid() {
 
   // ---------------------------------------------------------------------------
   // Pointer-based row drag handler — only active when reorderEnabled.
-  // Uses pointer events + a fixed-position ghost div instead of HTML drag API,
-  // so the row visibly follows the cursor rather than producing a static ghost image.
+  // Uses pointer events + a fixed-position clone of the real <tr> instead of the
+  // HTML drag API. The clone is a full visible row (frozen meta columns + the
+  // date cells currently on screen), so the whole spreadsheet row visibly follows
+  // the cursor rather than producing a static ghost image or a partial strip.
   // ---------------------------------------------------------------------------
 
   function handleHandlePointerDown(e, taskId) {
@@ -464,32 +466,68 @@ export default function TaskGrid() {
     e.preventDefault();
     const task = tasks.find((t) => t.id === taskId);
     if (!task) return;
-    const trEl = document.querySelector(`tr[data-task-id="${taskId}"]`);
-    if (!trEl) return;
-    const trRect = trEl.getBoundingClientRect();
-    const tableEl = document.querySelector('.task-grid');
-    const tableRect = tableEl?.getBoundingClientRect() ?? { left: 0, width: 800 };
-    const ghostWidth = STICKY_COLS.reduce((sum, col) => sum + (colLayout.widths[col] ?? DEFAULT_WIDTHS[col]), 0)
-      + (colLayout.widths['col-freq'] ?? DEFAULT_WIDTHS['col-freq'])
-      + (colLayout.widths['col-days'] ?? DEFAULT_WIDTHS['col-days']);
 
-    dragStateRef.current = {
-      active: true,
-      taskId,
-      task,
-      pointerOffsetY: e.clientY - trRect.top,
-      initialTop: trRect.top,
-      ghostLeft: tableRect.left,
-      ghostWidth: Math.min(ghostWidth, tableRect.width),
-    };
+    const srcTr = document.querySelector(`tr[data-task-id="${taskId}"]`);
+    const srcTable = srcTr?.closest('table.task-grid');
+    const scrollEl = srcTr?.closest('.grid-wrapper');
+    if (!srcTr || !srcTable || !scrollEl) return;
+
+    const trRect = srcTr.getBoundingClientRect();
+    const scrollRect = scrollEl.getBoundingClientRect();
+
+    // Build a fixed-position clip window aligned to the visible grid viewport,
+    // holding a clone of the source table cropped to a single row and scrolled to
+    // match the grid's current horizontal scroll. Because the clip is itself a
+    // scroll container, the sticky meta columns pin left exactly as in the real
+    // grid while the visible date cells scroll into view — the moving visual reads
+    // as the actual full row lifted from the sheet.
+    const clip = document.createElement('div');
+    clip.className = 'row-drag-ghost-clip';
+    clip.style.left = scrollRect.left + 'px';
+    clip.style.top = trRect.top + 'px';
+    clip.style.width = scrollRect.width + 'px';
+    clip.style.height = trRect.height + 'px';
+
+    const tableClone = srcTable.cloneNode(false);
+    tableClone.style.width = srcTable.getBoundingClientRect().width + 'px';
+    tableClone.style.tableLayout = 'fixed';
+    tableClone.style.margin = '0';
+    tableClone.style.minWidth = '0';
+
+    const tbody = document.createElement('tbody');
+    const trClone = srcTr.cloneNode(true);
+    trClone.removeAttribute('data-task-id'); // keep it out of elementsFromPoint hit testing
+    trClone.classList.remove('drag-over', 'drag-source');
+
+    // Lock every cell to its rendered width so the fixed-layout clone matches the
+    // real row exactly (date cells have no inline width otherwise).
+    const srcCells = srcTr.children;
+    const cloneCells = trClone.children;
+    for (let i = 0; i < srcCells.length; i++) {
+      const w = srcCells[i].getBoundingClientRect().width;
+      const cc = cloneCells[i];
+      if (!cc) continue;
+      cc.style.width = w + 'px';
+      cc.style.minWidth = w + 'px';
+      cc.style.maxWidth = w + 'px';
+    }
+
+    tbody.appendChild(trClone);
+    tableClone.appendChild(tbody);
+    clip.appendChild(tableClone);
+    document.body.appendChild(clip);
+    // Mirror horizontal scroll so the clone shows the same date cells now on screen.
+    clip.scrollLeft = scrollEl.scrollLeft;
+
+    ghostElRef.current = clip;
+    dragStateRef.current = { active: true, taskId, pointerOffsetY: e.clientY - trRect.top };
     dragOverIdRef.current = null;
     setDragSrcId(taskId);
-    setRowDragActive(true);
 
     function onPointerMove(ev) {
       if (!dragStateRef.current.active) return;
-      if (ghostRef.current) {
-        ghostRef.current.style.top = (ev.clientY - dragStateRef.current.pointerOffsetY) + 'px';
+      if (ghostElRef.current) {
+        ghostElRef.current.style.top = (ev.clientY - dragStateRef.current.pointerOffsetY) + 'px';
       }
       const elements = document.elementsFromPoint(ev.clientX, ev.clientY);
       const trTarget = elements.find(
@@ -505,7 +543,10 @@ export default function TaskGrid() {
     function cleanup() {
       dragStateRef.current.active = false;
       dragOverIdRef.current = null;
-      setRowDragActive(false);
+      if (ghostElRef.current) {
+        ghostElRef.current.remove();
+        ghostElRef.current = null;
+      }
       setDragSrcId(null);
       setDragOverId(null);
       window.removeEventListener('pointermove', onPointerMove);
@@ -1142,46 +1183,6 @@ export default function TaskGrid() {
   // Render
   // ---------------------------------------------------------------------------
 
-  // Build the floating row ghost for pointer-based drag.
-  // Returns null when no drag is in progress. The ghost is position:fixed and
-  // pointer-events:none so it doesn't interfere with elementsFromPoint hit testing.
-  function buildGhostNode() {
-    if (!rowDragActive) return null;
-    const ds = dragStateRef.current;
-    if (!ds.task) return null;
-    const { task: gt, ghostLeft, ghostWidth, initialTop } = ds;
-    const inactive = gt.is_paused === 1 || gt.is_scheduled === true || gt.is_ended === true;
-    const status = gt.is_ended ? 'Finished' : gt.is_paused === 1 ? 'Hiatus' : 'Active';
-    const gw = (col) => colLayout.widths[col] ?? DEFAULT_WIDTHS[col];
-    const fmtFrom = (iso) => {
-      if (!iso) return '';
-      const [, m, d] = iso.split('-').map(Number);
-      return `${m}/${d}`;
-    };
-    return (
-      <div
-        ref={ghostRef}
-        className="row-drag-ghost"
-        style={{ position: 'fixed', top: initialTop, left: ghostLeft, width: ghostWidth, pointerEvents: 'none', zIndex: 9000 }}
-      >
-        <div className="ghost-cell ghost-actions" style={{ width: gw('col-actions') }}>
-          <span className="drag-handle">⠿</span>
-          <span className="ghost-edit-lbl">EDIT</span>
-        </div>
-        <div className="ghost-cell ghost-center" style={{ width: gw('col-urg') }}>{inactive ? '—' : (gt.urgency ?? '')}</div>
-        <div className="ghost-cell ghost-center" style={{ width: gw('col-pri') }}>{gt.priority ?? ''}</div>
-        <div className="ghost-cell" style={{ width: gw('col-status') }}>{status}</div>
-        <div className="ghost-cell" style={{ width: gw('col-active-from') }}>{fmtFrom(gt.active_from)}</div>
-        <div className="ghost-cell" style={{ width: gw('col-cat') }}>{gt.category || ''}</div>
-        <div className="ghost-cell ghost-task" style={{ width: gw('col-task') }}>{gt.name || ''}</div>
-        <div className="ghost-cell" style={{ width: gw('col-sub') }}>{gt.subtask || ''}</div>
-        <div className="ghost-cell ghost-center" style={{ width: gw('col-freq') }}>{gt.interval_days ?? ''}</div>
-        <div className="ghost-cell ghost-center" style={{ width: gw('col-days') }}>{inactive ? '—' : (gt.days_since ?? '')}</div>
-      </div>
-    );
-  }
-  const ghostNode = buildGhostNode();
-
   if (loading) return <div className="grid-status">Loading…</div>;
   if (error) return (
     <div className="grid-status error">
@@ -1432,8 +1433,6 @@ export default function TaskGrid() {
         )}
       </div>
       </div>
-
-      {ghostNode}
 
       {jumpMode && (
         <div className="ws-jump-prompt" role="dialog" aria-label="Quick jump">
