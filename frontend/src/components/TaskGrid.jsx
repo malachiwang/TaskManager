@@ -179,6 +179,26 @@ function resolveJump(raw, dates, tasks) {
   return { error: `No match for "${v}"` };
 }
 
+// Resolve the task id of the grid row under a screen point, skipping excludeId.
+// Uses closest('tr[data-task-id]') so a hit on a <td>/<span>/dc-box still resolves
+// its parent row. The drag clone's <tr> has no data-task-id, so it is never matched.
+function resolveRowIdAt(clientX, clientY, excludeId) {
+  const els = document.elementsFromPoint(clientX, clientY);
+  for (const el of els) {
+    const tr = el.closest?.('tr[data-task-id]');
+    if (!tr) continue;
+    const id = parseInt(tr.dataset.taskId, 10);
+    if (!Number.isNaN(id) && id !== excludeId) return id;
+  }
+  return null;
+}
+
+// Normalized section key — mirrors grouping.js so the same-section reorder guard
+// compares the exact value used to build Section-view groups.
+function sectionKey(task) {
+  return task.section?.trim() || '(no section)';
+}
+
 export default function TaskGrid() {
   // Real today — always fixed regardless of which month is displayed.
   const todayStr = toLocalDate(new Date());
@@ -529,11 +549,7 @@ export default function TaskGrid() {
       if (ghostElRef.current) {
         ghostElRef.current.style.top = (ev.clientY - dragStateRef.current.pointerOffsetY) + 'px';
       }
-      const elements = document.elementsFromPoint(ev.clientX, ev.clientY);
-      const trTarget = elements.find(
-        (el) => el.tagName === 'TR' && el.dataset?.taskId && el.dataset.taskId !== String(taskId),
-      );
-      const newOverId = trTarget ? parseInt(trTarget.dataset.taskId, 10) : null;
+      const newOverId = resolveRowIdAt(ev.clientX, ev.clientY, taskId);
       if (newOverId !== dragOverIdRef.current) {
         dragOverIdRef.current = newOverId;
         setDragOverId(newOverId);
@@ -556,23 +572,27 @@ export default function TaskGrid() {
       window.removeEventListener('blur', cleanup);
     }
 
-    function onPointerUp() {
+    function onPointerUp(ev) {
       const srcId = dragStateRef.current.taskId;
-      const targetId = dragOverIdRef.current;
+      // Re-resolve the row under the pointer at drop time; fall back to the last
+      // hovered id so a drop that lands between pointermove samples still counts.
+      const resolved = resolveRowIdAt(ev.clientX, ev.clientY, srcId);
+      const targetId = resolved ?? dragOverIdRef.current;
       cleanup();
       if (!srcId || !targetId || srcId === targetId) return;
-      if (groupMode === GROUP_MODES.SECTION) {
-        const src = tasks.find((t) => t.id === srcId);
-        const tgt = tasks.find((t) => t.id === targetId);
-        if (src && tgt && src.section !== tgt.section) return;
-      }
       const prev = tasks;
-      const srcIdx = prev.findIndex((t) => t.id === srcId);
-      const targetIdx = prev.findIndex((t) => t.id === targetId);
-      if (srcIdx === -1 || targetIdx === -1) return;
+      const src = prev.find((t) => t.id === srcId);
+      const tgt = prev.find((t) => t.id === targetId);
+      if (!src || !tgt) return;
+      // Section view: allow same-section reorder, reject cross-section (never mutate section).
+      if (groupMode === GROUP_MODES.SECTION && sectionKey(src) !== sectionKey(tgt)) return;
+      // Insert source immediately before target — matches the black top insertion line.
       const next = [...prev];
-      const [moved] = next.splice(srcIdx, 1);
-      next.splice(targetIdx, 0, moved);
+      const srcIdx = next.findIndex((t) => t.id === srcId);
+      next.splice(srcIdx, 1);
+      const targetIdx = next.findIndex((t) => t.id === targetId);
+      if (targetIdx === -1) return;
+      next.splice(targetIdx, 0, src);
       setTasks(next);
       reorderTasks(next.map((t) => t.id)).catch(() => setTasks(prev));
     }
