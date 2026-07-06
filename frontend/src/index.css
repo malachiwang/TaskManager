@@ -579,7 +579,12 @@ thead .meta-col {
   background: var(--accent-soft);
 }
 
-/* P2.0B — inline edit input inside a meta-col td */
+/* P2.0B — inline edit input inside a meta-col td.
+   The input has no focus ring of its own: while editing, the parent td carries
+   .meta-selected which draws the single (outer) blue outline. Removing the input's
+   own outline/border/box-shadow eliminates the doubled blue rectangle (P4.0A-fix1).
+   Scoped to grid inline-edit inputs only — modal/date/settings/search/Jump inputs
+   are unaffected. */
 .cell-edit-input {
   width: 100%;
   font-family: var(--font-sans);
@@ -587,8 +592,8 @@ thead .meta-col {
   color: var(--ink-2);
   background: var(--bg-panel);
   border: none;
-  outline: 2px solid var(--accent);
-  outline-offset: -1px;
+  outline: none;
+  box-shadow: none;
   padding: 0 2px;
   box-sizing: border-box;
   line-height: inherit;
