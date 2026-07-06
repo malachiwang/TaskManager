@@ -186,6 +186,54 @@ body {
   cursor: not-allowed;
 }
 
+/* Top utility/tool nav (P5.0-fix1) — Dashboard/Archive/Settings, right-aligned
+   in the header, visually separate from the primary sheet tabs below. Reuses
+   the .tab button styling. */
+.app-utility-nav {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+/* Bottom worksheet-tab bar (P5.0-fix1) — primary sheet switch (Tasks / Reading),
+   styled like Google Sheets worksheet tabs. It is a normal flex child at the
+   bottom of the column layout (not fixed), so it never overlaps content. */
+.sheet-tabbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0 12px;
+  background: var(--ink);
+  border-top: 1px solid var(--ink-2);
+}
+
+.sheet-tab {
+  padding: 4px 16px 5px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.sheet-tab:hover:not(.sheet-tab-active) {
+  background: rgba(255, 255, 255, 0.10);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.sheet-tab-active {
+  background: var(--bg-panel);
+  color: var(--ink);
+  border-color: rgba(255, 255, 255, 0.3);
+  font-weight: 600;
+}
+
 .app-main {
   flex: 1;
   overflow: hidden;
@@ -3151,7 +3199,8 @@ thead .meta-col {
 }
 
 /* ── App-level grid state: slightly cooler bg behind sheet ── */
-.app-main[data-tab='grid'] {
+.app-main[data-tab='tasks'],
+.app-main[data-tab='reading'] {
   background: var(--bg-app);
 }
 
