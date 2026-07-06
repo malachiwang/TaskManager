@@ -460,17 +460,31 @@ export default function TaskGrid() {
 
     const task = tasks.find((t) => t.id === taskId);
     if (task) {
-      const label = task.category ? `${task.category}  ·  ${task.name}` : task.name;
+      const inactive = task.is_paused === 1 || task.is_scheduled === true || task.is_ended === true;
+
       const el = document.createElement('div');
-      el.className = 'drag-preview';
-      el.textContent = label;
-      // Position off-screen so it doesn't flash before the browser captures it.
+      el.className = 'drag-row-preview';
       el.style.position = 'fixed';
       el.style.top = '0px';
       el.style.left = '-9999px';
+
+      function cell(cls, text) {
+        const s = document.createElement('span');
+        s.className = cls;
+        s.textContent = text ?? '';
+        el.appendChild(s);
+      }
+
+      cell('drp-urg',  inactive ? '—' : String(task.urgency ?? ''));
+      cell('drp-cat',  task.category || '');
+      cell('drp-task', task.name || '');
+      if (task.subtask) cell('drp-sub', task.subtask);
+      cell('drp-freq', task.interval_days != null ? String(task.interval_days) : '');
+      cell('drp-days', inactive ? '—' : (task.days_since != null ? String(task.days_since) : ''));
+
       document.body.appendChild(el);
-      // Cursor appears 20px from left, 14px from top of the preview pill.
-      e.dataTransfer.setDragImage(el, 20, 14);
+      // Cursor at x=30 places it over the category cell area of the preview strip.
+      e.dataTransfer.setDragImage(el, 30, 14);
       requestAnimationFrame(() => el.remove());
     }
   }

@@ -928,23 +928,42 @@ thead .meta-col {
   background: var(--accent-soft) !important;
 }
 
-/* Drag preview pill — created imperatively in handleDragStart and removed next frame. */
-.drag-preview {
+/* Drag row-strip preview — created imperatively in handleDragStart and removed next frame. */
+.drag-row-preview {
+  display: flex;
+  align-items: center;
   background: var(--bg-panel);
   border: 1px solid var(--grid-border);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
-  border-radius: 2px;
-  padding: 5px 12px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
   font-size: 11px;
   font-family: inherit;
   color: var(--ink-2);
-  white-space: nowrap;
-  max-width: 280px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  height: 28px;
   pointer-events: none;
   opacity: 0.95;
+  overflow: hidden;
 }
+
+.drag-row-preview > span {
+  flex-shrink: 0;
+  padding: 0 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-right: 1px solid var(--grid-border);
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.drag-row-preview > span:last-child { border-right: none; }
+
+.drp-urg  { width: 36px; justify-content: center; color: var(--muted); }
+.drp-cat  { width: 82px; color: var(--muted); }
+.drp-task { width: 180px; }
+.drp-sub  { width: 82px; color: var(--muted); }
+.drp-freq { width: 38px; justify-content: center; color: var(--muted); }
+.drp-days { width: 38px; justify-content: center; color: var(--muted); }
 
 .ws-snap-delete-confirm {
   font-size: 11px;
