@@ -263,9 +263,13 @@ export default function TaskGrid() {
   const canReorderInGroupMode = groupMode === GROUP_MODES.NONE || groupMode === GROUP_MODES.SECTION;
   const reorderEnabled = canReorderInGroupMode && !hasMeaningfulFilter && !searchQuery.trim();
 
-  // Drag-and-drop reorder state — refs avoid stale-closure issues in handlers.
-  // dragSrcId state mirrors dragSrcIdRef so the source row can receive a CSS class.
-  const dragSrcIdRef = useRef(null);
+  // Pointer-based row drag state.
+  // dragStateRef holds drag geometry — mutated imperatively, no re-render on move.
+  // dragOverIdRef mirrors dragOverId for synchronous reads in event handlers.
+  const dragStateRef = useRef({ active: false });
+  const dragOverIdRef = useRef(null);
+  const ghostRef = useRef(null);
+  const [rowDragActive, setRowDragActive] = useState(false);
   const [dragSrcId, setDragSrcId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
 
@@ -450,89 +454,97 @@ export default function TaskGrid() {
   }
 
   // ---------------------------------------------------------------------------
-  // Drag-and-drop reorder handlers — only active when reorderEnabled
+  // Pointer-based row drag handler — only active when reorderEnabled.
+  // Uses pointer events + a fixed-position ghost div instead of HTML drag API,
+  // so the row visibly follows the cursor rather than producing a static ghost image.
   // ---------------------------------------------------------------------------
 
-  function handleDragStart(e, taskId) {
-    dragSrcIdRef.current = taskId;
-    setDragSrcId(taskId);
-    e.dataTransfer.effectAllowed = 'move';
-
+  function handleHandlePointerDown(e, taskId) {
+    if (!reorderEnabled || e.button !== 0) return;
+    e.preventDefault();
     const task = tasks.find((t) => t.id === taskId);
-    if (task) {
-      const inactive = task.is_paused === 1 || task.is_scheduled === true || task.is_ended === true;
+    if (!task) return;
+    const trEl = document.querySelector(`tr[data-task-id="${taskId}"]`);
+    if (!trEl) return;
+    const trRect = trEl.getBoundingClientRect();
+    const tableEl = document.querySelector('.task-grid');
+    const tableRect = tableEl?.getBoundingClientRect() ?? { left: 0, width: 800 };
+    const ghostWidth = STICKY_COLS.reduce((sum, col) => sum + (colLayout.widths[col] ?? DEFAULT_WIDTHS[col]), 0)
+      + (colLayout.widths['col-freq'] ?? DEFAULT_WIDTHS['col-freq'])
+      + (colLayout.widths['col-days'] ?? DEFAULT_WIDTHS['col-days']);
 
-      const el = document.createElement('div');
-      el.className = 'drag-row-preview';
-      el.style.position = 'fixed';
-      el.style.top = '0px';
-      el.style.left = '-9999px';
+    dragStateRef.current = {
+      active: true,
+      taskId,
+      task,
+      pointerOffsetY: e.clientY - trRect.top,
+      initialTop: trRect.top,
+      ghostLeft: tableRect.left,
+      ghostWidth: Math.min(ghostWidth, tableRect.width),
+    };
+    dragOverIdRef.current = null;
+    setDragSrcId(taskId);
+    setRowDragActive(true);
 
-      function cell(cls, text) {
-        const s = document.createElement('span');
-        s.className = cls;
-        s.textContent = text ?? '';
-        el.appendChild(s);
+    function onPointerMove(ev) {
+      if (!dragStateRef.current.active) return;
+      if (ghostRef.current) {
+        ghostRef.current.style.top = (ev.clientY - dragStateRef.current.pointerOffsetY) + 'px';
       }
-
-      cell('drp-urg',  inactive ? '—' : String(task.urgency ?? ''));
-      cell('drp-cat',  task.category || '');
-      cell('drp-task', task.name || '');
-      if (task.subtask) cell('drp-sub', task.subtask);
-      cell('drp-freq', task.interval_days != null ? String(task.interval_days) : '');
-      cell('drp-days', inactive ? '—' : (task.days_since != null ? String(task.days_since) : ''));
-
-      document.body.appendChild(el);
-      // Cursor at x=30 places it over the category cell area of the preview strip.
-      e.dataTransfer.setDragImage(el, 30, 14);
-      requestAnimationFrame(() => el.remove());
-    }
-  }
-
-  function handleDragOver(e, taskId) {
-    e.preventDefault();
-    if (taskId === dragSrcIdRef.current) return;
-    // In Section mode, suppress the drop indicator for cross-section targets.
-    if (groupMode === GROUP_MODES.SECTION) {
-      const src = tasks.find((t) => t.id === dragSrcIdRef.current);
-      const tgt = tasks.find((t) => t.id === taskId);
-      if (src && tgt && src.section !== tgt.section) {
-        e.dataTransfer.dropEffect = 'none';
-        return;
+      const elements = document.elementsFromPoint(ev.clientX, ev.clientY);
+      const trTarget = elements.find(
+        (el) => el.tagName === 'TR' && el.dataset?.taskId && el.dataset.taskId !== String(taskId),
+      );
+      const newOverId = trTarget ? parseInt(trTarget.dataset.taskId, 10) : null;
+      if (newOverId !== dragOverIdRef.current) {
+        dragOverIdRef.current = newOverId;
+        setDragOverId(newOverId);
       }
     }
-    e.dataTransfer.dropEffect = 'move';
-    setDragOverId(taskId);
-  }
 
-  function handleDrop(e, targetTaskId) {
-    e.preventDefault();
-    const srcId = dragSrcIdRef.current;
-    dragSrcIdRef.current = null;
-    setDragSrcId(null);
-    setDragOverId(null);
-    if (!srcId || srcId === targetTaskId) return;
-    // In Section mode, block cross-section drops — we never change task.section.
-    if (groupMode === GROUP_MODES.SECTION) {
-      const src = tasks.find((t) => t.id === srcId);
-      const tgt = tasks.find((t) => t.id === targetTaskId);
-      if (src && tgt && src.section !== tgt.section) return;
+    function cleanup() {
+      dragStateRef.current.active = false;
+      dragOverIdRef.current = null;
+      setRowDragActive(false);
+      setDragSrcId(null);
+      setDragOverId(null);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', cleanup);
+      window.removeEventListener('keydown', onEscKey);
+      window.removeEventListener('blur', cleanup);
     }
-    const prev = tasks;
-    const srcIdx = prev.findIndex((t) => t.id === srcId);
-    const targetIdx = prev.findIndex((t) => t.id === targetTaskId);
-    if (srcIdx === -1 || targetIdx === -1) return;
-    const next = [...prev];
-    const [moved] = next.splice(srcIdx, 1);
-    next.splice(targetIdx, 0, moved);
-    setTasks(next);
-    reorderTasks(next.map((t) => t.id)).catch(() => setTasks(prev));
-  }
 
-  function handleDragEnd() {
-    dragSrcIdRef.current = null;
-    setDragSrcId(null);
-    setDragOverId(null);
+    function onPointerUp() {
+      const srcId = dragStateRef.current.taskId;
+      const targetId = dragOverIdRef.current;
+      cleanup();
+      if (!srcId || !targetId || srcId === targetId) return;
+      if (groupMode === GROUP_MODES.SECTION) {
+        const src = tasks.find((t) => t.id === srcId);
+        const tgt = tasks.find((t) => t.id === targetId);
+        if (src && tgt && src.section !== tgt.section) return;
+      }
+      const prev = tasks;
+      const srcIdx = prev.findIndex((t) => t.id === srcId);
+      const targetIdx = prev.findIndex((t) => t.id === targetId);
+      if (srcIdx === -1 || targetIdx === -1) return;
+      const next = [...prev];
+      const [moved] = next.splice(srcIdx, 1);
+      next.splice(targetIdx, 0, moved);
+      setTasks(next);
+      reorderTasks(next.map((t) => t.id)).catch(() => setTasks(prev));
+    }
+
+    function onEscKey(ev) {
+      if (ev.key === 'Escape') cleanup();
+    }
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', cleanup);
+    window.addEventListener('keydown', onEscKey);
+    window.addEventListener('blur', cleanup);
   }
 
   const handleSaveNote = useCallback(async (taskId, date, noteText) => {
@@ -1130,6 +1142,46 @@ export default function TaskGrid() {
   // Render
   // ---------------------------------------------------------------------------
 
+  // Build the floating row ghost for pointer-based drag.
+  // Returns null when no drag is in progress. The ghost is position:fixed and
+  // pointer-events:none so it doesn't interfere with elementsFromPoint hit testing.
+  function buildGhostNode() {
+    if (!rowDragActive) return null;
+    const ds = dragStateRef.current;
+    if (!ds.task) return null;
+    const { task: gt, ghostLeft, ghostWidth, initialTop } = ds;
+    const inactive = gt.is_paused === 1 || gt.is_scheduled === true || gt.is_ended === true;
+    const status = gt.is_ended ? 'Finished' : gt.is_paused === 1 ? 'Hiatus' : 'Active';
+    const gw = (col) => colLayout.widths[col] ?? DEFAULT_WIDTHS[col];
+    const fmtFrom = (iso) => {
+      if (!iso) return '';
+      const [, m, d] = iso.split('-').map(Number);
+      return `${m}/${d}`;
+    };
+    return (
+      <div
+        ref={ghostRef}
+        className="row-drag-ghost"
+        style={{ position: 'fixed', top: initialTop, left: ghostLeft, width: ghostWidth, pointerEvents: 'none', zIndex: 9000 }}
+      >
+        <div className="ghost-cell ghost-actions" style={{ width: gw('col-actions') }}>
+          <span className="drag-handle">⠿</span>
+          <span className="ghost-edit-lbl">EDIT</span>
+        </div>
+        <div className="ghost-cell ghost-center" style={{ width: gw('col-urg') }}>{inactive ? '—' : (gt.urgency ?? '')}</div>
+        <div className="ghost-cell ghost-center" style={{ width: gw('col-pri') }}>{gt.priority ?? ''}</div>
+        <div className="ghost-cell" style={{ width: gw('col-status') }}>{status}</div>
+        <div className="ghost-cell" style={{ width: gw('col-active-from') }}>{fmtFrom(gt.active_from)}</div>
+        <div className="ghost-cell" style={{ width: gw('col-cat') }}>{gt.category || ''}</div>
+        <div className="ghost-cell ghost-task" style={{ width: gw('col-task') }}>{gt.name || ''}</div>
+        <div className="ghost-cell" style={{ width: gw('col-sub') }}>{gt.subtask || ''}</div>
+        <div className="ghost-cell ghost-center" style={{ width: gw('col-freq') }}>{gt.interval_days ?? ''}</div>
+        <div className="ghost-cell ghost-center" style={{ width: gw('col-days') }}>{inactive ? '—' : (gt.days_since ?? '')}</div>
+      </div>
+    );
+  }
+  const ghostNode = buildGhostNode();
+
   if (loading) return <div className="grid-status">Loading…</div>;
   if (error) return (
     <div className="grid-status error">
@@ -1353,10 +1405,7 @@ export default function TaskGrid() {
                     reorderEnabled={reorderEnabled}
                     isDragOver={dragOverId === task.id}
                     isDragSource={dragSrcId === task.id}
-                    onDragStart={handleDragStart}
-                    onDragOver={handleDragOver}
-                    onDrop={handleDrop}
-                    onDragEnd={handleDragEnd}
+                    onHandlePointerDown={handleHandlePointerDown}
                     onIncrement={handleIncrement}
                     onClear={handleClear}
                     onEdit={openEdit}
@@ -1383,6 +1432,8 @@ export default function TaskGrid() {
         )}
       </div>
       </div>
+
+      {ghostNode}
 
       {jumpMode && (
         <div className="ws-jump-prompt" role="dialog" aria-label="Quick jump">

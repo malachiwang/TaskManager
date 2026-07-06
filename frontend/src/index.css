@@ -928,42 +928,39 @@ thead .meta-col {
   background: var(--accent-soft) !important;
 }
 
-/* Drag row-strip preview — created imperatively in handleDragStart and removed next frame. */
-.drag-row-preview {
+/* Floating row ghost for pointer-based drag — position:fixed, follows cursor imperatively. */
+.row-drag-ghost {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   background: var(--bg-panel);
-  border: 1px solid var(--grid-border);
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--hair);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
   font-size: 11px;
   font-family: inherit;
   color: var(--ink-2);
   height: 28px;
   pointer-events: none;
-  opacity: 0.95;
+  opacity: 0.9;
   overflow: hidden;
 }
 
-.drag-row-preview > span {
+.ghost-cell {
   flex-shrink: 0;
-  padding: 0 5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  border-right: 1px solid var(--grid-border);
-  height: 100%;
   display: flex;
   align-items: center;
+  padding: 0 4px;
+  overflow: hidden;
+  white-space: nowrap;
+  border-right: 1px solid var(--grid-border);
+  font-size: 11px;
+  box-sizing: border-box;
 }
 
-.drag-row-preview > span:last-child { border-right: none; }
-
-.drp-urg  { width: 36px; justify-content: center; color: var(--muted); }
-.drp-cat  { width: 82px; color: var(--muted); }
-.drp-task { width: 180px; }
-.drp-sub  { width: 82px; color: var(--muted); }
-.drp-freq { width: 38px; justify-content: center; color: var(--muted); }
-.drp-days { width: 38px; justify-content: center; color: var(--muted); }
+.ghost-cell:last-child { border-right: none; }
+.ghost-center { justify-content: center; }
+.ghost-task { font-weight: 500; }
+.ghost-actions { justify-content: center; gap: 4px; }
+.ghost-edit-lbl { font-size: 9px; color: var(--muted-2); }
 
 .ws-snap-delete-confirm {
   font-size: 11px;

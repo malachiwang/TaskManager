@@ -100,7 +100,7 @@ function urgencyClass(urgency) {
 export default function TaskRow({
   task, dates, todayStr, completions, notes, selectedCell, colLayout,
   selectedMetaCell, editingTextCell, armedCell,
-  reorderEnabled, isDragOver, isDragSource, onDragStart, onDragOver, onDrop, onDragEnd,
+  reorderEnabled, isDragOver, isDragSource, onHandlePointerDown,
   onIncrement, onClear, onEdit, onSelect,
   onSelectMeta, onStartTextEdit, onCommitTextEdit, onCancelTextEdit,
 }) {
@@ -149,17 +149,13 @@ export default function TaskRow({
     <tr
       className={rowClass}
       data-task-id={task.id}
-      onDragOver={reorderEnabled ? (e) => onDragOver(e, task.id) : undefined}
-      onDrop={reorderEnabled ? (e) => onDrop(e, task.id) : undefined}
     >
       <td className="meta-col sticky-col col-actions" style={cs('col-actions')}>
         <div className="row-action-group">
           {reorderEnabled && (
             <span
               className="drag-handle"
-              draggable
-              onDragStart={(e) => onDragStart(e, task.id)}
-              onDragEnd={onDragEnd}
+              onPointerDown={(e) => onHandlePointerDown(e, task.id)}
             >⠿</span>
           )}
           <button
