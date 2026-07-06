@@ -3,6 +3,7 @@ import DateCell from './DateCell.jsx';
 import LinkifiedText from './LinkifiedText.jsx';
 import LinkPopover from './LinkPopover.jsx';
 import { hasLinks, extractLinks } from '../linkUtils.js';
+import { urgencyClass, urgencyReason } from '../urgency.js';
 
 function displayStatus(task) {
   if (task.is_ended) return 'Finished';
@@ -89,31 +90,6 @@ function InlineTextCell({
   );
 }
 
-// Urgency → color-band thresholds. DISPLAY ONLY — this maps a computed urgency
-// to a CSS color class; it does not change the urgency value or any stored data.
-//
-// Recalibrated in P4.0A. The urgency formula (backend logic.py) saturates fast:
-// a task at exactly its interval (days_since ≈ interval_days) already scores
-// ~8.7–9.2, so the previous critical>=8 cutoff painted nearly every due/overdue
-// task full red — the grid looked uniformly "red 10" and gave no ranking.
-// These bands (for a default priority-5 task) mean, in overdue terms:
-//   critical (red):   >= 9.5  → ~1.5× interval overdue and beyond
-//   high (amber):     >= 8.0  → around the due point
-//   noticeable:       >= 5.0  → approaching due (~0.4× interval)
-//   low (muted):      <  5.0  → fresh
-// NOTE: the formula still compresses everything past ~2.5× interval into ~10,
-// so very-overdue tasks remain indistinguishable numerically — differentiating
-// those requires a scoring change (deferred to Pressure V2 / P4.0B), not display.
-const URG_CRITICAL   = 9.5;
-const URG_HIGH       = 8.0;
-const URG_NOTICEABLE = 5.0;
-
-function urgencyClass(urgency) {
-  if (urgency >= URG_CRITICAL)   return 'urg-critical';
-  if (urgency >= URG_HIGH)       return 'urg-high';
-  if (urgency >= URG_NOTICEABLE) return 'urg-noticeable';
-  return 'urg-low';
-}
 
 export default function TaskRow({
   task, dates, todayStr, completions, notes, selectedCell, colLayout,
@@ -183,7 +159,7 @@ export default function TaskRow({
           >EDIT</button>
         </div>
       </td>
-      <td className={`meta-col sticky-col col-urg ${isPaused || isScheduled || isEnded ? '' : urgencyClass(task.urgency)}`} style={cs('col-urg')}>
+      <td className={`meta-col sticky-col col-urg ${isPaused || isScheduled || isEnded ? '' : urgencyClass(task.urgency)}`} style={cs('col-urg')} title={urgencyReason(task)}>
         {isPaused || isScheduled || isEnded ? '—' : task.urgency}
       </td>
       <td className="meta-col sticky-col col-pri" style={cs('col-pri')}>{task.priority}</td>

@@ -1,16 +1,10 @@
 import { useState, useEffect } from 'react';
 import { fetchDashboard, fetchSnapshotPressure } from '../api.js';
+import { urgencyClass } from '../urgency.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function urgencyClass(u) {
-  if (u >= 8) return 'urg-critical';
-  if (u >= 6) return 'urg-high';
-  if (u >= 3) return 'urg-noticeable';
-  return 'urg-low';
-}
 
 // CSS-only micro-bar — no chart library.
 function UrgencyBar({ value, wide = false }) {

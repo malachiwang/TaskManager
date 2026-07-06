@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { urgencyLabel, urgencyReason } from '../urgency.js';
 
 const STATUS_OPTIONS = ['active', 'hiatus'];
 // Display labels only — the stored status value stays lowercase ('active'/'hiatus').
@@ -79,6 +80,18 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
             <div className="task-modal-subtitle">
               {isEdit ? 'scheduling · status · priority · notes' : 'local task record · SQLite'}
             </div>
+            {isEdit && (() => {
+              // Read-only urgency decomposition (P4.0B) — explains the current
+              // pressure. Inactive tasks (Hiatus/Finished/scheduled) show '—'.
+              const inactive = task.is_paused === 1 || task.is_ended || task.is_scheduled;
+              return (
+                <div className="task-modal-urgency">
+                  <span className="task-modal-urgency-val">{inactive ? '—' : task.urgency}</span>
+                  {!inactive && <span className="task-modal-urgency-band">{urgencyLabel(task.urgency)}</span>}
+                  <span className="task-modal-urgency-reason">{urgencyReason(task)}</span>
+                </div>
+              );
+            })()}
           </div>
           <button className="task-modal-close" type="button" onClick={onClose} aria-label="Close">×</button>
         </div>

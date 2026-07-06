@@ -144,6 +144,13 @@ def _enrich_task(row: dict, today: date) -> dict:
             is_paused=False,
         )
 
+    # Urgency decomposition (P4.0B) — raw derived numbers only, no threshold
+    # logic here; the frontend maps these + urgency to a band/reason via its
+    # shared urgency module. days_overdue is 0 until past one interval.
+    interval = max(1, int(t["interval_days"]))
+    t["days_overdue"] = max(0, days - interval)
+    t["overdue_ratio"] = round(days / interval, 2)
+
     t["effective_last_done"] = effective.isoformat()
     t["days_since"] = days
     t["urgency"] = urgency
@@ -851,15 +858,19 @@ def dashboard():
     # active_count — explicit, avoids frontend re-derivation from category_summary
     active_count = len(active_tasks)
 
-    # urgency_distribution — 4 bins, active non-paused only, matching urgencyClass thresholds
+    # urgency_distribution — active non-paused only. Thresholds mirror the frontend
+    # shared urgency module (P4.0B: critical≥9.5, high≥8, noticeable≥5) so the
+    # dashboard bins agree with the grid colours. Duplicated here (not imported)
+    # because binning runs server-side over the full task set; the frontend
+    # urgency.js is the canonical source and both must be kept in sync.
     dist: dict[str, int] = {"critical": 0, "high": 0, "noticeable": 0, "low": 0}
     for t in active_tasks:
         u = t["urgency"]
-        if u >= 8:
+        if u >= 9.5:
             dist["critical"] += 1
-        elif u >= 6:
+        elif u >= 8:
             dist["high"] += 1
-        elif u >= 3:
+        elif u >= 5:
             dist["noticeable"] += 1
         else:
             dist["low"] += 1
@@ -992,7 +1003,11 @@ def snapshot_pressure(days: int = Query(default=30, ge=1, le=90)):
             COALESCE(section, '') AS section,
             AVG(urgency)          AS avg_urgency,
             MAX(urgency)          AS max_urgency,
-            SUM(CASE WHEN urgency >= 8 THEN 1 ELSE 0 END) AS critical_count
+            -- Critical threshold mirrors the unified band model (P4.0B: ≥9.5).
+            -- Note: historical snapshot rows hold urgencies computed under the
+            -- V1 formula, so this heatmap re-interprets old values until new
+            -- snapshots accrue under V2.
+            SUM(CASE WHEN urgency >= 9.5 THEN 1 ELSE 0 END) AS critical_count
         FROM task_daily_snapshots
         WHERE snapshot_date IN ({placeholders})
           AND is_paused    = 0

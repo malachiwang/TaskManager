@@ -603,9 +603,14 @@ thead .meta-col {
    Urgency color bands
    ---------------------------------------------------------------------- */
 
+/* Urgency color ladder (P4.0B). Calm at the bottom, escalating restraint upward:
+   none/low are plain muted text, noticeable is a subtle amber (no bold), high is
+   a semibold orange, and only critical uses red + a faint tinted cell. Pressure
+   V2 already yields far fewer top-band rows, so the grid stays calm overall. */
+.urg-none       { color: var(--muted-2); }
 .urg-low        { color: var(--urg-low); }
-.urg-noticeable { color: var(--urg-mid); font-weight: 600; }
-.urg-high       { color: var(--urg-hi); font-weight: 700; }
+.urg-noticeable { color: var(--urg-mid); }
+.urg-high       { color: var(--urg-hi); font-weight: 600; }
 .urg-critical   { color: var(--urg-crit); font-weight: 700; background: var(--crit-bg); }
 
 /* UI-11: Inset left bar for urgency cells — box-shadow has no layout footprint. */
@@ -1312,6 +1317,7 @@ thead .meta-col {
 .dash-microbar-fill--urg-high       { background: var(--urg-hi); }
 .dash-microbar-fill--urg-noticeable { background: var(--urg-mid); }
 .dash-microbar-fill--urg-low        { background: var(--muted-2); }
+.dash-microbar-fill--urg-none       { background: var(--hair); }
 
 /* Urgency cell: number + microbar stacked vertically, or side-by-side */
 .dash-urg-cell {
@@ -2090,6 +2096,7 @@ thead .meta-col {
 .dash-urgdist-fill.urg-high       { background: var(--urg-hi); }
 .dash-urgdist-fill.urg-noticeable { background: var(--urg-mid); }
 .dash-urgdist-fill.urg-low        { background: var(--urg-low); }
+.dash-urgdist-fill.urg-none       { background: var(--hair); }
 
 .dash-urgdist-count {
   font-family: var(--font-mono);
@@ -3498,6 +3505,30 @@ thead .meta-col {
   color: rgba(255, 255, 255, 0.3);
   letter-spacing: 0.04em;
 }
+
+/* Read-only urgency decomposition chip in the (dark) modal header — P4.0B.
+   Monochrome/light so it stays readable on the dark header; the band label and
+   reason text carry the meaning (grid cells carry the color). */
+.task-modal-urgency {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 3px 9px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.85);
+}
+.task-modal-urgency-val { font-weight: 700; font-size: 13px; }
+.task-modal-urgency-band {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+  opacity: 0.85;
+}
+.task-modal-urgency-reason { color: rgba(255, 255, 255, 0.55); }
 
 /* Close button */
 .task-modal-close {

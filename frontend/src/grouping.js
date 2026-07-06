@@ -7,6 +7,8 @@
 //   - suppresses empty groups automatically
 //   - metadata (pausedCount, avgUrgency) computed here, not in JSX
 
+import { urgencyBandKey } from './urgency.js';
+
 export const GROUP_MODES = {
   SECTION:  'section',
   CATEGORY: 'category',
@@ -23,16 +25,19 @@ export const GROUP_MODE_LABELS = {
   [GROUP_MODES.NONE]:     'None',
 };
 
-// Urgency band definitions — fixed display order.
-// Ended tasks are routed by is_ended before is_paused or any urgency threshold,
-// so they can never appear in Low or Paused bands.
+// Urgency group order — fixed display order, high → low pressure, then the
+// lifecycle buckets. Active tasks are classified by the shared urgency band
+// model (urgency.js: critical/high/noticeable/low/none); Finished and Hiatus
+// tasks are routed by lifecycle before any urgency band. Labels match the
+// unified band model so group headers agree with grid colors and dashboard bins.
 export const URGENCY_BANDS = [
-  { key: 'critical',   label: 'Critical',   minUrgency: 8  },
-  { key: 'high',       label: 'High',        minUrgency: 6  },
-  { key: 'noticeable', label: 'Noticeable',  minUrgency: 3  },
-  { key: 'low',        label: 'Low',         minUrgency: 0  },
-  { key: 'paused',     label: 'Hiatus',      paused: true   },
-  { key: 'ended',      label: 'Finished',    ended: true    },
+  { key: 'critical',   label: 'Critical'   },
+  { key: 'high',       label: 'High'       },
+  { key: 'noticeable', label: 'Noticeable' },
+  { key: 'low',        label: 'Low'        },
+  { key: 'none',       label: 'None'       },
+  { key: 'paused',     label: 'Hiatus'     },
+  { key: 'ended',      label: 'Finished'   },
 ];
 
 // Derives pausedCount and avgUrgency for a task array.
@@ -104,9 +109,11 @@ export function groupTasks(tasks, groupMode) {
     }
 
     case GROUP_MODES.URGENCY: {
-      // is_ended check comes FIRST — ended tasks go to Ended, never Low or Paused.
-      // is_paused check is second — paused tasks go to Paused, never Low.
-      const buckets = { critical: [], high: [], noticeable: [], low: [], paused: [], ended: [] };
+      // Lifecycle routing first: Finished (is_ended) then Hiatus (is_paused) —
+      // these never fall into an urgency band. Everything else (including
+      // scheduled tasks, whose urgency is 0 → 'none') is classified by the
+      // shared band model so groups match grid colors and dashboard bins.
+      const buckets = { critical: [], high: [], noticeable: [], low: [], none: [], paused: [], ended: [] };
       for (const task of tasks) {
         if (task.is_ended) {
           buckets.ended.push(task);
@@ -114,10 +121,7 @@ export function groupTasks(tasks, groupMode) {
           buckets.paused.push(task);
         } else {
           const urg = typeof task.urgency === 'number' ? task.urgency : 0;
-          if      (urg >= 8) buckets.critical.push(task);
-          else if (urg >= 6) buckets.high.push(task);
-          else if (urg >= 3) buckets.noticeable.push(task);
-          else               buckets.low.push(task);
+          buckets[urgencyBandKey(urg)].push(task);
         }
       }
       // Emit only non-empty buckets in fixed band order.
