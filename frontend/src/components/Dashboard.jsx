@@ -482,9 +482,9 @@ export default function Dashboard() {
         </div>
 
         <div className="ws-graph-card">
-          <div className="ws-graph-title">Active / paused</div>
+          <div className="ws-graph-title">Active / Hiatus</div>
           <RatioBar activeCount={active_count} pausedCount={paused_count} />
-          <div className="ws-graph-sub">{active_count} active · {paused_count} paused</div>
+          <div className="ws-graph-sub">{active_count} active · {paused_count} hiatus</div>
         </div>
 
       </div>
@@ -682,7 +682,7 @@ export default function Dashboard() {
           <div className="ws-frame-header">
             <span>Pressure history</span>
             <span className="ws-frame-header-sub">
-              section × snapshot date · avg urgency · paused &amp; scheduled excluded
+              section × snapshot date · avg urgency · hiatus &amp; scheduled excluded
             </span>
           </div>
           <div className="ws-frame-body">

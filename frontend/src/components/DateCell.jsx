@@ -125,7 +125,7 @@ export default function DateCell({
               : isAfterEndDate
                 ? 'After task end date'
                 : isPaused
-                  ? 'Task is paused'
+                  ? 'Task is on hiatus'
                   : date
       }
     >

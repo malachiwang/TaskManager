@@ -203,6 +203,7 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
                   value={form.manual_last_done_override}
                   onChange={(e) => set('manual_last_done_override', e.target.value)}
                 />
+                <div className="task-modal-field-hint">MM/DD/YYYY</div>
               </div>
               <div className="task-modal-field">
                 <label className="task-modal-label" htmlFor="tm-active-from">Active from</label>
@@ -213,6 +214,7 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
                   value={form.active_from}
                   onChange={(e) => set('active_from', e.target.value)}
                 />
+                <div className="task-modal-field-hint">MM/DD/YYYY</div>
               </div>
               <div className="task-modal-field">
                 <label className="task-modal-label" htmlFor="tm-end-date">End date</label>
@@ -231,7 +233,7 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
                   End today
                 </button>
                 <div className="task-modal-field-hint">
-                  Dates after this are disabled; past completions are preserved.
+                  MM/DD/YYYY · Dates after this are disabled; past completions are preserved.
                 </div>
               </div>
             </div>
