@@ -25,7 +25,7 @@ export const FILTER_LABELS = {
   [FILTERS.DORMANT]:    'Dormant',
   [FILTERS.NEVER_DONE]: 'Never done',
   [FILTERS.SCHEDULED]:  'Scheduled',
-  [FILTERS.ENDED]:      'Ended',
+  [FILTERS.ENDED]:      'Finished',
 };
 
 // Returns true if the task passes the given filter.

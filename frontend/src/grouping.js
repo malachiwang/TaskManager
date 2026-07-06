@@ -31,8 +31,8 @@ export const URGENCY_BANDS = [
   { key: 'high',       label: 'High',        minUrgency: 6  },
   { key: 'noticeable', label: 'Noticeable',  minUrgency: 3  },
   { key: 'low',        label: 'Low',         minUrgency: 0  },
-  { key: 'paused',     label: 'Paused',      paused: true   },
-  { key: 'ended',      label: 'Ended',       ended: true    },
+  { key: 'paused',     label: 'Hiatus',      paused: true   },
+  { key: 'ended',      label: 'Finished',    ended: true    },
 ];
 
 // Derives pausedCount and avgUrgency for a task array.
@@ -89,7 +89,7 @@ export function groupTasks(tasks, groupMode) {
     }
 
     case GROUP_MODES.STATUS: {
-      // Fixed order: Active, Hiatus, Ended. Ended tasks excluded from Active/Hiatus.
+      // Fixed order: Active, Hiatus, Finished. Finished tasks excluded from Active/Hiatus.
       const active = tasks.filter((t) => t.is_paused !== 1 && !t.is_ended);
       const hiatus = tasks.filter((t) => t.is_paused === 1 && !t.is_ended);
       const ended  = tasks.filter((t) => t.is_ended === true);
@@ -99,7 +99,7 @@ export function groupTasks(tasks, groupMode) {
       if (hiatus.length > 0)
         groups.push({ key: 'hiatus', label: 'Hiatus', tasks: hiatus, ...groupMeta(hiatus) });
       if (ended.length > 0)
-        groups.push({ key: 'ended', label: 'Ended', tasks: ended, ...groupMeta(ended) });
+        groups.push({ key: 'ended', label: 'Finished', tasks: ended, ...groupMeta(ended) });
       return groups;
     }
 

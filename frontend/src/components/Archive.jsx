@@ -133,9 +133,9 @@ function ArchiveAnalytics({ snapshot }) {
           { label: 'Tasks',       value: totalTasks },
           { label: 'Completions', value: totalCompletions },
           { label: 'Notes',       value: noteCount },
-          { label: 'Paused',      value: pausedCount },
+          { label: 'Hiatus',      value: pausedCount },
           { label: 'Scheduled',   value: scheduledCount },
-          { label: 'Ended',       value: endedCount },
+          { label: 'Finished',    value: endedCount },
           { label: 'Range',       value: rangeDays !== null ? `${rangeDays}d` : '—' },
         ].map(({ label, value }) => (
           <div key={label} className="arch-stat-chip">

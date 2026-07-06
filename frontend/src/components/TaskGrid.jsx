@@ -302,7 +302,14 @@ export default function TaskGrid() {
   // ---------------------------------------------------------------------------
 
   const filteredTasks = useMemo(() => {
-    let result = tasks;
+    // Finished-task month visibility (P3.0B): a task marked Finished (end_date set)
+    // is hidden in month views AFTER its finish month, but stays visible in the
+    // finish month and all earlier months. Keyed strictly on end_date — a plain
+    // completion entry never sets end_date, so completing a cell never hides a task.
+    const viewYearMonth = `${viewMonth.year}-${String(viewMonth.month).padStart(2, '0')}`;
+    let result = tasks.filter(
+      (t) => !t.end_date || t.end_date.slice(0, 7) >= viewYearMonth,
+    );
     if (activeFilter !== FILTERS.ALL) {
       result = result.filter((t) => taskPassesFilter(t, activeFilter));
     }
@@ -317,7 +324,7 @@ export default function TaskGrid() {
       );
     }
     return result;
-  }, [tasks, activeFilter, searchQuery]);
+  }, [tasks, activeFilter, searchQuery, viewMonth.year, viewMonth.month]);
 
   // Group filtered tasks by the current groupMode.
   // groupTasks() suppresses empty groups automatically and computes metadata.

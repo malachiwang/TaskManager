@@ -438,9 +438,9 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* 5. Paused */}
+        {/* 5. Hiatus */}
         <div className="ws-stat-cell">
-          <div className="ws-stat-label">Paused</div>
+          <div className="ws-stat-label">Hiatus</div>
           <div className="ws-stat-value">{paused_count}</div>
           <div className="ws-stat-delta">excluded from pressure</div>
         </div>
