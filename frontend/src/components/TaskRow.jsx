@@ -100,7 +100,7 @@ function urgencyClass(urgency) {
 export default function TaskRow({
   task, dates, todayStr, completions, notes, selectedCell, colLayout,
   selectedMetaCell, editingTextCell, armedCell,
-  reorderEnabled, isDragOver, onDragStart, onDragOver, onDrop, onDragEnd,
+  reorderEnabled, isDragOver, isDragSource, onDragStart, onDragOver, onDrop, onDragEnd,
   onIncrement, onClear, onEdit, onSelect,
   onSelectMeta, onStartTextEdit, onCommitTextEdit, onCancelTextEdit,
 }) {
@@ -131,7 +131,7 @@ export default function TaskRow({
   const isSelectedMeta = (col) => selectedMetaCell?.taskId === task.id && selectedMetaCell?.col === col;
   const isEditingMeta  = (col) => editingTextCell?.taskId  === task.id && editingTextCell?.col  === col;
 
-  const rowClass = ['task-row', isPaused ? 'paused' : '', isScheduled ? 'scheduled' : '', isEnded ? 'ended' : '', isDragOver ? 'drag-over' : '']
+  const rowClass = ['task-row', isPaused ? 'paused' : '', isScheduled ? 'scheduled' : '', isEnded ? 'ended' : '', isDragOver ? 'drag-over' : '', isDragSource ? 'drag-source' : '']
     .filter(Boolean).join(' ');
 
   const noteLinks = hasLinks(task.notes) ? extractLinks(task.notes) : [];
@@ -153,7 +153,7 @@ export default function TaskRow({
       onDrop={reorderEnabled ? (e) => onDrop(e, task.id) : undefined}
     >
       <td className="meta-col sticky-col col-actions" style={cs('col-actions')}>
-        <span className="row-action-group">
+        <div className="row-action-group">
           {reorderEnabled && (
             <span
               className="drag-handle"
@@ -167,7 +167,7 @@ export default function TaskRow({
             onClick={() => onEdit(task)}
             title="Task details"
           >EDIT</button>
-        </span>
+        </div>
       </td>
       <td className={`meta-col sticky-col col-urg ${isPaused || isScheduled || isEnded ? '' : urgencyClass(task.urgency)}`} style={cs('col-urg')}>
         {isPaused || isScheduled || isEnded ? '—' : task.urgency}

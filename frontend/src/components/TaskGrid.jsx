@@ -75,7 +75,7 @@ const MIN_COL_WIDTH = 24;
 
 // Default widths (px) matching the original CSS layout.
 export const DEFAULT_WIDTHS = {
-  'col-actions':     46,
+  'col-actions':     56,
   'col-urg':         40,
   'col-pri':         28,
   'col-status':      62,
@@ -264,7 +264,9 @@ export default function TaskGrid() {
   const reorderEnabled = canReorderInGroupMode && !hasMeaningfulFilter && !searchQuery.trim();
 
   // Drag-and-drop reorder state — refs avoid stale-closure issues in handlers.
+  // dragSrcId state mirrors dragSrcIdRef so the source row can receive a CSS class.
   const dragSrcIdRef = useRef(null);
+  const [dragSrcId, setDragSrcId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
 
   // Derive computed layout (widths + sticky offsets) from overrides.
@@ -453,6 +455,7 @@ export default function TaskGrid() {
 
   function handleDragStart(e, taskId) {
     dragSrcIdRef.current = taskId;
+    setDragSrcId(taskId);
     e.dataTransfer.effectAllowed = 'move';
   }
 
@@ -476,6 +479,7 @@ export default function TaskGrid() {
     e.preventDefault();
     const srcId = dragSrcIdRef.current;
     dragSrcIdRef.current = null;
+    setDragSrcId(null);
     setDragOverId(null);
     if (!srcId || srcId === targetTaskId) return;
     // In Section mode, block cross-section drops — we never change task.section.
@@ -497,6 +501,7 @@ export default function TaskGrid() {
 
   function handleDragEnd() {
     dragSrcIdRef.current = null;
+    setDragSrcId(null);
     setDragOverId(null);
   }
 
@@ -1317,6 +1322,7 @@ export default function TaskGrid() {
                     armedCell={armedCell}
                     reorderEnabled={reorderEnabled}
                     isDragOver={dragOverId === task.id}
+                    isDragSource={dragSrcId === task.id}
                     onDragStart={handleDragStart}
                     onDragOver={handleDragOver}
                     onDrop={handleDrop}
