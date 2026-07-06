@@ -278,13 +278,13 @@ export function resolveKeybinds() {
 export const FIXED_SHORTCUTS = [
   {
     group: 'Navigation',
-    keys: '⇧1–9',
-    description: 'Jump to Nth task row or Nth date column',
+    keys: '⇧ + digits',
+    description: 'Row jump buffer: hold Shift, type digits (e.g. 3 9), release ⇧ or press ↵ to jump',
   },
   {
     group: 'Navigation',
     keys: '⇧0',
-    description: 'Open row / date column jump prompt',
+    description: 'Quick jump prompt (name, date) — only when no digit buffer is active',
   },
 ];
 
@@ -299,8 +299,8 @@ export const KEYBIND_HELP = [
     items: [
       { keys: '↑ / ↓', desc: 'Move selection between tasks' },
       { keys: '← / →', desc: 'Move selection between dates' },
-      { keys: '⇧1–9', desc: 'Jump to Nth task row or Nth date column' },
-      { keys: '⇧0',   desc: 'Quick jump: row#, task name, or date' },
+      { keys: '⇧ + digits', desc: 'Row jump buffer: hold ⇧, type e.g. 3 9, release ⇧ or ↵ to jump row 39' },
+      { keys: '⇧0',         desc: 'Quick jump prompt: name, date (when buffer is empty)' },
     ],
   },
   {

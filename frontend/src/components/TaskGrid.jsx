@@ -137,23 +137,6 @@ function getDefaultKeyboardCell(tasks, dates) {
   return date ? { taskId: task.id, date } : null;
 }
 
-// Returns 0-indexed position (0..8) for Shift+Digit1..9, null for anything else.
-// Uses event.code (layout-agnostic physical key) — never event.key, which varies
-// by keyboard layout (e.g. Shift+1 produces '!' on US keyboards).
-function getShiftDigitIndex(e) {
-  if (!e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return null;
-  if (!/^Digit[1-9]$/.test(e.code)) return null;
-  return parseInt(e.code[5], 10) - 1; // 'Digit1'→0, 'Digit9'→8
-}
-
-// True only for Shift+0 — opens the quick jump prompt.
-// Uses event.code (layout-agnostic). Shift+0 on US keyboards produces ')' in
-// event.key; never rely on event.key for this detection.
-function isShiftZero(e) {
-  return e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey
-    && e.code === 'Digit0';
-}
-
 // Parse a jump input string into a { task } | { date } | { error } result.
 // Accepts: integer row number, ISO date YYYY-MM-DD, M/D date, or task name fragment.
 function resolveJump(raw, dates, tasks) {
@@ -236,9 +219,13 @@ export default function TaskGrid() {
   // Keyboard help panel — P4.
   const [helpOpen, setHelpOpen] = useState(false);
 
-  // Jump mode — Shift+0 extended numeric navigation.
-  // null = closed; or { type: 'row'|'date', value: '', error: '' }
+  // Jump mode — Shift+0 full jump prompt (name, date, row#).
+  // null = closed; or { type: 'quick', value: '', error: '' }
   const [jumpMode, setJumpMode] = useState(null);
+
+  // Row jump buffer — Shift+digit keys build a multi-digit row number.
+  // null = inactive; non-null string = digits typed so far.
+  const [rowJumpBuffer, setRowJumpBuffer] = useState(null);
 
   // Cell notes — P5. Parallel map to completions: `${taskId}:${date}` → string.
   const [notes, setNotes] = useState({});
@@ -536,6 +523,7 @@ export default function TaskGrid() {
   const handlersRef        = useRef({});
   const helpOpenRef        = useRef(false);
   const jumpModeRef        = useRef(null);
+  const rowJumpBufferRef   = useRef(null);
   const helpBtnRef         = useRef(null);
   const helpPanelRef       = useRef(null);
   const helpCloseBtnRef    = useRef(null);
@@ -560,8 +548,9 @@ export default function TaskGrid() {
   modalOpenRef.current        = modalOpen;
   helpOpenRef.current         = helpOpen;
   jumpModeRef.current         = jumpMode;
+  rowJumpBufferRef.current     = rowJumpBuffer;
   keybindsRef.current         = resolvedKb;
-  handlersRef.current         = { handleIncrement, handleClear, handleSetCount, openAdd, openEdit, setSelectedCell, closeModal, setHelpOpen, setSelectedMetaCell, setEditingTextCell, setArmedCell };
+  handlersRef.current         = { handleIncrement, handleClear, handleSetCount, openAdd, openEdit, setSelectedCell, closeModal, setHelpOpen, setSelectedMetaCell, setEditingTextCell, setArmedCell, setRowJumpBuffer };
 
   // Clear selectedCell when the selected task is no longer in the flat grouped list.
   // Covers: soft-delete, filter change hiding the row, search hiding the row.
@@ -619,7 +608,7 @@ export default function TaskGrid() {
       const {
         handleIncrement, handleClear, handleSetCount,
         openAdd, openEdit, setSelectedCell, closeModal, setHelpOpen,
-        setSelectedMetaCell, setEditingTextCell, setArmedCell,
+        setSelectedMetaCell, setEditingTextCell, setArmedCell, setRowJumpBuffer,
       } = handlersRef.current;
       const kb    = keybindsRef.current;
       const sel   = selectedCellRef.current;
@@ -637,7 +626,9 @@ export default function TaskGrid() {
         const isTyping = ['input', 'textarea', 'select'].includes(tag2)
           || document.activeElement?.isContentEditable;
         if (!isTyping) {
-          if (helpOpenRef.current) {
+          if (rowJumpBufferRef.current !== null) {
+            setRowJumpBuffer(null);
+          } else if (helpOpenRef.current) {
             setHelpOpen(false);
           } else if (armedCellRef.current) {
             setArmedCell(null); // cancel armed state; press Esc again to clear selection
@@ -651,10 +642,24 @@ export default function TaskGrid() {
       }
 
       // For all non-Escape keys: ignore while typing or modal is open.
+      // If a row jump buffer is active and focus just moved into an input, cancel it.
       const tag = document.activeElement?.tagName?.toLowerCase();
-      if (['input', 'textarea', 'select'].includes(tag)) return;
-      if (document.activeElement?.isContentEditable) return;
+      if (['input', 'textarea', 'select'].includes(tag)) {
+        if (rowJumpBufferRef.current !== null) setRowJumpBuffer(null);
+        return;
+      }
+      if (document.activeElement?.isContentEditable) {
+        if (rowJumpBufferRef.current !== null) setRowJumpBuffer(null);
+        return;
+      }
       if (modalOpenRef.current) return;
+
+      // Enter while row jump buffer active → confirm jump immediately.
+      if (e.key === 'Enter' && rowJumpBufferRef.current !== null) {
+        e.preventDefault();
+        confirmRowJump(rowJumpBufferRef.current);
+        return;
+      }
 
       // N — open Add Task modal (no selection required)
       if (matchKeybind(e, kb.NEW_TASK)) {
@@ -676,29 +681,22 @@ export default function TaskGrid() {
         return;
       }
 
-      // Shift+1..9 — quick selection (uses event.code for layout-agnostic detection).
-      // No selection: jump to Nth visible task row at the default date.
-      // Existing selection: jump to Nth visible date column in the same task row.
-      const shiftIdx = getShiftDigitIndex(e);
-      if (shiftIdx !== null) {
-        e.preventDefault();
-        if (!sel) {
-          if (!tasks.length || !dates.length || shiftIdx >= tasks.length) return;
-          const date = getDefaultKeyboardDate(dates);
-          if (!date) return;
-          setSelectedCell({ taskId: tasks[shiftIdx].id, date });
-        } else {
-          if (shiftIdx >= dates.length) return;
-          setSelectedCell({ taskId: sel.taskId, date: dates[shiftIdx] });
+      // Shift+digit (0–9) — row jump buffer.
+      // Uses event.code (layout-agnostic) because Shift+3 → '#' in event.key on US keyboards.
+      // Shift+0 with an empty buffer opens the full quick-jump prompt instead.
+      // Shift+0 after other digits (e.g. ⇧3 ⇧0) appends '0' to reach row 30.
+      if (e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && /^Digit[0-9]$/.test(e.code)) {
+        const digit = e.code[5]; // '0'–'9'
+        if (digit === '0' && rowJumpBufferRef.current === null) {
+          e.preventDefault();
+          setArmedCell(null);
+          setJumpMode({ type: 'quick', value: '', error: '' });
+          return;
         }
-        return;
-      }
-
-      // Shift+0 — open quick jump prompt (row#, task name, or date).
-      if (isShiftZero(e)) {
         e.preventDefault();
+        const newBuffer = (rowJumpBufferRef.current ?? '') + digit;
         setArmedCell(null);
-        setJumpMode({ type: 'quick', value: '', error: '' });
+        setRowJumpBuffer(newBuffer);
         return;
       }
 
@@ -723,6 +721,14 @@ export default function TaskGrid() {
       }
 
       if (!sel) return;
+
+      // Backspace with active row jump buffer → remove the last digit.
+      if (e.key === 'Backspace' && !e.metaKey && !e.ctrlKey && !e.altKey && rowJumpBufferRef.current !== null) {
+        e.preventDefault();
+        const trimmed = rowJumpBufferRef.current.slice(0, -1);
+        setRowJumpBuffer(trimmed.length > 0 ? trimmed : null);
+        return;
+      }
 
       // Delete / Backspace — guarded two-step keyboard clear for DateCell completions.
       // First press arms the cell (shows amber indicator + hint); second press confirms.
@@ -806,8 +812,41 @@ export default function TaskGrid() {
       }
     }
 
+    // Shared by Enter (keydown) and Shift release (keyup): resolve buffer → row jump.
+    function confirmRowJump(buf) {
+      const { setSelectedCell, setArmedCell, setRowJumpBuffer } = handlersRef.current;
+      const tasks = tasksRef.current;
+      const dates = datesRef.current;
+      const idx = parseInt(buf, 10) - 1;
+      setRowJumpBuffer(null);
+      if (idx < 0 || idx >= tasks.length) return; // out of range — silently discard
+      const task = tasks[idx];
+      const date = getDefaultKeyboardDate(dates);
+      if (!date) return;
+      setArmedCell(null);
+      setSelectedCell({ taskId: task.id, date });
+      const tid = task.id;
+      requestAnimationFrame(() => {
+        document.querySelector(`tr[data-task-id="${tid}"]`)
+          ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        document.querySelector(`th[data-date="${date}"]`)
+          ?.scrollIntoView({ inline: 'nearest', behavior: 'smooth' });
+      });
+    }
+
+    function onKeyUp(e) {
+      if (e.key === 'Shift') {
+        const buf = rowJumpBufferRef.current;
+        if (buf !== null) confirmRowJump(buf);
+      }
+    }
+
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentionally reads from refs
 
   // Saved views
@@ -1026,7 +1065,7 @@ export default function TaskGrid() {
         <button
           type="button"
           className="ws-filter-pill"
-          onClick={() => { setArmedCell(null); setJumpMode({ type: 'quick', value: '', error: '' }); }}
+          onClick={() => { setArmedCell(null); setRowJumpBuffer(null); setJumpMode({ type: 'quick', value: '', error: '' }); }}
           title="Quick jump to row, task name, or date (⇧0)"
         >
           Jump
@@ -1168,6 +1207,12 @@ export default function TaskGrid() {
         )}
       </div>
       </div>
+
+      {rowJumpBuffer !== null && (
+        <div className="ws-row-jump-buffer" aria-live="polite" aria-label={`Jump to row ${rowJumpBuffer}`}>
+          Jump row: {rowJumpBuffer}
+        </div>
+      )}
 
       {jumpMode && (
         <div className="ws-jump-prompt" role="dialog" aria-label="Quick jump">
