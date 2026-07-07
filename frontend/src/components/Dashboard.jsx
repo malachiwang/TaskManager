@@ -553,7 +553,7 @@ export default function Dashboard() {
 
       <div className="ws-panels">
         {/* ── Do Now (primary) ── */}
-        <div className={`ws-frame ws-frame--full dashboard-donow${lens === 'donow' ? ' is-focused' : ''}`}>
+        <div className="ws-frame ws-frame--full dashboard-donow">
           <div className="ws-frame-header">
             <span>Do Now</span>
             <span className="ws-frame-header-sub">established overdue tasks worth doing today · top 5</span>
@@ -562,7 +562,7 @@ export default function Dashboard() {
         </div>
 
         {/* ── Likely Quick Wins (secondary) ── */}
-        <div className={`ws-frame ws-frame--full dashboard-quickwins${lens === 'quickwins' ? ' is-focused' : ''}`}>
+        <div className="ws-frame ws-frame--full dashboard-quickwins">
           <div className="ws-frame-header">
             <span>Likely Quick Wins</span>
             <span className="ws-frame-header-sub">frequent / overdue tasks that likely shed pressure fast · top 5</span>
@@ -571,7 +571,7 @@ export default function Dashboard() {
         </div>
 
         {/* ── Decide / Clarify (triage list) ── */}
-        <div className={`ws-frame ws-frame--full dashboard-decide${lens === 'decide' ? ' is-focused' : ''}`}>
+        <div className="ws-frame ws-frame--full dashboard-decide">
           <div className="ws-frame-header">
             <span>Decide / Clarify</span>
             <span className="ws-frame-header-sub">
@@ -622,7 +622,7 @@ export default function Dashboard() {
         </div>
 
         {/* ── Section Pressure ── */}
-        <div className={`ws-frame ws-frame--full${lens === 'pressure' ? ' is-focused' : ''}`}>
+        <div className="ws-frame ws-frame--full">
           <div className="ws-frame-header">
             <span>Section Pressure</span>
             <span className="ws-frame-header-sub">active tasks grouped by section · sorted by avg urgency</span>
@@ -675,7 +675,7 @@ export default function Dashboard() {
         </div>
 
         {/* ── Activity Context (compressed) ── */}
-        <div className={`ws-frame ws-frame--full${lens === 'activity' ? ' is-focused' : ''}`}>
+        <div className="ws-frame ws-frame--full">
           <div className="ws-frame-header">
             <span>Activity Context</span>
             <span className="ws-frame-header-sub">recent momentum · context, not action</span>

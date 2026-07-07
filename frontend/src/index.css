@@ -5230,18 +5230,22 @@ select.task-modal-input {
 .dashboard-section-heading-sub { font-size: 11px; color: var(--muted); }
 
 /* Compact stacked composition bars (urgency bands / task split). */
+/* Two balanced composition cards filling the command-panel width (P6.0A-fix3):
+   50/50 on wide screens, stacked on narrow. */
 .dashboard-composition-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
   margin: 6px 0 4px;
 }
-/* Composition bars sit inside compact contained cards (P6.0A-fix2) — side by
-   side on wide screens, stacked on narrow, never a full-width raw strip. */
+@media (max-width: 640px) {
+  .dashboard-composition-row { grid-template-columns: 1fr; }
+}
+/* Contained cards; bars fill the card width (no small max-width, no raw strips). */
 .dashboard-composition {
-  flex: 1 1 280px;
-  min-width: 240px;
-  max-width: 440px;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
   padding: 8px 10px;
   border: 1px solid var(--grid-border);
   border-radius: 4px;
@@ -5272,9 +5276,6 @@ select.task-modal-input {
 .dashboard-composition-legend-item { display: inline-flex; align-items: center; gap: 3px; }
 .dashboard-composition-legend-item strong { color: var(--ink-2); }
 .dashboard-composition-dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
-
-/* Focused frame ring — the panel matching the selected lens. */
-.ws-frame.is-focused { box-shadow: 0 0 0 2px var(--accent); }
 
 /* Do Now is the primary action queue; Quick Wins/Decide read as secondary. */
 .dashboard-donow > .ws-frame-header span:first-child { color: var(--accent); }
