@@ -24,6 +24,43 @@ export function normalizeHref(raw) {
   }
 }
 
+export function normalizeSafeUrl(raw) {
+  return normalizeHref(raw);
+}
+
+export function isSafeHref(raw) {
+  return normalizeSafeUrl(raw) !== null;
+}
+
+function normalizeLinkLabel(label, fallback) {
+  const cleaned = String(label ?? '')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/[\[\]]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned || fallback;
+}
+
+export function buildMarkdownLink(label, rawUrl) {
+  const href = normalizeSafeUrl(rawUrl);
+  if (!href) return null;
+  return `[${normalizeLinkLabel(label, href)}](${href})`;
+}
+
+export function spliceMarkdownLink(text, start, end, label, rawUrl) {
+  const value = String(text ?? '');
+  const markdown = buildMarkdownLink(label, rawUrl);
+  if (!markdown) return null;
+
+  const safeStart = Math.min(Math.max(Number(start) || 0, 0), value.length);
+  const safeEnd = Math.min(Math.max(Number(end) || safeStart, safeStart), value.length);
+  return {
+    text: `${value.slice(0, safeStart)}${markdown}${value.slice(safeEnd)}`,
+    markdown,
+    cursor: safeStart + markdown.length,
+  };
+}
+
 export function displayLinkLabel(url) {
   try {
     const u = new URL(url);

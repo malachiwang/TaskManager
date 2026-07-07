@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import DateCell from './DateCell.jsx';
 import LinkifiedText from './LinkifiedText.jsx';
 import LinkPopover from './LinkPopover.jsx';
-import { hasLinks, extractLinks } from '../linkUtils.js';
+import { spliceMarkdownLink, hasLinks, extractLinks, normalizeSafeUrl } from '../linkUtils.js';
 import { urgencyClass, urgencyReason } from '../urgency.js';
 
 function displayStatus(task) {
@@ -17,6 +17,15 @@ function formatActiveFrom(isoDate) {
   return `${m}/${d}`;
 }
 
+function stopLinkUiEvent(e) {
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+function stopLinkUiPropagation(e) {
+  e.stopPropagation();
+}
+
 // Inline editable text cell — single click selects (via td class), double click edits.
 // Blur commits; Escape cancels; Enter commits. Blank task names are rejected.
 function InlineTextCell({
@@ -24,13 +33,20 @@ function InlineTextCell({
   isEditing,
   onSelectMeta, onStartTextEdit, onCommitTextEdit, onCancelTextEdit,
 }) {
+  const supportsLinks = colKey === 'col-task' || colKey === 'col-sub';
   const [draft, setDraft] = useState(value ?? '');
+  const [insertLinkState, setInsertLinkState] = useState(null);
+  const [linkText, setLinkText] = useState('');
+  const [linkUrl, setLinkUrl] = useState('');
   const inputRef = useRef(null);
+  const linkUrlRef = useRef(null);
   const cancelledRef = useRef(false);
+  const insertingLinkRef = useRef(false);
 
   useEffect(() => {
     if (isEditing) {
       setDraft(value ?? '');
+      setInsertLinkState(null);
       inputRef.current?.focus();
       inputRef.current?.select();
     }
@@ -45,8 +61,74 @@ function InlineTextCell({
     onCommitTextEdit(taskId, colKey, trimmed);
   }
 
+  function getSelection() {
+    const el = inputRef.current;
+    const len = draft.length;
+    if (!el || typeof el.selectionStart !== 'number' || typeof el.selectionEnd !== 'number') {
+      return { start: len, end: len, selectedText: '' };
+    }
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    return { value: draft, start, end, selectedText: draft.slice(start, end) };
+  }
+
+  function openInsertLink(e = null) {
+    if (e) stopLinkUiEvent(e);
+    const selection = getSelection();
+    const anchorRect = (e?.currentTarget || inputRef.current)?.getBoundingClientRect?.();
+    insertingLinkRef.current = true;
+    setInsertLinkState({
+      field: colKey,
+      taskId,
+      value: selection.value,
+      start: selection.start,
+      end: selection.end,
+      selectedText: selection.selectedText,
+      anchorRect: anchorRect
+        ? {
+            top: anchorRect.top,
+            right: anchorRect.right,
+            bottom: anchorRect.bottom,
+            left: anchorRect.left,
+          }
+        : null,
+    });
+    setLinkText(selection.selectedText);
+    setLinkUrl('');
+    requestAnimationFrame(() => linkUrlRef.current?.focus());
+  }
+
+  function closeInsertLink() {
+    setInsertLinkState(null);
+    insertingLinkRef.current = false;
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
+  function insertMarkdownLink() {
+    if (!insertLinkState) return;
+    const result = spliceMarkdownLink(
+      insertLinkState.value,
+      insertLinkState.start,
+      insertLinkState.end,
+      linkText,
+      linkUrl,
+    );
+    if (!result) return;
+    setDraft(result.text);
+    setInsertLinkState(null);
+    insertingLinkRef.current = false;
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.setSelectionRange(result.cursor, result.cursor);
+    });
+  }
+
   function handleKeyDown(e) {
-    if (e.key === 'Enter') {
+    if (supportsLinks && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      e.stopPropagation();
+      openInsertLink();
+    } else if (e.key === 'Enter') {
       e.preventDefault();
       e.stopPropagation();
       cancelledRef.current = false;
@@ -60,6 +142,7 @@ function InlineTextCell({
   }
 
   function handleBlur() {
+    if (insertingLinkRef.current) return;
     if (cancelledRef.current) {
       cancelledRef.current = false;
       return;
@@ -68,15 +151,98 @@ function InlineTextCell({
   }
 
   if (isEditing) {
+    const linkUrlSafe = normalizeSafeUrl(linkUrl);
     return (
-      <input
-        ref={inputRef}
-        className="cell-edit-input"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={handleKeyDown}
-        onBlur={handleBlur}
-      />
+      <span className="cell-edit-wrap">
+        <span className="cell-edit-main">
+          <input
+            ref={inputRef}
+            className="cell-edit-input"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onBlur={handleBlur}
+          />
+          {supportsLinks && (
+            <button
+              type="button"
+              className="insert-link-btn insert-link-btn--cell"
+              onMouseDown={openInsertLink}
+              onClick={stopLinkUiEvent}
+            >
+              Link
+            </button>
+          )}
+        </span>
+        {supportsLinks && insertLinkState && (
+          <span
+            className="insert-link-panel insert-link-panel--cell"
+            style={insertLinkState.anchorRect ? {
+              top: insertLinkState.anchorRect.bottom + 4,
+              left: Math.max(12, Math.min(insertLinkState.anchorRect.left, window.innerWidth - 340)),
+            } : undefined}
+            role="dialog"
+            aria-label="Insert link"
+            onMouseDown={stopLinkUiPropagation}
+            onClick={stopLinkUiPropagation}
+            onDoubleClick={stopLinkUiPropagation}
+          >
+            <label className="insert-link-field">
+              <span>Text</span>
+              <input
+                className="cell-edit-input"
+                value={linkText}
+                onChange={(e) => setLinkText(e.target.value)}
+                onMouseDown={stopLinkUiPropagation}
+                onClick={stopLinkUiPropagation}
+                onBlur={() => {}}
+              />
+            </label>
+            <label className="insert-link-field">
+              <span>URL</span>
+              <input
+                ref={linkUrlRef}
+                className="cell-edit-input"
+                value={linkUrl}
+                onChange={(e) => setLinkUrl(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && linkUrlSafe) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    insertMarkdownLink();
+                  }
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    closeInsertLink();
+                  }
+                }}
+                onMouseDown={stopLinkUiPropagation}
+                onClick={stopLinkUiPropagation}
+                onBlur={() => {}}
+                placeholder="https://example.com"
+              />
+            </label>
+            {linkUrl && !linkUrlSafe && (
+              <span className="insert-link-error">Use http, https, mailto, or www links.</span>
+            )}
+            <span className="insert-link-actions">
+              <button type="button" className="edit-bar-btn" onMouseDown={stopLinkUiEvent} onClick={(e) => { stopLinkUiEvent(e); closeInsertLink(); }}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="edit-bar-btn primary"
+                onMouseDown={stopLinkUiEvent}
+                onClick={(e) => { stopLinkUiEvent(e); insertMarkdownLink(); }}
+                disabled={!linkUrlSafe}
+              >
+                Insert
+              </button>
+            </span>
+          </span>
+        )}
+      </span>
     );
   }
 
@@ -85,7 +251,7 @@ function InlineTextCell({
       onClick={() => onSelectMeta(taskId, colKey)}
       onDoubleClick={() => onStartTextEdit(taskId, colKey)}
     >
-      {value ?? ''}
+      {supportsLinks ? <LinkifiedText text={value ?? ''} /> : (value ?? '')}
     </span>
   );
 }

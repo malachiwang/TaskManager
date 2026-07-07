@@ -403,6 +403,10 @@ thead .meta-col {
 .col-task        { left: 312px; overflow: hidden; text-overflow: ellipsis; }
 .col-sub         { left: 462px; overflow: hidden; text-overflow: ellipsis;
                border-right: 2px solid #bbb; } /* last frozen col — visual separator */
+.col-task.meta-selected,
+.col-sub.meta-selected {
+  overflow: visible;
+}
 .col-freq   { text-align: center; }
 .col-days   { text-align: center; }
 .col-notes  { overflow: hidden; text-overflow: ellipsis; }
@@ -665,6 +669,34 @@ thead .meta-col {
   line-height: inherit;
 }
 
+.cell-edit-wrap {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cell-edit-main {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.insert-link-btn--cell {
+  padding: 1px 4px;
+  font-size: 8px;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+.insert-link-panel--cell {
+  position: fixed;
+  z-index: 1000;
+  width: min(320px, calc(100vw - 24px));
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.14);
+}
+
 /* -------------------------------------------------------------------------
    Urgency color bands
    ---------------------------------------------------------------------- */
@@ -858,6 +890,90 @@ thead .meta-col {
   cursor: default;
 }
 
+.notes-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.insert-link-btn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--rule);
+  padding: 3px 7px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.insert-link-btn:hover,
+.insert-link-btn:focus-visible {
+  color: var(--ink-2);
+  border-color: var(--accent);
+  outline: none;
+}
+
+.insert-link-btn--editbar {
+  padding: 2px 6px;
+  font-size: 9px;
+  flex-shrink: 0;
+}
+
+.insert-link-panel {
+  margin-top: 7px;
+  border: 1px solid var(--rule);
+  background: var(--bg-panel);
+  padding: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.45fr);
+  gap: 7px;
+}
+
+.insert-link-panel--editbar {
+  margin: 4px 0 2px;
+  grid-template-columns: minmax(120px, 0.9fr) minmax(180px, 1.4fr) auto;
+  align-items: end;
+  padding: 6px;
+  font-size: 11px;
+}
+
+.insert-link-field {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.insert-link-field span {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+
+.insert-link-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.insert-link-panel--editbar .insert-link-actions {
+  grid-column: auto;
+}
+
+.insert-link-error {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .edit-bar-note-preview {
   display: flex;
   align-items: baseline;
@@ -879,13 +995,15 @@ thead .meta-col {
 /* Linkified URL in notes — used by LinkifiedText component */
 .note-link {
   color: var(--accent);
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  text-decoration: none;
+  font-weight: 600;
+  cursor: pointer;
   word-break: break-all;
 }
 
 .note-link:hover {
   opacity: 0.75;
+  text-decoration: none;
 }
 
 .note-link:focus-visible,
@@ -893,6 +1011,7 @@ thead .meta-col {
 .task-modal-reference-link:focus-visible {
   outline: 1px solid var(--accent);
   outline-offset: 2px;
+  text-decoration: none;
 }
 
 /* -------------------------------------------------------------------------
@@ -3840,7 +3959,7 @@ select.task-modal-input {
 
 .task-modal-reference-link:hover {
   border-color: var(--accent);
-  text-decoration: underline;
+  text-decoration: none;
 }
 
 /* ── Segmented status buttons ── */
@@ -5035,7 +5154,7 @@ select.task-modal-input {
 
 .task-link-url:hover {
   background: var(--row-hover-bg);
-  text-decoration: underline;
+  text-decoration: none;
 }
 
 /* ===========================================================================
