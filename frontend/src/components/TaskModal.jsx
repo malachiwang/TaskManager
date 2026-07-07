@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { urgencyLabel, urgencyReason } from '../urgency.js';
+import { extractLinks, normalizeSafeUrl, spliceMarkdownLink } from '../linkUtils.js';
+import LinkifiedText from './LinkifiedText.jsx';
 
 const STATUS_OPTIONS = ['active', 'hiatus'];
 // Display labels only — the stored status value stays lowercase ('active'/'hiatus').
@@ -29,10 +31,23 @@ function priorityFillColor(p) {
   return 'var(--accent)';                 /* 1:    blue */
 }
 
+function stopLinkUiEvent(e) {
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+function stopLinkUiPropagation(e) {
+  e.stopPropagation();
+}
+
 export default function TaskModal({ task, onSave, onDelete, onClose }) {
   const isEdit = task != null;
 
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const nameRef = useRef(null);
+  const subtaskRef = useRef(null);
+  const notesRef = useRef(null);
+  const linkUrlRef = useRef(null);
 
   const [form, setForm] = useState(() => {
     const d = isEdit ? {} : loadTaskDefaults();
@@ -50,6 +65,10 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
       end_date:                  task?.end_date                  ?? '',
     };
   });
+  const [linkPanelOpen, setLinkPanelOpen] = useState(false);
+  const [linkText, setLinkText] = useState('');
+  const [linkUrl, setLinkUrl] = useState('');
+  const [linkSelection, setLinkSelection] = useState({ key: 'notes', value: '', start: 0, end: 0 });
 
   function set(key, val) {
     setForm((prev) => ({ ...prev, [key]: val }));
@@ -60,9 +79,143 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
     onSave(form);
   }
 
+  function fieldRef(key) {
+    if (key === 'name') return nameRef;
+    if (key === 'subtask') return subtaskRef;
+    return notesRef;
+  }
+
+  function getFieldSelection(key) {
+    const ref = fieldRef(key);
+    const el = ref.current;
+    const value = form[key] ?? '';
+    const len = value.length;
+    if (!el || typeof el.selectionStart !== 'number' || typeof el.selectionEnd !== 'number') {
+      return { start: len, end: len, selectedText: '' };
+    }
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    return { value, start, end, selectedText: value.slice(start, end) };
+  }
+
+  function openInsertLink(key = 'notes', e = null) {
+    if (e) stopLinkUiEvent(e);
+    const selection = getFieldSelection(key);
+    setLinkSelection({ key, value: selection.value, start: selection.start, end: selection.end });
+    setLinkText(selection.selectedText);
+    setLinkUrl('');
+    setLinkPanelOpen(true);
+  }
+
+  function closeInsertLink() {
+    setLinkPanelOpen(false);
+    requestAnimationFrame(() => fieldRef(linkSelection.key).current?.focus());
+  }
+
+  function insertMarkdownLink() {
+    const result = spliceMarkdownLink(
+      linkSelection.value,
+      linkSelection.start,
+      linkSelection.end,
+      linkText,
+      linkUrl,
+    );
+    if (!result) return;
+
+    setForm((prev) => {
+      const key = linkSelection.key;
+      return {
+        ...prev,
+        [key]: result.text,
+      };
+    });
+    setLinkPanelOpen(false);
+    requestAnimationFrame(() => {
+      const ref = fieldRef(linkSelection.key).current;
+      ref?.focus();
+      ref?.setSelectionRange(result.cursor, result.cursor);
+    });
+  }
+
+  function handleTextFieldKeyDown(key, e) {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      openInsertLink(key, e);
+    }
+  }
+
+  useEffect(() => {
+    if (linkPanelOpen) linkUrlRef.current?.focus();
+  }, [linkPanelOpen]);
+
   // (p-1)/9 maps [1..10] → [0%..100%], matching the slider thumb's actual travel range.
   const p = Math.min(10, Math.max(1, form.priority));
   const priorityPct = `${((p - 1) / 9) * 100}%`;
+  const noteLinks = extractLinks(form.notes);
+  const linkUrlSafe = normalizeSafeUrl(linkUrl);
+
+  function renderInsertLinkPanel(key) {
+    if (!linkPanelOpen || linkSelection.key !== key) return null;
+    return (
+      <div
+        className="insert-link-panel"
+        role="dialog"
+        aria-label="Insert link"
+        onMouseDown={stopLinkUiPropagation}
+        onClick={stopLinkUiPropagation}
+      >
+        <label className="insert-link-field">
+          <span>Text</span>
+          <input
+            className="task-modal-input"
+            value={linkText}
+            onChange={(e) => setLinkText(e.target.value)}
+            onMouseDown={stopLinkUiPropagation}
+            onClick={stopLinkUiPropagation}
+          />
+        </label>
+        <label className="insert-link-field">
+          <span>URL</span>
+          <input
+            ref={linkUrlRef}
+            className="task-modal-input"
+            value={linkUrl}
+            onChange={(e) => setLinkUrl(e.target.value)}
+            onMouseDown={stopLinkUiPropagation}
+            onClick={stopLinkUiPropagation}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && linkUrlSafe) {
+                e.preventDefault();
+                insertMarkdownLink();
+              }
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                closeInsertLink();
+              }
+            }}
+            placeholder="https://example.com"
+          />
+        </label>
+        {linkUrl && !linkUrlSafe && (
+          <div className="insert-link-error">Use http, https, mailto, or www links.</div>
+        )}
+        <div className="insert-link-actions">
+          <button type="button" className="task-modal-cancel" onMouseDown={stopLinkUiEvent} onClick={(e) => { stopLinkUiEvent(e); closeInsertLink(); }}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="task-modal-save"
+            onMouseDown={stopLinkUiEvent}
+            onClick={(e) => { stopLinkUiEvent(e); insertMarkdownLink(); }}
+            disabled={!linkUrlSafe}
+          >
+            Insert
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="task-modal-overlay" onClick={onClose}>
@@ -103,23 +256,49 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
           <div className="task-modal-section">
             <div className="task-modal-section-title">Identity</div>
             <div className="task-modal-field task-modal-field--full">
-              <label className="task-modal-label" htmlFor="tm-name">Name</label>
+              <div className="notes-toolbar">
+                <label className="task-modal-label" htmlFor="tm-name">Name</label>
+                <button
+                  type="button"
+                  className="insert-link-btn"
+                  onMouseDown={(e) => openInsertLink('name', e)}
+                  onClick={stopLinkUiEvent}
+                >
+                  Insert link
+                </button>
+              </div>
               <input
+                ref={nameRef}
                 id="tm-name"
                 className="task-modal-input"
                 required
                 value={form.name}
                 onChange={(e) => set('name', e.target.value)}
+                onKeyDown={(e) => handleTextFieldKeyDown('name', e)}
               />
+              {renderInsertLinkPanel('name')}
             </div>
             <div className="task-modal-field task-modal-field--full">
-              <label className="task-modal-label" htmlFor="tm-subtask">Subtask</label>
+              <div className="notes-toolbar">
+                <label className="task-modal-label" htmlFor="tm-subtask">Subtask</label>
+                <button
+                  type="button"
+                  className="insert-link-btn"
+                  onMouseDown={(e) => openInsertLink('subtask', e)}
+                  onClick={stopLinkUiEvent}
+                >
+                  Insert link
+                </button>
+              </div>
               <input
+                ref={subtaskRef}
                 id="tm-subtask"
                 className="task-modal-input"
                 value={form.subtask}
                 onChange={(e) => set('subtask', e.target.value)}
+                onKeyDown={(e) => handleTextFieldKeyDown('subtask', e)}
               />
+              {renderInsertLinkPanel('subtask')}
             </div>
           </div>
 
@@ -257,11 +436,35 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
             <div className="task-modal-section-title">Notes</div>
             <div className="task-modal-field task-modal-field--full">
               <textarea
+                ref={notesRef}
                 id="tm-notes"
                 className="task-modal-textarea"
                 value={form.notes}
                 onChange={(e) => set('notes', e.target.value)}
               />
+              {noteLinks.length > 0 && (
+                <div className="task-modal-link-reference">
+                  <div className="task-modal-link-preview">
+                    <span className="task-modal-link-kicker">Preview</span>
+                    <LinkifiedText text={form.notes} />
+                  </div>
+                  <div className="task-modal-link-list" aria-label="Reference links">
+                    <span className="task-modal-link-kicker">Reference links</span>
+                    {noteLinks.map((link, i) => (
+                      <a
+                        key={`${link.href}-${i}`}
+                        href={link.href}
+                        className="task-modal-reference-link"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={link.href}
+                      >
+                        {link.label}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

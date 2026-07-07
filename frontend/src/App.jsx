@@ -4,6 +4,7 @@ import Dashboard from './components/Dashboard.jsx';
 import Archive from './components/Archive.jsx';
 import Settings from './components/Settings.jsx';
 import ReadingSheet from './components/ReadingSheet.jsx';
+import MonthlyReport from './components/MonthlyReport.jsx';
 
 export default function App() {
   // Navigation is split into two concepts (P5.0-fix1):
@@ -41,6 +42,7 @@ export default function App() {
         {/* Utility/tool views — not primary sheets. */}
         <nav className="app-utility-nav" aria-label="Tools">
           <button className={`tab${activeTool === 'dashboard' ? ' active' : ''}`} onClick={() => setActiveTool('dashboard')}>Dashboard</button>
+          <button className={`tab${activeTool === 'report' ? ' active' : ''}`} onClick={() => setActiveTool('report')}>Reports</button>
           <button className={`tab${activeTool === 'archive' ? ' active' : ''}`} onClick={() => setActiveTool('archive')}>Archive</button>
           <button className={`tab${activeTool === 'settings' ? ' active' : ''}`} onClick={() => setActiveTool('settings')}>Settings</button>
         </nav>
@@ -50,6 +52,7 @@ export default function App() {
         {!showingTool && activeSheet === 'tasks' && <TaskGrid />}
         {!showingTool && activeSheet === 'reading' && <ReadingSheet />}
         {activeTool === 'dashboard' && <Dashboard />}
+        {activeTool === 'report' && <MonthlyReport />}
         {activeTool === 'archive' && <Archive />}
         {activeTool === 'settings' && <Settings />}
       </main>

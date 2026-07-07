@@ -403,6 +403,10 @@ thead .meta-col {
 .col-task        { left: 312px; overflow: hidden; text-overflow: ellipsis; }
 .col-sub         { left: 462px; overflow: hidden; text-overflow: ellipsis;
                border-right: 2px solid #bbb; } /* last frozen col — visual separator */
+.col-task.meta-selected,
+.col-sub.meta-selected {
+  overflow: visible;
+}
 .col-freq   { text-align: center; }
 .col-days   { text-align: center; }
 .col-notes  { overflow: hidden; text-overflow: ellipsis; }
@@ -665,6 +669,35 @@ thead .meta-col {
   line-height: inherit;
 }
 
+.cell-edit-wrap {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cell-edit-main {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.insert-link-btn--cell {
+  padding: 1px 4px;
+  font-size: 8px;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+.insert-link-panel--cell {
+  position: fixed;
+  z-index: 99999;
+  pointer-events: auto;
+  width: min(320px, calc(100vw - 24px));
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.14);
+}
+
 /* -------------------------------------------------------------------------
    Urgency color bands
    ---------------------------------------------------------------------- */
@@ -858,6 +891,90 @@ thead .meta-col {
   cursor: default;
 }
 
+.notes-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.insert-link-btn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--rule);
+  padding: 3px 7px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.insert-link-btn:hover,
+.insert-link-btn:focus-visible {
+  color: var(--ink-2);
+  border-color: var(--accent);
+  outline: none;
+}
+
+.insert-link-btn--editbar {
+  padding: 2px 6px;
+  font-size: 9px;
+  flex-shrink: 0;
+}
+
+.insert-link-panel {
+  margin-top: 7px;
+  border: 1px solid var(--rule);
+  background: var(--bg-panel);
+  padding: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.45fr);
+  gap: 7px;
+}
+
+.insert-link-panel--editbar {
+  margin: 4px 0 2px;
+  grid-template-columns: minmax(120px, 0.9fr) minmax(180px, 1.4fr) auto;
+  align-items: end;
+  padding: 6px;
+  font-size: 11px;
+}
+
+.insert-link-field {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.insert-link-field span {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+
+.insert-link-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.insert-link-panel--editbar .insert-link-actions {
+  grid-column: auto;
+}
+
+.insert-link-error {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .edit-bar-note-preview {
   display: flex;
   align-items: baseline;
@@ -879,13 +996,23 @@ thead .meta-col {
 /* Linkified URL in notes — used by LinkifiedText component */
 .note-link {
   color: var(--accent);
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  text-decoration: none;
+  font-weight: 600;
+  cursor: pointer;
   word-break: break-all;
 }
 
 .note-link:hover {
   opacity: 0.75;
+  text-decoration: none;
+}
+
+.note-link:focus-visible,
+.task-link-url:focus-visible,
+.task-modal-reference-link:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+  text-decoration: none;
 }
 
 /* -------------------------------------------------------------------------
@@ -3780,6 +3907,62 @@ select.task-modal-input {
   background: var(--bg-panel);
 }
 
+.task-modal-link-reference {
+  margin-top: 7px;
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.task-modal-link-preview,
+.task-modal-link-list {
+  border-top: 1px solid var(--rule-2);
+  padding-top: 6px;
+  min-width: 0;
+}
+
+.task-modal-link-preview {
+  color: var(--ink-2);
+  max-height: 58px;
+  overflow: auto;
+}
+
+.task-modal-link-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.task-modal-link-kicker {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
+.task-modal-reference-link {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--accent);
+  text-decoration: none;
+  border: 1px solid var(--rule-2);
+  padding: 2px 6px;
+  background: var(--bg-panel);
+}
+
+.task-modal-reference-link:hover {
+  border-color: var(--accent);
+  text-decoration: none;
+}
+
 /* ── Segmented status buttons ── */
 .task-modal-seg {
   display: flex;
@@ -4972,7 +5155,7 @@ select.task-modal-input {
 
 .task-link-url:hover {
   background: var(--row-hover-bg);
-  text-decoration: underline;
+  text-decoration: none;
 }
 
 /* ===========================================================================
@@ -5495,3 +5678,63 @@ select.task-modal-input {
 .settings-switch-input:checked + .settings-switch .settings-switch-thumb { transform: translateX(14px); }
 .settings-switch-input:focus-visible + .settings-switch { outline: 2px solid var(--accent); outline-offset: 1px; }
 .settings-switch-label { user-select: none; }
+
+/* ===========================================================================
+   Monthly / Period Report (P6.0B)
+   =========================================================================== */
+.report-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+/* Period selector in the header. */
+.report-period { display: flex; align-items: center; gap: 8px; }
+.report-nav {
+  font-family: inherit; font-size: 13px; padding: 3px 10px; cursor: pointer;
+  border: 1px solid var(--grid-border); border-radius: 3px;
+  background: var(--bg-panel); color: var(--ink-2);
+}
+.report-nav:hover { border-color: var(--accent); }
+.report-nav--today { font-size: 11px; }
+.report-period-label { font-size: 13px; font-weight: 600; color: var(--ink); min-width: 150px; text-align: center; }
+
+/* Summary tiles. */
+.report-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+}
+.report-tile {
+  padding: 8px 10px;
+  background: var(--bg-panel);
+  border: 1px solid var(--grid-border);
+  border-radius: 4px;
+}
+.report-tile-value { font-size: 20px; font-weight: 700; line-height: 1.1; color: var(--ink); }
+.report-tile-value--sm { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.report-tile-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-top: 2px; }
+
+/* Period day-bars. */
+.report-bars { width: 100%; height: 40px; display: block; }
+.report-bar { fill: var(--good); }
+.report-bar--empty { fill: var(--grid-border); }
+.report-activity-meta { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--muted); margin: 6px 0 10px; }
+.report-activity-meta strong { color: var(--ink); }
+
+/* Two-column report blocks. */
+.report-two-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; padding: 4px 0; }
+.report-subhead { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 4px; }
+
+/* Inline bar in completion-by-section rows. */
+.report-inbar { display: inline-block; width: 70px; height: 6px; background: var(--grid-border); border-radius: 3px; overflow: hidden; vertical-align: middle; }
+.report-inbar-fill { display: block; height: 100%; background: var(--good); }
+
+/* Compact stat rows + notes. */
+.report-stat-row { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: var(--muted); }
+.report-stat-row strong { color: var(--ink); font-weight: 700; }
+.report-note {
+  font-size: 11px; color: var(--muted); font-style: italic;
+  padding: 6px 12px; background: var(--paused-bg); border-top: 1px solid var(--grid-border);
+}
+
+/* Pressure change lists. */
+.report-change-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.report-change-list li { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.report-change-list li > span:first-child { font-weight: 500; color: var(--ink); min-width: 90px; }
