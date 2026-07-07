@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { urgencyLabel, urgencyReason } from '../urgency.js';
+import { extractLinks } from '../linkUtils.js';
+import LinkifiedText from './LinkifiedText.jsx';
 
 const STATUS_OPTIONS = ['active', 'hiatus'];
 // Display labels only — the stored status value stays lowercase ('active'/'hiatus').
@@ -63,6 +65,7 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
   // (p-1)/9 maps [1..10] → [0%..100%], matching the slider thumb's actual travel range.
   const p = Math.min(10, Math.max(1, form.priority));
   const priorityPct = `${((p - 1) / 9) * 100}%`;
+  const noteLinks = extractLinks(form.notes);
 
   return (
     <div className="task-modal-overlay" onClick={onClose}>
@@ -262,6 +265,29 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
                 value={form.notes}
                 onChange={(e) => set('notes', e.target.value)}
               />
+              {noteLinks.length > 0 && (
+                <div className="task-modal-link-reference">
+                  <div className="task-modal-link-preview">
+                    <span className="task-modal-link-kicker">Preview</span>
+                    <LinkifiedText text={form.notes} />
+                  </div>
+                  <div className="task-modal-link-list" aria-label="Reference links">
+                    <span className="task-modal-link-kicker">Reference links</span>
+                    {noteLinks.map((link, i) => (
+                      <a
+                        key={`${link.href}-${i}`}
+                        href={link.href}
+                        className="task-modal-reference-link"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={link.href}
+                      >
+                        {link.label}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
