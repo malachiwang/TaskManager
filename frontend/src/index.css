@@ -195,50 +195,62 @@ body {
   padding-left: 16px;
 }
 
-/* Bottom worksheet-tab strip (P5.0-fix1, restyled fix2) — primary sheet switch
-   (Tasks / Reading) styled like Google Sheets worksheet tabs: a thin, quiet
-   light strip with small paper tabs, bottom-left aligned. It is a normal flex
-   child at the bottom of the column layout (not fixed), so it never overlaps
-   content or the horizontal scrollbar. */
+/* Bottom worksheet-tab strip (P5.0-fix1/2, Sheets-styled in fix3) — primary
+   sheet switch (Tasks / Reading) matching Google Sheets worksheet tabs: a light
+   gray bottom strip with substantial bottom-left tab blocks, an active tab that
+   reads as selected (paper fill + blue text/accent) and inactive tabs in muted
+   dark text. It is a normal flex child at the bottom of the column layout (not
+   fixed), so it never overlaps content or the horizontal scrollbar. */
 .sheet-tabbar {
   display: flex;
-  align-items: flex-end;
-  gap: 2px;
+  align-items: stretch;
+  gap: 1px;
   flex-shrink: 0;
-  height: 26px;
-  padding: 0 10px;
-  background: var(--bg-app, var(--bg-panel));
+  height: 34px;
+  padding: 0 8px;
+  background: var(--header-bg, #f1f1f1);
   border-top: 1px solid var(--grid-border);
 }
 
 .sheet-tab {
-  padding: 3px 14px 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 20px;
   background: transparent;
   border: 1px solid transparent;
-  border-bottom: none;
-  border-radius: 4px 4px 0 0;
-  color: var(--muted);
+  border-top: none;
+  border-radius: 0 0 3px 3px;
+  color: var(--ink-2);
   cursor: pointer;
   font-family: inherit;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1;
 }
 
-.sheet-tab:hover:not(.sheet-tab-active) {
-  background: var(--row-hover-bg);
-  color: var(--ink-2);
+/* Visual-only caret (▾) after the label, à la Sheets worksheet tabs. */
+.sheet-tab::after {
+  content: '▾';
+  font-size: 9px;
+  opacity: 0.45;
 }
 
-/* Active tab reads as the selected worksheet: paper fill, sheet-border sides,
-   an accent underline, and it visually connects to the sheet above. */
+.sheet-tab:hover:not(.sheet-tab-active) {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+/* Active tab: paper fill connected to the sheet above (via top overlap),
+   blue label + accent underline — the selected worksheet. */
 .sheet-tab-active {
   background: var(--bg-panel);
-  color: var(--ink);
+  color: var(--accent);
+  font-weight: 600;
   border-color: var(--grid-border);
   border-bottom: 2px solid var(--accent);
-  margin-bottom: -1px;
-  font-weight: 600;
+  margin-top: -1px;
 }
+
+.sheet-tab-active::after { opacity: 0.6; }
 
 .app-main {
   flex: 1;
@@ -5043,3 +5055,54 @@ select.task-modal-input {
 .rd-status-archived { color: var(--muted-2); }
 
 .rd-action-group { display: flex; gap: 4px; justify-content: flex-end; }
+
+/* Inline page checkpoints (P5.0-fix3) — a horizontal "page, date" strip on each
+   book row, extending right (the grid-wrapper scrolls if it overflows). */
+.rd-col-checkpoints { white-space: nowrap; }
+.rd-checkpoints { display: flex; align-items: center; gap: 4px; }
+
+.rd-checkpoint {
+  display: inline-flex;
+  align-items: baseline;
+  font-size: 11px;
+  padding: 1px 6px;
+  background: var(--paused-bg);
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.rd-cp-date { color: var(--muted); }
+
+.rd-checkpoint-add {
+  cursor: pointer;
+  color: var(--accent);
+  background: transparent;
+  border: 1px dashed var(--grid-border);
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 7px;
+}
+.rd-checkpoint-add:hover { background: var(--row-hover-bg); }
+
+.rd-checkpoint-add-form { gap: 3px; background: var(--bg-panel); padding: 1px 4px; }
+.rd-cp-page,
+.rd-cp-dateinput {
+  font-size: 11px;
+  border: 1px solid var(--grid-border);
+  border-radius: 2px;
+  padding: 1px 3px;
+}
+.rd-cp-page { width: 46px; }
+.rd-cp-dateinput { width: 118px; }
+.rd-cp-save,
+.rd-cp-cancel {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 2px;
+  line-height: 1;
+}
+.rd-cp-save { color: var(--good); }
+.rd-cp-cancel { color: var(--muted-2); }
