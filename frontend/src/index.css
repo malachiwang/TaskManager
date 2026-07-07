@@ -5118,10 +5118,13 @@ select.task-modal-input {
   gap: 6px;
   margin: 8px 0 4px;
 }
-/* Chips are buttons (dashboard lenses) — clickable, with a clear selected state. */
+/* Chips are buttons (dashboard lenses) — clickable, with a clear selected state.
+   Compact + left-aligned + wrapping; capped width so they never become
+   full-viewport slabs (P6.0A-fix2). */
 .dashboard-summary-chip {
-  flex: 1 1 90px;
-  min-width: 90px;
+  flex: 1 1 140px;
+  min-width: 120px;
+  max-width: 200px;
   padding: 6px 10px;
   background: var(--bg-panel);
   border: 1px solid var(--grid-border);
@@ -5208,6 +5211,14 @@ select.task-modal-input {
 
 /* ── P6.0A-fix1: lens header, composition bars, task diagnosis, hierarchy ── */
 
+/* Top command panel (P6.0A-fix2) — contains the heading, lens chips, composition
+   bars, and Task Diagnosis, inset to the same 16px horizontal margin as the
+   lower .ws-panels so the top no longer spans edge-to-edge. Bottom padding plus
+   .ws-panels' own top padding creates a clean gap before the detailed tables. */
+.dashboard-command-panel {
+  padding: 6px 16px 14px;
+}
+
 /* Action-area section heading (below the Dashboard title). */
 .dashboard-section-heading {
   display: flex;
@@ -5225,7 +5236,17 @@ select.task-modal-input {
   gap: 16px;
   margin: 6px 0 4px;
 }
-.dashboard-composition { flex: 1 1 260px; min-width: 240px; }
+/* Composition bars sit inside compact contained cards (P6.0A-fix2) — side by
+   side on wide screens, stacked on narrow, never a full-width raw strip. */
+.dashboard-composition {
+  flex: 1 1 280px;
+  min-width: 240px;
+  max-width: 440px;
+  padding: 8px 10px;
+  border: 1px solid var(--grid-border);
+  border-radius: 4px;
+  background: var(--bg-panel);
+}
 .dashboard-composition-label {
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
 }
@@ -5260,7 +5281,7 @@ select.task-modal-input {
 .dashboard-quickwins, .dashboard-decide { opacity: 0.98; }
 
 /* Task Diagnosis grid + cards. */
-.dashboard-diag-frame { margin-bottom: 8px; }
+.dashboard-diag-frame { margin-top: 10px; }
 .dashboard-diag-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));

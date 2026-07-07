@@ -464,6 +464,9 @@ export default function Dashboard() {
         <div className="ws-dash-now">{nowLabel()}</div>
       </div>
 
+      {/* ── Top command panel — contained + inset to align with lower panels ── */}
+      <div className="dashboard-command-panel">
+
       {/* ── Action area heading ── */}
       <div className="dashboard-section-heading">
         <span className="dashboard-section-heading-title">What should I do now?</span>
@@ -545,6 +548,8 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      </div>{/* /dashboard-command-panel */}
 
       <div className="ws-panels">
         {/* ── Do Now (primary) ── */}
