@@ -1,6 +1,14 @@
 import { useState, useEffect } from 'react';
-import { fetchDashboard, fetchSnapshotPressure } from '../api.js';
-import { urgencyClass } from '../urgency.js';
+import { fetchDashboard, fetchSnapshotPressure, fetchTasks } from '../api.js';
+import { urgencyClass, urgencyReason } from '../urgency.js';
+import {
+  getDoNowTasks,
+  getQuickWinTasks,
+  getTriageTasks,
+  getSystemHygieneInsights,
+  getSectionPressure,
+  getActivitySummary,
+} from '../dashboardInsights.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -45,36 +53,6 @@ function SparklineBar({ trend }) {
         );
       })}
     </svg>
-  );
-}
-
-// 4-row urgency distribution bar chart.
-function UrgencyDist({ dist, total }) {
-  const bins = [
-    { key: 'critical',   label: 'Critical', cls: 'urg-critical' },
-    { key: 'high',       label: 'High',     cls: 'urg-high' },
-    { key: 'noticeable', label: 'Notice.',  cls: 'urg-noticeable' },
-    { key: 'low',        label: 'Low',      cls: 'urg-low' },
-  ];
-  return (
-    <div className="dash-urgdist">
-      {bins.map(({ key, label, cls }) => {
-        const count = dist[key] || 0;
-        const pct = total > 0 ? (count / total) * 100 : 0;
-        return (
-          <div key={key} className="dash-urgdist-row">
-            <span className="dash-urgdist-label">{label}</span>
-            <div className="dash-urgdist-track">
-              <div
-                className={`dash-urgdist-fill ${cls}`}
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <span className="dash-urgdist-count">{count}</span>
-          </div>
-        );
-      })}
-    </div>
   );
 }
 
@@ -278,23 +256,41 @@ function PressureHeatmap() {
   );
 }
 
-// Horizontal ratio bar — active vs paused.
-function RatioBar({ activeCount, pausedCount }) {
-  const total = activeCount + pausedCount;
-  if (total === 0) return <div className="dash-ratio-empty">No tasks</div>;
+// Compact reusable action table for Do Now / Quick Wins.
+function ActionTable({ rows, emptyText, reasonPrefix }) {
+  if (!rows.length) return <div className="ws-empty">{emptyText}</div>;
   return (
-    <div className="dash-ratio-bar">
-      <div
-        className="dash-ratio-segment dash-ratio-segment--active"
-        style={{ width: `${(activeCount / total) * 100}%` }}
-        title={`Active: ${activeCount}`}
-      />
-      <div
-        className="dash-ratio-segment dash-ratio-segment--paused"
-        style={{ width: `${(pausedCount / total) * 100}%` }}
-        title={`Paused: ${pausedCount}`}
-      />
-    </div>
+    <table className="dash-table dashboard-action-table">
+      <thead>
+        <tr>
+          <th className="dash-th-urg">Urg</th>
+          <th>Task</th>
+          <th>Section</th>
+          <th className="dash-th-num">Overdue</th>
+          <th className="dash-th-num">Freq</th>
+          <th>Why</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((t) => (
+          <tr key={t.id}>
+            <td>
+              <div className="dash-urg-cell">
+                <span className={`dash-urg-num ${urgencyClass(t.urgency)}`}>{t.urgency.toFixed(1)}</span>
+                <UrgencyBar value={t.urgency} />
+              </div>
+            </td>
+            <td className="dash-task-name">{t.name}</td>
+            <td className="dash-muted">{t.section || '—'}</td>
+            <td className="dash-num">{(t.days_overdue ?? 0) > 0 ? `${t.days_overdue}d` : '—'}</td>
+            <td className="dash-num">{t.interval_days}d</td>
+            <td className="dash-muted dash-reason">
+              {reasonPrefix ? `${reasonPrefix} · ` : ''}{urgencyReason(t)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -312,221 +308,143 @@ function nowLabel() {
 export default function Dashboard() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [tasks, setTasks] = useState(null);
+  const [tasksError, setTasksError] = useState(null);
 
   useEffect(() => {
-    fetchDashboard()
-      .then(setData)
-      .catch((e) => setError(e.message));
+    fetchDashboard().then(setData).catch((e) => setError(e.message));
+    fetchTasks().then(setTasks).catch((e) => setTasksError(e.message));
   }, []);
 
   if (error) return <div className="grid-status error">Error: {error}</div>;
-  if (!data)  return <div className="grid-status">Loading…</div>;
+  if (!data) return <div className="grid-status">Loading…</div>;
 
-  const {
-    top_5_urgent, category_summary, dormant_tasks, paused_count, never_done_count,
-    active_count, urgency_distribution, completion_trend, completion_heatmap,
-  } = data;
+  const { urgency_distribution, completion_trend, completion_heatmap } = data;
 
-  // ── Derived stats ────────────────────────────────────────────────────────
+  // Activity momentum (from completion_trend).
+  const act = getActivitySummary(completion_trend);
 
-  // Done in last 7 days — sum of the last 7 completion_trend entries.
-  const done7d = completion_trend.slice(-7).reduce((s, d) => s + d.count, 0);
+  // Task-level action insights (from GET /tasks). Guard against a failed/pending
+  // /tasks fetch — the rest of the dashboard still renders from /dashboard.
+  const tasksReady = Array.isArray(tasks);
+  const doNow = tasksReady ? getDoNowTasks(tasks) : [];
+  const doNowIds = doNow.map((t) => t.id);
+  const quickWins = tasksReady ? getQuickWinTasks(tasks, doNowIds) : [];
+  const triage = tasksReady ? getTriageTasks(tasks) : [];
+  const hygiene = tasksReady ? getSystemHygieneInsights(tasks) : [];
+  const sectionPressure = tasksReady ? getSectionPressure(tasks) : [];
+  const inScope = tasksReady
+    ? tasks.filter((t) => !(t.is_paused === 1 || t.is_ended || t.is_scheduled)).length
+    : 0;
 
-  // Previous 7-day window (days 14–8 ago) for pace comparison.
-  const prev7d = completion_trend.slice(-14, -7).reduce((s, d) => s + d.count, 0);
+  const critHigh = (urgency_distribution.critical || 0) + (urgency_distribution.high || 0);
 
-  // Percent change vs previous window; null when prev is 0 (avoids divide-by-zero).
-  const paceChangePct = prev7d > 0 ? Math.round(((done7d - prev7d) / prev7d) * 100) : null;
-
-  // Best single day in the 30-day window.
-  const bestDay = Math.max(...completion_trend.map((d) => d.count), 0);
-
-  // Number of days in the last 7 with at least one completion.
-  const activeDays7d = completion_trend.slice(-7).filter((d) => d.count > 0).length;
-
-  // Total completions in the 30-day window.
-  const total30d = completion_trend.reduce((s, d) => s + d.count, 0);
-
-  // Weighted average urgency from category_summary (active non-paused tasks).
-  const catEntries = Object.entries(category_summary);
+  // Weighted avg urgency across active tasks (from /dashboard category_summary).
+  const catEntries = Object.entries(data.category_summary || {});
   const totalActive = catEntries.reduce((s, [, c]) => s + c.count, 0);
   const avgUrgencyRaw = totalActive > 0
     ? catEntries.reduce((s, [, c]) => s + c.avg_urgency * c.count, 0) / totalActive
     : null;
   const avgUrgency = avgUrgencyRaw !== null ? avgUrgencyRaw.toFixed(1) : '—';
 
-  // Peak urgency.
-  const peakUrgency   = top_5_urgent.length > 0 ? top_5_urgent[0].urgency.toFixed(1) : '—';
-  const peakTaskName  = top_5_urgent.length > 0 ? top_5_urgent[0].name : null;
-
-  // Tasks at/near peak (urgency ≥ 9.9) within the top-5 shown.
-  const atPeakCount = top_5_urgent.filter(t => t.urgency >= 9.9).length;
-
-  // Dormant count per category — crossref from dormant_tasks array.
-  const dormantByCat = {};
-  for (const t of dormant_tasks) {
-    const key = t.category || '—';
-    dormantByCat[key] = (dormantByCat[key] || 0) + 1;
-  }
-
-  // Categories sorted by avg urgency descending.
-  const sortedCats = [...catEntries].sort((a, b) => b[1].avg_urgency - a[1].avg_urgency);
-
-  // Dormant tasks sorted worst-first.
-  const sortedDormant = [...dormant_tasks].sort((a, b) => b.days_since - a.days_since);
+  const actionWarning = !tasksReady
+    ? (tasksError ? 'Could not load task details — action lists unavailable.' : 'Loading task details…')
+    : null;
 
   return (
     <div className="ws-dashboard">
-
-      {/* ── Serif headline ── */}
       <div className="ws-dash-header">
         <div className="ws-dash-header-left">
-          <div className="ws-dash-title">Pressure readout</div>
+          <div className="ws-dash-title">What should I do now?</div>
           <div className="ws-dash-sub">
-            passive readout · active non-paused tasks · {totalActive} in scope
+            action queue · active non-hiatus tasks{tasksReady ? ` · ${inScope} in scope` : ''}
           </div>
         </div>
         <div className="ws-dash-now">{nowLabel()}</div>
       </div>
 
-      {/* ── 5-cell stat strip ── */}
-      <div className="ws-stat-strip">
-
-        {/* 1. Avg urgency — weighted avg across all active non-paused tasks */}
-        <div className="ws-stat-cell">
-          <div className="ws-stat-label">Avg urgency</div>
-          <div className={`ws-stat-value dash-stat-urg${avgUrgencyRaw !== null ? ` ${urgencyClass(avgUrgencyRaw)}` : ''}`}>
-            {avgUrgency}<small>/10</small>
-          </div>
-          <div className="ws-stat-delta">{totalActive} active tasks</div>
-          {avgUrgencyRaw !== null && <UrgencyBar value={avgUrgencyRaw} wide />}
+      {/* ── Action Summary ── */}
+      <div className="dashboard-action-summary">
+        <div className={`dashboard-summary-chip${doNow.length ? ' is-accent' : ''}`}>
+          <div className="dashboard-summary-value">{tasksReady ? doNow.length : '—'}</div>
+          <div className="dashboard-summary-label">Do now</div>
         </div>
-
-        {/* 2. Peak urgency — top-ranked task */}
-        <div className="ws-stat-cell">
-          <div className="ws-stat-label">Peak urgency</div>
-          <div className={`ws-stat-value dash-stat-urg${peakUrgency !== '—' ? ` ${urgencyClass(parseFloat(peakUrgency))}` : ''}`}>
-            {peakUrgency}<small>/10</small>
-          </div>
-          <div className="ws-stat-delta" title={peakTaskName || ''}>
-            {peakTaskName ? peakTaskName.slice(0, 20) : 'no active tasks'}
-          </div>
-          {peakUrgency !== '—' && <UrgencyBar value={parseFloat(peakUrgency)} wide />}
+        <div className="dashboard-summary-chip">
+          <div className="dashboard-summary-value">{tasksReady ? quickWins.length : '—'}</div>
+          <div className="dashboard-summary-label">Quick wins</div>
         </div>
-
-        {/* 3. Done in 7d — sum of last 7 completion_trend entries */}
-        <div className="ws-stat-cell">
-          <div className="ws-stat-label">Done in 7d</div>
-          <div className="ws-stat-value">{done7d}</div>
-          <div className="ws-stat-delta">completions, last 7 days</div>
+        <div className="dashboard-summary-chip">
+          <div className="dashboard-summary-value">{tasksReady ? triage.length : '—'}</div>
+          <div className="dashboard-summary-label">Decide</div>
         </div>
-
-        {/* 4. Dormant 30d+ */}
-        <div className="ws-stat-cell">
-          <div className="ws-stat-label">Dormant 30d+</div>
-          <div className={`ws-stat-value${dormant_tasks.length > 0 ? ' dn' : ''}`}>
-            {dormant_tasks.length}
-          </div>
-          <div className={`ws-stat-delta${dormant_tasks.length > 0 ? ' dn' : ''}`}>
-            {dormant_tasks.length > 0 ? 'risk zone' : 'clear'}
-          </div>
+        <div className={`dashboard-summary-chip${critHigh ? ' is-warn' : ''}`}>
+          <div className="dashboard-summary-value">{critHigh}</div>
+          <div className="dashboard-summary-label">Critical / High</div>
         </div>
-
-        {/* 5. Hiatus */}
-        <div className="ws-stat-cell">
-          <div className="ws-stat-label">Hiatus</div>
-          <div className="ws-stat-value">{paused_count}</div>
-          <div className="ws-stat-delta">excluded from pressure</div>
+        <div className="dashboard-summary-chip">
+          <div className={`dashboard-summary-value ${avgUrgencyRaw !== null ? urgencyClass(avgUrgencyRaw) : ''}`}>{avgUrgency}</div>
+          <div className="dashboard-summary-label">Avg urgency</div>
         </div>
-
+        <div className="dashboard-summary-chip">
+          <div className="dashboard-summary-value">{act.done7d}</div>
+          <div className="dashboard-summary-label">Done 7d</div>
+        </div>
       </div>
 
-      {/* ── Graph strip ── */}
-      <div className="ws-graph-strip">
+      {actionWarning && (
+        <div className={`dashboard-action-warning${tasksError ? ' error' : ''}`}>{actionWarning}</div>
+      )}
 
-        <div className="ws-graph-card">
-          <div className="ws-graph-title">7D Pace</div>
-          <div className="dash-pace-primary">
-            {done7d === 0 && prev7d === 0 ? (
-              <span className="dash-pace-none">no activity</span>
-            ) : (
-              <>
-                <span className="dash-pace-count">{done7d}</span>
-                <span className="dash-pace-unit"> completions</span>
-              </>
-            )}
-          </div>
-          <div className="dash-pace-delta">
-            {paceChangePct !== null ? (
-              <span className={paceChangePct >= 0 ? 'dash-pace-up' : 'dash-pace-dn'}>
-                {paceChangePct >= 0 ? '+' : ''}{paceChangePct}% vs prev 7d
-              </span>
-            ) : done7d > 0 ? (
-              <span className="dash-pace-new">new activity</span>
-            ) : null}
-          </div>
-          <div className="ws-graph-sub">
-            best day: {bestDay} · {activeDays7d}/7 active days
-          </div>
-        </div>
-
-        <div className="ws-graph-card">
-          <div className="ws-graph-title">Urgency distribution</div>
-          <UrgencyDist dist={urgency_distribution} total={active_count} />
-        </div>
-
-        <div className="ws-graph-card">
-          <div className="ws-graph-title">Active / Hiatus</div>
-          <RatioBar activeCount={active_count} pausedCount={paused_count} />
-          <div className="ws-graph-sub">{active_count} active · {paused_count} hiatus</div>
-        </div>
-
-      </div>
-
-      {/* ── Panels ── */}
       <div className="ws-panels">
-
-        {/* ── Priority queue — full width ── */}
+        {/* ── Do Now ── */}
         <div className="ws-frame ws-frame--full">
           <div className="ws-frame-header">
-            <span>Priority queue</span>
-            <span className="ws-frame-header-sub">
-              top 5 · active non-paused · sorted by pressure score
-              {atPeakCount > 0 && ` · ${atPeakCount} at peak (≥9.9)`}
-            </span>
+            <span>Do Now</span>
+            <span className="ws-frame-header-sub">established overdue tasks worth doing today · top 5</span>
           </div>
-          {top_5_urgent.length === 0 ? (
-            <div className="ws-empty">No active tasks.</div>
+          <ActionTable rows={doNow} emptyText={tasksReady ? 'No urgent established tasks right now.' : (actionWarning || '')} />
+        </div>
+
+        {/* ── Likely Quick Wins ── */}
+        <div className="ws-frame ws-frame--full">
+          <div className="ws-frame-header">
+            <span>Likely Quick Wins</span>
+            <span className="ws-frame-header-sub">frequent / overdue tasks that likely shed pressure fast · top 5</span>
+          </div>
+          <ActionTable rows={quickWins} emptyText={tasksReady ? 'No likely quick wins found.' : (actionWarning || '')} reasonPrefix="Likely quick win" />
+        </div>
+
+        {/* ── Decide / Clarify ── */}
+        <div className="ws-frame ws-frame--full">
+          <div className="ws-frame-header">
+            <span>Decide / Clarify</span>
+            <span className="ws-frame-header-sub">tasks that may need a decision, not immediate completion · top 6</span>
+          </div>
+          {!tasksReady ? (
+            <div className="ws-empty">{actionWarning}</div>
+          ) : triage.length === 0 ? (
+            <div className="ws-empty">Nothing needs a decision right now.</div>
           ) : (
             <table className="dash-table">
               <thead>
                 <tr>
-                  <th className="dash-th-urg">Urgency</th>
+                  <th className="dash-th-urg">Urg</th>
                   <th>Task</th>
-                  <th>Section</th>
-                  <th>Category</th>
-                  <th className="dash-th-num">Days</th>
-                  <th className="dash-th-num">Freq</th>
-                  <th>Last done</th>
+                  <th>Diagnosis</th>
+                  <th>Suggestion</th>
                 </tr>
               </thead>
               <tbody>
-                {top_5_urgent.map((t) => (
-                  <tr key={t.id}>
+                {triage.map(({ task, chips, suggestion }) => (
+                  <tr key={task.id}>
+                    <td><span className={`dash-urg-num ${urgencyClass(task.urgency)}`}>{task.urgency.toFixed(1)}</span></td>
+                    <td className="dash-task-name">{task.name}</td>
                     <td>
-                      <div className="dash-urg-cell">
-                        <span className={`dash-urg-num ${urgencyClass(t.urgency)}`}>
-                          {t.urgency.toFixed(1)}
-                        </span>
-                        <UrgencyBar value={t.urgency} />
+                      <div className="dashboard-diagnosis-chips">
+                        {chips.map((c) => <span key={c} className="dashboard-diagnosis-chip">{c}</span>)}
                       </div>
                     </td>
-                    <td className="dash-task-name">{t.name}</td>
-                    <td className="dash-muted">{t.section || '—'}</td>
-                    <td className="dash-muted">{t.category || '—'}</td>
-                    <td className="dash-num">{t.days_since}d</td>
-                    <td className="dash-num">{t.interval_days}d</td>
-                    <td className="dash-muted">{t.latest_completion || 'never'}</td>
+                    <td className="dash-muted dash-reason">{suggestion}</td>
                   </tr>
                 ))}
               </tbody>
@@ -534,44 +452,69 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* ── Category pressure ── */}
-        <div className="ws-frame">
+        {/* ── System Hygiene ── */}
+        <div className="ws-frame ws-frame--full">
           <div className="ws-frame-header">
-            <span>By category</span>
-            <span className="ws-frame-header-sub">avg · max · dormant · sorted by pressure</span>
+            <span>System Hygiene</span>
+            <span className="ws-frame-header-sub">system-level cleanup signals · highest-signal first</span>
           </div>
-          {sortedCats.length === 0 ? (
-            <div className="ws-empty">No categories.</div>
+          {!tasksReady ? (
+            <div className="ws-empty">{actionWarning}</div>
+          ) : hygiene.length === 0 ? (
+            <div className="ws-empty">No system hygiene warnings triggered.</div>
           ) : (
-            <table className="dash-table">
+            <div className="dashboard-hygiene-grid">
+              {hygiene.map((h) => (
+                <div key={h.key} className="dashboard-hygiene-card">
+                  <div className="dashboard-hygiene-title">{h.title}</div>
+                  <div className="dashboard-hygiene-body">{h.body}</div>
+                  <div className="dashboard-hygiene-action">{h.action}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── Section Pressure ── */}
+        <div className="ws-frame ws-frame--full">
+          <div className="ws-frame-header">
+            <span>Section Pressure</span>
+            <span className="ws-frame-header-sub">active tasks grouped by section · sorted by avg urgency</span>
+          </div>
+          {!tasksReady ? (
+            <div className="ws-empty">{actionWarning}</div>
+          ) : sectionPressure.length === 0 ? (
+            <div className="ws-empty">No active tasks.</div>
+          ) : (
+            <table className="dash-table dashboard-section-pressure">
               <thead>
                 <tr>
-                  <th>Category</th>
+                  <th>Section</th>
                   <th className="dash-th-num">Tasks</th>
-                  <th className="dash-th-urg">Avg urg</th>
+                  <th className="dash-th-urg">Avg</th>
                   <th className="dash-th-num">Max</th>
-                  <th className="dash-th-num">Dormant</th>
+                  <th className="dash-th-num">High+</th>
+                  <th className="dash-th-num">Neglect</th>
+                  <th className="dash-th-num">Never</th>
+                  <th className="dash-th-num">Uncat</th>
                 </tr>
               </thead>
               <tbody>
-                {sortedCats.map(([cat, s]) => (
-                  <tr key={cat}>
-                    <td>{cat || '—'}</td>
+                {sectionPressure.map((s) => (
+                  <tr key={s.section} className={s.section === '(no section)' ? 'dashboard-row-warn' : ''}>
+                    <td>{s.section}</td>
                     <td className="dash-num">{s.count}</td>
                     <td>
                       <div className="dash-urg-cell">
-                        <span className={`dash-urg-num ${urgencyClass(s.avg_urgency)}`}>
-                          {s.avg_urgency.toFixed(1)}
-                        </span>
-                        <UrgencyBar value={s.avg_urgency} />
+                        <span className={`dash-urg-num ${urgencyClass(s.avgUrg)}`}>{s.avgUrg.toFixed(1)}</span>
+                        <UrgencyBar value={s.avgUrg} />
                       </div>
                     </td>
-                    <td className={`dash-num ${urgencyClass(s.max_urgency)}`}>
-                      {s.max_urgency.toFixed(1)}
-                    </td>
-                    <td className={`dash-num${dormantByCat[cat] > 0 ? ' urg-high' : ''}`}>
-                      {dormantByCat[cat] || 0}
-                    </td>
+                    <td className={`dash-num ${urgencyClass(s.maxUrg)}`}>{s.maxUrg.toFixed(1)}</td>
+                    <td className={`dash-num${s.highCrit > 0 ? ' urg-high' : ''}`}>{s.highCrit}</td>
+                    <td className="dash-num">{s.neglected}</td>
+                    <td className="dash-num">{s.neverDone}</td>
+                    <td className={`dash-num${s.uncategorized > 0 ? ' dashboard-warn-text' : ''}`}>{s.uncategorized}</td>
                   </tr>
                 ))}
               </tbody>
@@ -579,99 +522,31 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* ── Dormant / risk panel ── */}
-        <div className="ws-frame">
-          <div className="ws-frame-header">
-            <span>Dormant tasks</span>
-            <span className="ws-frame-header-sub">30+ days since last completion · risk zone</span>
-          </div>
-          {sortedDormant.length === 0 ? (
-            <div className="ws-empty">No dormant tasks. All tasks completed recently.</div>
-          ) : (
-            <table className="dash-table">
-              <thead>
-                <tr>
-                  <th>Task</th>
-                  <th>Category</th>
-                  <th className="dash-th-num">Days</th>
-                  <th className="dash-th-num">Freq</th>
-                  <th className="dash-th-num">Urg</th>
-                  <th>Last done</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedDormant.map((t) => (
-                  <tr key={t.id}>
-                    <td className="dash-task-name">{t.name}</td>
-                    <td className="dash-muted">{t.category || '—'}</td>
-                    <td className="dash-num urg-high">{t.days_since}d</td>
-                    <td className="dash-num">{t.interval_days}d</td>
-                    <td className={`dash-num ${urgencyClass(t.urgency)}`}>
-                      {t.urgency.toFixed(1)}
-                    </td>
-                    <td className="dash-muted">{t.latest_completion || 'never'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        {/* ── Never done — compact metric ── */}
-        <div className="ws-frame">
-          <div className="ws-frame-header">
-            <span>Never completed</span>
-            <span className="ws-frame-header-sub">no completion record · no manual override</span>
-          </div>
-          <div className="ws-frame-body">
-            <div className="dash-metric-block">
-              <div className="dash-metric-value">{never_done_count}</div>
-              <div className="dash-metric-desc">
-                {never_done_count === 0
-                  ? 'All active tasks have at least one completion or manual override on record.'
-                  : `${never_done_count} active task${never_done_count !== 1 ? 's' : ''} have never been marked done. These may be new or persistently neglected.`
-                }
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ── Recent completions — 30-day trend ── */}
-        <div className="ws-frame">
-          <div className="ws-frame-header">
-            <span>Recent completions</span>
-            <span className="ws-frame-header-sub">
-              30-day total · all tasks · {completion_trend[0]?.date} → {completion_trend[29]?.date}
-            </span>
-          </div>
-          <div className="ws-frame-body ws-frame-body--chart">
-            <SparklineBar trend={completion_trend} />
-            <div className="dash-trend-labels">
-              <span>{completion_trend[0]?.date}</span>
-              <span>today</span>
-            </div>
-            <div className="dash-trend-total">
-              {total30d} completion{total30d !== 1 ? 's' : ''} in 30 days
-              {done7d > 0 ? ` · ${done7d} in the last 7` : ''}
-            </div>
-          </div>
-        </div>
-
-        {/* ── Completion heatmap — section × 30d ── */}
+        {/* ── Activity Context (compressed) ── */}
         <div className="ws-frame ws-frame--full">
           <div className="ws-frame-header">
-            <span>Completion heatmap</span>
-            <span className="ws-frame-header-sub">
-              section × date · SUM(completion_count) · {completion_heatmap.dates[0]} → {completion_heatmap.dates[29]}
-            </span>
+            <span>Activity Context</span>
+            <span className="ws-frame-header-sub">recent momentum · context, not action</span>
           </div>
-          <div className="ws-frame-body">
+          <div className="ws-frame-body dashboard-context-panel">
+            <div className="dashboard-context-stats">
+              <span><strong>{act.total30d}</strong> in 30d</span>
+              <span><strong>{act.done7d}</strong> in 7d</span>
+              {act.paceChangePct !== null && (
+                <span className={act.paceChangePct >= 0 ? 'dash-pace-up' : 'dash-pace-dn'}>
+                  {act.paceChangePct >= 0 ? '+' : ''}{act.paceChangePct}% vs prev 7d
+                </span>
+              )}
+              <span>best day {act.bestDay}</span>
+              <span>{act.activeDays7d}/7 active days</span>
+            </div>
+            <SparklineBar trend={completion_trend} />
             <HeatmapGrid heatmap={completion_heatmap} />
             <InsightStrip heatmap={completion_heatmap} trend={completion_trend} />
           </div>
         </div>
 
-        {/* ── Pressure heatmap — section × historical snapshot dates ── */}
+        {/* ── Pressure History (bottom, unchanged) ── */}
         <div className="ws-frame ws-frame--full">
           <div className="ws-frame-header">
             <span>Pressure history</span>
@@ -683,7 +558,6 @@ export default function Dashboard() {
             <PressureHeatmap />
           </div>
         </div>
-
       </div>
     </div>
   );

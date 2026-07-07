@@ -5106,3 +5106,91 @@ select.task-modal-input {
 }
 .rd-cp-save { color: var(--good); }
 .rd-cp-cancel { color: var(--muted-2); }
+
+/* ===========================================================================
+   Dashboard Action Queue (P6.0A) — scoped dashboard-* classes
+   =========================================================================== */
+
+/* Compact action summary chips — replaces the old stat strip + graphs. */
+.dashboard-action-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 4px;
+}
+.dashboard-summary-chip {
+  flex: 1 1 90px;
+  min-width: 90px;
+  padding: 6px 10px;
+  background: var(--bg-panel);
+  border: 1px solid var(--grid-border);
+  border-radius: 4px;
+}
+.dashboard-summary-chip.is-accent { border-color: var(--accent); }
+.dashboard-summary-chip.is-warn { border-color: var(--urg-hi); }
+.dashboard-summary-value { font-size: 20px; font-weight: 700; line-height: 1.1; color: var(--ink); }
+.dashboard-summary-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--muted); margin-top: 2px;
+}
+
+.dashboard-action-warning {
+  margin: 4px 0 8px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--paused-bg);
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+}
+.dashboard-action-warning.error { color: var(--urg-crit); }
+
+/* Action tables reuse .dash-table; the "why" column stays compact. */
+.dashboard-action-table .dash-reason,
+.dash-reason { font-size: 11px; }
+
+/* Diagnosis chips in Decide / Clarify. */
+.dashboard-diagnosis-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.dashboard-diagnosis-chip {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: var(--ink-2);
+  background: var(--paused-bg);
+  border: 1px solid var(--grid-border);
+  white-space: nowrap;
+}
+
+/* System hygiene cards — capped at 4, quiet. */
+.dashboard-hygiene-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  padding: 8px;
+}
+.dashboard-hygiene-card {
+  padding: 8px 10px;
+  background: var(--bg-panel);
+  border: 1px solid var(--grid-border);
+  border-left: 3px solid var(--urg-hi);
+  border-radius: 3px;
+}
+.dashboard-hygiene-title { font-size: 12px; font-weight: 600; color: var(--ink); }
+.dashboard-hygiene-body { font-size: 11px; color: var(--ink-2); margin: 3px 0; }
+.dashboard-hygiene-action { font-size: 11px; color: var(--muted); font-style: italic; }
+
+/* Section pressure — uncategorized/no-section flagged. */
+.dashboard-section-pressure .dashboard-row-warn td { background: var(--crit-bg); }
+.dashboard-warn-text { color: var(--urg-hi); font-weight: 600; }
+
+/* Activity context — compressed, quiet stats row above the charts. */
+.dashboard-context-panel { display: flex; flex-direction: column; gap: 8px; }
+.dashboard-context-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.dashboard-context-stats strong { color: var(--ink); font-weight: 700; }
