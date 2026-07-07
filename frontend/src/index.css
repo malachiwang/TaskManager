@@ -5106,3 +5106,392 @@ select.task-modal-input {
 }
 .rd-cp-save { color: var(--good); }
 .rd-cp-cancel { color: var(--muted-2); }
+
+/* ===========================================================================
+   Dashboard Action Queue (P6.0A) — scoped dashboard-* classes
+   =========================================================================== */
+
+/* Compact action summary chips — replaces the old stat strip + graphs. */
+.dashboard-action-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 4px;
+}
+/* Chips are buttons (dashboard lenses) — clickable, with a clear selected state.
+   Compact + left-aligned + wrapping; capped width so they never become
+   full-viewport slabs (P6.0A-fix2). */
+.dashboard-summary-chip {
+  flex: 1 1 140px;
+  min-width: 120px;
+  max-width: 200px;
+  padding: 6px 10px;
+  background: var(--bg-panel);
+  border: 1px solid var(--grid-border);
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: border-color 0.1s, box-shadow 0.1s;
+}
+.dashboard-summary-chip:hover { border-color: var(--muted-2); }
+.dashboard-summary-chip.is-accent { border-color: var(--accent); }
+.dashboard-summary-chip.is-warn { border-color: var(--urg-hi); }
+.dashboard-summary-chip.is-selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
+  background: var(--accent-soft);
+}
+.dashboard-summary-value { font-size: 20px; font-weight: 700; line-height: 1.1; color: var(--ink); }
+.dashboard-summary-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--muted); margin-top: 2px;
+}
+
+.dashboard-action-warning {
+  margin: 4px 0 8px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--paused-bg);
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+}
+.dashboard-action-warning.error { color: var(--urg-crit); }
+
+/* Action tables reuse .dash-table; the "why" column stays compact. */
+.dashboard-action-table .dash-reason,
+.dash-reason { font-size: 11px; }
+
+/* Diagnosis chips in Decide / Clarify. */
+.dashboard-diagnosis-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.dashboard-diagnosis-chip {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: var(--ink-2);
+  background: var(--paused-bg);
+  border: 1px solid var(--grid-border);
+  white-space: nowrap;
+}
+
+/* System hygiene cards — capped at 4, quiet. */
+.dashboard-hygiene-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  padding: 8px;
+}
+.dashboard-hygiene-card {
+  padding: 8px 10px;
+  background: var(--bg-panel);
+  border: 1px solid var(--grid-border);
+  border-left: 3px solid var(--urg-hi);
+  border-radius: 3px;
+}
+.dashboard-hygiene-title { font-size: 12px; font-weight: 600; color: var(--ink); }
+.dashboard-hygiene-body { font-size: 11px; color: var(--ink-2); margin: 3px 0; }
+.dashboard-hygiene-action { font-size: 11px; color: var(--muted); font-style: italic; }
+
+/* Section pressure — uncategorized/no-section flagged. */
+.dashboard-section-pressure .dashboard-row-warn td { background: var(--crit-bg); }
+.dashboard-warn-text { color: var(--urg-hi); font-weight: 600; }
+
+/* Activity context — compressed, quiet stats row above the charts. */
+.dashboard-context-panel { display: flex; flex-direction: column; gap: 8px; }
+.dashboard-context-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.dashboard-context-stats strong { color: var(--ink); font-weight: 700; }
+
+/* ── P6.0A-fix1: lens header, composition bars, task diagnosis, hierarchy ── */
+
+/* Top command panel (P6.0A-fix2) — contains the heading, lens chips, composition
+   bars, and Task Diagnosis, inset to the same 16px horizontal margin as the
+   lower .ws-panels so the top no longer spans edge-to-edge. Bottom padding plus
+   .ws-panels' own top padding creates a clean gap before the detailed tables. */
+.dashboard-command-panel {
+  padding: 6px 16px 14px;
+}
+
+/* Action-area section heading (below the Dashboard title). */
+.dashboard-section-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 10px 0 2px;
+}
+.dashboard-section-heading-title { font-size: 15px; font-weight: 700; color: var(--ink); }
+.dashboard-section-heading-sub { font-size: 11px; color: var(--muted); }
+
+/* Compact stacked composition bars (urgency bands / task split). */
+/* Two balanced composition cards filling the command-panel width (P6.0A-fix3):
+   50/50 on wide screens, stacked on narrow. */
+.dashboard-composition-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 6px 0 4px;
+}
+@media (max-width: 640px) {
+  .dashboard-composition-row { grid-template-columns: 1fr; }
+}
+/* Contained cards; bars fill the card width (no small max-width, no raw strips). */
+.dashboard-composition {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--grid-border);
+  border-radius: 4px;
+  background: var(--bg-panel);
+}
+.dashboard-composition-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
+}
+.dashboard-composition-bar {
+  display: flex;
+  height: 10px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--grid-border);
+  margin: 3px 0;
+}
+.dashboard-composition-seg { height: 100%; }
+.dashboard-composition-empty { width: 100%; height: 100%; }
+.dashboard-composition-seg.urg-critical, .dashboard-composition-dot.urg-critical { background: var(--urg-crit); }
+.dashboard-composition-seg.urg-high, .dashboard-composition-dot.urg-high { background: var(--urg-hi); }
+.dashboard-composition-seg.urg-noticeable, .dashboard-composition-dot.urg-noticeable { background: var(--urg-mid); }
+.dashboard-composition-seg.urg-low, .dashboard-composition-dot.urg-low { background: var(--urg-low); }
+.dashboard-composition-seg.urg-none, .dashboard-composition-dot.urg-none { background: var(--muted-2); }
+.dashboard-composition-legend {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  font-size: 10px; color: var(--muted);
+}
+.dashboard-composition-legend-item { display: inline-flex; align-items: center; gap: 3px; }
+.dashboard-composition-legend-item strong { color: var(--ink-2); }
+.dashboard-composition-dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+
+/* Do Now is the primary action queue; Quick Wins/Decide read as secondary. */
+.dashboard-donow > .ws-frame-header span:first-child { color: var(--accent); }
+.dashboard-quickwins, .dashboard-decide { opacity: 0.98; }
+
+/* Task Diagnosis grid + cards. */
+.dashboard-diag-frame { margin-top: 10px; }
+.dashboard-diag-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px;
+  padding: 8px;
+}
+.dashboard-diag-card {
+  border: 1px solid var(--grid-border);
+  border-left: 3px solid var(--accent);
+  border-radius: 3px;
+  padding: 7px 9px;
+  background: var(--bg-panel);
+}
+.dashboard-diag-head { display: flex; align-items: baseline; gap: 6px; }
+.dashboard-diag-urg { font-weight: 700; font-size: 13px; }
+.dashboard-diag-name { font-weight: 600; font-size: 12px; color: var(--ink); }
+.dashboard-diag-meta { font-size: 10px; color: var(--muted); margin-left: auto; }
+.dashboard-diag-facts {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  font-size: 10px; color: var(--muted); margin: 4px 0;
+}
+.dashboard-diag-why, .dashboard-diag-action { font-size: 11px; color: var(--ink-2); margin-top: 3px; }
+.dashboard-diag-action { color: var(--muted); }
+.dashboard-diag-why strong, .dashboard-diag-action strong { color: var(--ink); font-weight: 600; }
+
+/* Decide / Clarify as a triage list (not another urgency table). */
+.dashboard-triage-list { display: flex; flex-direction: column; }
+.dashboard-triage-row {
+  display: grid;
+  grid-template-columns: auto 30px minmax(100px, 1.1fr) minmax(110px, 1.3fr) 1.6fr;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--grid-border);
+  font-size: 12px;
+}
+.dashboard-triage-row:last-child { border-bottom: none; }
+.dashboard-triage-name { font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
+.dashboard-triage-sugg { font-size: 11px; color: var(--muted); }
+
+/* Inline high+ count bar in Section Pressure. */
+.dashboard-count-bar-cell { display: flex; align-items: center; gap: 5px; justify-content: flex-end; }
+.dashboard-count-bar { width: 40px; height: 5px; background: var(--grid-border); border-radius: 2px; overflow: hidden; }
+.dashboard-count-bar-fill { display: block; height: 100%; background: var(--urg-hi); }
+
+/* ── P6.0A-fix4: insight diagnostics ── */
+
+/* Insight grid — compact cards, 2–3 across, wrapping. */
+.dashboard-insight-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+  padding: 10px;
+}
+.dashboard-insight-card {
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  padding: 8px 10px;
+  background: var(--bg-panel);
+}
+.dashboard-insight-card.dashboard-insight-warn { border-left: 3px solid var(--urg-hi); }
+.dashboard-insight-title { font-size: 12px; font-weight: 600; color: var(--ink); }
+.dashboard-insight-hint { font-size: 10px; color: var(--muted); margin: 2px 0 5px; }
+.dashboard-insight-empty { font-size: 11px; color: var(--muted-2); font-style: italic; padding: 4px 0; }
+
+/* Pressure Reducers list — name · relative bar · relief tier. */
+.dashboard-reducer-list, .dashboard-mini-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.dashboard-reducer-list li {
+  display: grid;
+  grid-template-columns: 1fr 46px 52px;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+.dashboard-reducer-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dashboard-reducer-bar { height: 6px; background: var(--grid-border); border-radius: 3px; overflow: hidden; }
+.dashboard-reducer-fill { display: block; height: 100%; background: var(--accent); }
+.dashboard-relief { font-size: 10px; text-align: right; font-weight: 600; }
+.dashboard-relief--high { color: var(--urg-crit); }
+.dashboard-relief--medium { color: var(--urg-hi); }
+.dashboard-relief--low { color: var(--muted); }
+
+/* System Bloat meter. */
+.dashboard-bloat-bar {
+  display: flex; height: 12px; border-radius: 3px; overflow: hidden;
+  background: var(--grid-border); margin: 4px 0;
+}
+.dashboard-bloat-seg { height: 100%; }
+.dashboard-bloat-healthy { background: var(--good); }
+.dashboard-bloat-dirty { background: var(--urg-hi); }
+.dashboard-bloat-legend { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
+.dashboard-bloat-legend strong { color: var(--ink-2); }
+.dashboard-bloat-sources { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+
+/* Mini lists (freq mismatch / uncat / reading / neglected). */
+.dashboard-mini-list li { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; font-size: 11px; }
+.dashboard-mini-name { font-weight: 500; color: var(--ink); }
+.dashboard-mini-sugg { flex-basis: 100%; font-size: 10px; color: var(--muted); }
+.dashboard-uncat-note { font-size: 10px; color: var(--muted); font-style: italic; margin-bottom: 4px; }
+
+/* Section pressure stacked distribution bar. */
+.dashboard-section-stack {
+  display: flex; height: 9px; width: 100%; min-width: 80px;
+  border-radius: 2px; overflow: hidden; background: var(--grid-border);
+}
+.dashboard-section-stack-seg { height: 100%; }
+.dashboard-section-stack-seg.urg-critical { background: var(--urg-crit); }
+.dashboard-section-stack-seg.urg-high { background: var(--urg-hi); }
+.dashboard-section-stack-seg.urg-noticeable { background: var(--urg-mid); }
+.dashboard-section-stack-seg.urg-low { background: var(--urg-low); }
+.dashboard-section-stack-seg.urg-none { background: var(--muted-2); }
+
+/* Completion coverage line + Pressure Changes list. */
+.dashboard-coverage { display: flex; flex-wrap: wrap; gap: 14px; font-size: 11px; color: var(--muted); }
+.dashboard-coverage strong { color: var(--ink); }
+.dashboard-changes-note { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+.dashboard-changes-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.dashboard-changes-list li { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dashboard-changes-sec { font-weight: 500; color: var(--ink); min-width: 100px; }
+.dashboard-changes-delta { font-weight: 600; }
+
+/* ── P6.0A-fix5/fix6: display toggles (in Settings) + recommendation controls ── */
+
+.dashboard-hidden { display: none !important; }
+
+/* Row-level recommendation controls (fix6) — subtle text buttons, no per-chip ×,
+   no destructive red. Dashboard-only; they never edit tasks. */
+.dashboard-rec-actions { display: inline-flex; gap: 6px; }
+.dashboard-rec-actions--lead { margin-bottom: 5px; }
+.dashboard-rec-btn {
+  border: 1px solid var(--grid-border);
+  background: var(--bg-panel);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dashboard-rec-btn:hover { border-color: var(--muted-2); color: var(--ink-2); }
+.dashboard-triage-sugg-text { margin-right: 8px; }
+
+/* Reset button used by the Dashboard all-hidden fallback. */
+.dashboard-reset-btn {
+  font-family: inherit; font-size: 12px; padding: 4px 10px; cursor: pointer;
+  border: 1px solid var(--grid-border); border-radius: 3px;
+  background: var(--paused-bg); color: var(--ink-2);
+}
+.dashboard-reset-btn:hover:not(:disabled) { border-color: var(--accent); }
+.dashboard-reset-btn:disabled { opacity: 0.45; cursor: default; }
+
+.dashboard-hidden-note { font-size: 10px; color: var(--muted); font-style: italic; margin-top: 4px; }
+.dashboard-allhidden {
+  grid-column: 1 / -1;
+  padding: 16px;
+  text-align: center;
+  font-style: normal;
+  font-size: 13px;
+}
+
+/* Settings → Dashboard toggle grid (fix6). */
+.settings-toggle-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 14px;
+  padding: 4px 0 8px;
+}
+.settings-dash-reset { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Switch toggles (P6.0A-fix6-polish) — pill track + sliding knob, driven by a
+   visually-hidden but keyboard-accessible native checkbox. On = visible. */
+.settings-switch-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--ink-2);
+  padding: 3px 0;
+}
+.settings-switch-input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+}
+.settings-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 30px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--grid-border);
+  transition: background 0.12s ease;
+}
+.settings-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.12s ease;
+}
+.settings-switch-input:checked + .settings-switch { background: var(--accent); }
+.settings-switch-input:checked + .settings-switch .settings-switch-thumb { transform: translateX(14px); }
+.settings-switch-input:focus-visible + .settings-switch { outline: 2px solid var(--accent); outline-offset: 1px; }
+.settings-switch-label { user-select: none; }

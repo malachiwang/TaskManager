@@ -1,6 +1,177 @@
 import { useState, useEffect } from 'react';
-import { fetchDashboard, fetchSnapshotPressure } from '../api.js';
-import { urgencyClass } from '../urgency.js';
+import { fetchDashboard, fetchSnapshotPressure, fetchTasks } from '../api.js';
+import { urgencyClass, urgencyReason, urgencyLabel, URGENCY_BANDS } from '../urgency.js';
+import {
+  getDoNowTasks,
+  getQuickWinTasks,
+  getTriageTasks,
+  getSystemHygieneInsights,
+  getSectionPressure,
+  getActivitySummary,
+  diagnoseTask,
+  getCriticalHighTasks,
+  getDiagnosisDistribution,
+  getUrgencyComposition,
+  getPressureReducers,
+  getBloatBreakdown,
+  getFrequencyMismatch,
+  getUncategorizedImpact,
+  getReadingMigration,
+  getCompletionCoverage,
+  getImportantNeglected,
+  getSectionPressureTrend,
+  chipType,
+} from '../dashboardInsights.js';
+import {
+  loadPreferences,
+  isRecommendationActive,
+  dismissRecommendation,
+  snoozeRecommendation,
+  resetVisibility,
+  DASHBOARD_SECTIONS,
+} from '../dashboardPreferences.js';
+
+// Section-level pressure trend (Part E) — honestly derived from snapshot history
+// (task-level urgency history is not stored). Falls back to current high/critical
+// sections when there isn't enough snapshot history to call a trend.
+function PressureChanges({ currentSections }) {
+  const [snap, setSnap] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    fetchSnapshotPressure(30).then(setSnap).catch((e) => setErr(e.message));
+  }, []);
+
+  if (err) return <div className="ws-empty">Error: {err}</div>;
+  if (!snap) return <div className="ws-empty">Loading…</div>;
+
+  const trend = getSectionPressureTrend(snap);
+  const currentHot = (currentSections || [])
+    .filter((s) => s.highCrit > 0)
+    .slice(0, 5);
+
+  if (!trend.supported) {
+    // Honest fallback — no usable multi-day history yet.
+    return (
+      <div className="dashboard-changes">
+        <div className="dashboard-changes-note">
+          Not enough snapshot history to detect worsening yet (task-level urgency history isn’t stored;
+          section trends need a few days of snapshots). Showing current high/critical sections instead.
+        </div>
+        {currentHot.length === 0 ? (
+          <div className="ws-empty">No sections are currently high/critical.</div>
+        ) : (
+          <ul className="dashboard-changes-list">
+            {currentHot.map((s) => (
+              <li key={s.section}>
+                <span className="dashboard-changes-sec">{s.section}</span>
+                <span className={`dash-urg-num ${urgencyClass(s.avgUrg)}`}>{s.avgUrg.toFixed(1)}</span>
+                <span className="dash-muted">{s.highCrit} high/critical</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="dashboard-changes">
+      {trend.rising.length === 0 ? (
+        <div className="ws-empty">No sections are getting notably worse over the snapshot window.</div>
+      ) : (
+        <ul className="dashboard-changes-list">
+          {trend.rising.map((r) => (
+            <li key={r.label}>
+              <span className="dashboard-changes-sec">{r.label}</span>
+              <span className="dashboard-changes-delta dash-pace-dn">▲ +{r.delta}</span>
+              <span className="dash-muted">now avg {r.now}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// Compact stacked composition bar (urgency bands or diagnosis buckets).
+// segments: [{ key, label, count, cls }]. Uses shared urgency classes for color.
+function CompositionBar({ segments, total, label }) {
+  const t = total || segments.reduce((s, x) => s + x.count, 0);
+  return (
+    <div className="dashboard-composition">
+      {label && <span className="dashboard-composition-label">{label}</span>}
+      <div className="dashboard-composition-bar" role="img" aria-label={label}>
+        {t === 0 ? (
+          <div className="dashboard-composition-empty" />
+        ) : segments.map((s) => (
+          s.count > 0 ? (
+            <div
+              key={s.key}
+              className={`dashboard-composition-seg ${s.cls}`}
+              style={{ width: `${(s.count / t) * 100}%` }}
+              title={`${s.label}: ${s.count}`}
+            />
+          ) : null
+        ))}
+      </div>
+      <div className="dashboard-composition-legend">
+        {segments.map((s) => (
+          <span key={s.key} className="dashboard-composition-legend-item">
+            <span className={`dashboard-composition-dot ${s.cls}`} />
+            {s.label} <strong>{s.count}</strong>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Rich per-task diagnosis card — the core task-by-task analysis surface.
+// Dismissed/snoozed recommendation chips are hidden. Clean row-level Dismiss /
+// Snooze controls (not per-chip ×) act on all of the task's active suggestions.
+function TaskDiagnosisCard({ task, prefs, onDismiss, onSnooze }) {
+  const { chips, reason, action } = diagnoseTask(task);
+  const visibleChips = chips.filter((c) => {
+    const ty = chipType(c);
+    return !ty || isRecommendationActive(prefs, task.id, ty);
+  });
+  const activeRecTypes = chips.map(chipType).filter(Boolean)
+    .filter((ty) => isRecommendationActive(prefs, task.id, ty));
+  const never = !task.latest_completion && !task.manual_last_done_override;
+  return (
+    <div className="dashboard-diag-card">
+      {activeRecTypes.length > 0 && onDismiss && (
+        <div className="dashboard-rec-actions dashboard-rec-actions--lead">
+          <button className="dashboard-rec-btn" title="Hidden from Dashboard only · does not edit the task"
+            onClick={() => onDismiss(task.id, activeRecTypes)}>Dismiss</button>
+          <button className="dashboard-rec-btn" title="Hidden from Dashboard for 30 days"
+            onClick={() => onSnooze(task.id, activeRecTypes)}>Snooze 30d</button>
+        </div>
+      )}
+      <div className="dashboard-diag-head">
+        <span className={`dashboard-diag-urg ${urgencyClass(task.urgency)}`}>{(task.urgency ?? 0).toFixed(1)}</span>
+        <span className="dashboard-diag-name">{task.name}</span>
+        <span className="dashboard-diag-meta">
+          {task.section || '—'}{task.category ? ` · ${task.category}` : ''}
+        </span>
+      </div>
+      <div className="dashboard-diag-facts">
+        <span>{urgencyLabel(task.urgency)}</span>
+        <span>P{task.priority}</span>
+        <span>every {task.interval_days}d</span>
+        <span>{(task.days_overdue ?? 0) > 0 ? `overdue ${task.days_overdue}d` : 'not overdue'}</span>
+        <span>{never ? 'never done' : `last ${task.latest_completion || task.manual_last_done_override}`}</span>
+      </div>
+      {visibleChips.length > 0 && (
+        <div className="dashboard-diagnosis-chips">
+          {visibleChips.map((c) => <span key={c} className="dashboard-diagnosis-chip">{c}</span>)}
+        </div>
+      )}
+      <div className="dashboard-diag-why"><strong>Why:</strong> {reason}</div>
+      <div className="dashboard-diag-action"><strong>Suggested:</strong> {action}</div>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -45,36 +216,6 @@ function SparklineBar({ trend }) {
         );
       })}
     </svg>
-  );
-}
-
-// 4-row urgency distribution bar chart.
-function UrgencyDist({ dist, total }) {
-  const bins = [
-    { key: 'critical',   label: 'Critical', cls: 'urg-critical' },
-    { key: 'high',       label: 'High',     cls: 'urg-high' },
-    { key: 'noticeable', label: 'Notice.',  cls: 'urg-noticeable' },
-    { key: 'low',        label: 'Low',      cls: 'urg-low' },
-  ];
-  return (
-    <div className="dash-urgdist">
-      {bins.map(({ key, label, cls }) => {
-        const count = dist[key] || 0;
-        const pct = total > 0 ? (count / total) * 100 : 0;
-        return (
-          <div key={key} className="dash-urgdist-row">
-            <span className="dash-urgdist-label">{label}</span>
-            <div className="dash-urgdist-track">
-              <div
-                className={`dash-urgdist-fill ${cls}`}
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <span className="dash-urgdist-count">{count}</span>
-          </div>
-        );
-      })}
-    </div>
   );
 }
 
@@ -278,23 +419,41 @@ function PressureHeatmap() {
   );
 }
 
-// Horizontal ratio bar — active vs paused.
-function RatioBar({ activeCount, pausedCount }) {
-  const total = activeCount + pausedCount;
-  if (total === 0) return <div className="dash-ratio-empty">No tasks</div>;
+// Compact reusable action table for Do Now / Quick Wins.
+function ActionTable({ rows, emptyText, reasonPrefix }) {
+  if (!rows.length) return <div className="ws-empty">{emptyText}</div>;
   return (
-    <div className="dash-ratio-bar">
-      <div
-        className="dash-ratio-segment dash-ratio-segment--active"
-        style={{ width: `${(activeCount / total) * 100}%` }}
-        title={`Active: ${activeCount}`}
-      />
-      <div
-        className="dash-ratio-segment dash-ratio-segment--paused"
-        style={{ width: `${(pausedCount / total) * 100}%` }}
-        title={`Paused: ${pausedCount}`}
-      />
-    </div>
+    <table className="dash-table dashboard-action-table">
+      <thead>
+        <tr>
+          <th className="dash-th-urg">Urg</th>
+          <th>Task</th>
+          <th>Section</th>
+          <th className="dash-th-num">Overdue</th>
+          <th className="dash-th-num">Freq</th>
+          <th>Why</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((t) => (
+          <tr key={t.id}>
+            <td>
+              <div className="dash-urg-cell">
+                <span className={`dash-urg-num ${urgencyClass(t.urgency)}`}>{t.urgency.toFixed(1)}</span>
+                <UrgencyBar value={t.urgency} />
+              </div>
+            </td>
+            <td className="dash-task-name">{t.name}</td>
+            <td className="dash-muted">{t.section || '—'}</td>
+            <td className="dash-num">{(t.days_overdue ?? 0) > 0 ? `${t.days_overdue}d` : '—'}</td>
+            <td className="dash-num">{t.interval_days}d</td>
+            <td className="dash-muted dash-reason">
+              {reasonPrefix ? `${reasonPrefix} · ` : ''}{urgencyReason(t)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -312,367 +471,560 @@ function nowLabel() {
 export default function Dashboard() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [tasks, setTasks] = useState(null);
+  const [tasksError, setTasksError] = useState(null);
+  const [lens, setLens] = useState('donow'); // active dashboard lens (chip selection)
+  // Dashboard reads display/recommendation preferences on mount (they are edited
+  // in Settings → Dashboard; the tab remounts on switch, so changes apply then).
+  const [prefs, setPrefs] = useState(loadPreferences);
 
   useEffect(() => {
-    fetchDashboard()
-      .then(setData)
-      .catch((e) => setError(e.message));
+    fetchDashboard().then(setData).catch((e) => setError(e.message));
+    fetchTasks().then(setTasks).catch((e) => setTasksError(e.message));
   }, []);
 
+  // Recommendation handlers (localStorage + state only; never touch task data).
+  const handleDismiss = (taskId, types) => {
+    const list = Array.isArray(types) ? types : [types];
+    setPrefs((p) => list.reduce((acc, ty) => dismissRecommendation(acc, taskId, ty), p));
+  };
+  const handleSnooze = (taskId, types) => {
+    const list = Array.isArray(types) ? types : [types];
+    setPrefs((p) => list.reduce((acc, ty) => snoozeRecommendation(acc, taskId, ty, 30), p));
+  };
+  const handleResetVisibility = () => setPrefs((p) => resetVisibility(p));
+  const hidden = (key) => !!prefs.hiddenSections[key];
+  const cardHidden = (key) => !!prefs.hiddenCards[key];
+
   if (error) return <div className="grid-status error">Error: {error}</div>;
-  if (!data)  return <div className="grid-status">Loading…</div>;
+  if (!data) return <div className="grid-status">Loading…</div>;
 
-  const {
-    top_5_urgent, category_summary, dormant_tasks, paused_count, never_done_count,
-    active_count, urgency_distribution, completion_trend, completion_heatmap,
-  } = data;
+  const { urgency_distribution, completion_trend, completion_heatmap } = data;
+  const act = getActivitySummary(completion_trend);
 
-  // ── Derived stats ────────────────────────────────────────────────────────
+  const tasksReady = Array.isArray(tasks);
+  const doNow = tasksReady ? getDoNowTasks(tasks) : [];
+  const doNowIds = doNow.map((t) => t.id);
+  const quickWins = tasksReady ? getQuickWinTasks(tasks, doNowIds) : [];
+  const triage = tasksReady ? getTriageTasks(tasks) : [];
+  const triageTasks = triage.map((r) => r.task);
+  const hygiene = tasksReady ? getSystemHygieneInsights(tasks) : [];
+  const sectionPressure = tasksReady ? getSectionPressure(tasks) : [];
+  const critHighTasks = tasksReady ? getCriticalHighTasks(tasks) : [];
+  const diagDist = tasksReady
+    ? getDiagnosisDistribution(tasks, doNowIds, quickWins.map((t) => t.id), triageTasks.map((t) => t.id))
+    : null;
+  const urgComp = tasksReady ? getUrgencyComposition(tasks) : null;
+  // P6.0A-fix4 insight diagnostics (all derived from the enriched task list).
+  const pressureReducers = tasksReady ? getPressureReducers(tasks) : [];
+  const bloat = tasksReady ? getBloatBreakdown(tasks) : null;
+  const freqMismatch = tasksReady ? getFrequencyMismatch(tasks) : [];
+  const uncatImpact = tasksReady ? getUncategorizedImpact(tasks) : null;
+  const readingMigration = tasksReady ? getReadingMigration(tasks) : [];
+  const importantNeglected = tasksReady ? getImportantNeglected(tasks, doNowIds) : [];
+  const coverage = tasksReady ? getCompletionCoverage(sectionPressure, completion_heatmap) : null;
+  const inScope = tasksReady
+    ? tasks.filter((t) => !(t.is_paused === 1 || t.is_ended || t.is_scheduled)).length
+    : 0;
 
-  // Done in last 7 days — sum of the last 7 completion_trend entries.
-  const done7d = completion_trend.slice(-7).reduce((s, d) => s + d.count, 0);
+  // Apply recommendation dismissals/snoozes (Dashboard-only; counts stay honest,
+  // lists omit dismissed suggestions — Option A). A Decide row is kept only while
+  // it still has ≥1 active recommendation type.
+  const decideRows = triage
+    .map(({ task, chips, suggestion }) => {
+      const activeChips = chips.filter((c) => {
+        const ty = chipType(c);
+        return !ty || isRecommendationActive(prefs, task.id, ty);
+      });
+      const activeRecTypes = chips
+        .map(chipType).filter(Boolean)
+        .filter((ty) => isRecommendationActive(prefs, task.id, ty));
+      return { task, chips: activeChips, suggestion, activeRecTypes };
+    })
+    .filter((r) => r.activeRecTypes.length > 0);
+  const readingMigrationVisible = readingMigration.filter((t) => isRecommendationActive(prefs, t.id, 'move_to_reading'));
+  const freqMismatchVisible = freqMismatch.filter((r) => isRecommendationActive(prefs, r.task.id, 'frequency_mismatch'));
+  const uncatTopVisible = uncatImpact ? (uncatImpact.top || []).filter((t) => isRecommendationActive(prefs, t.id, 'uncategorized')) : [];
+  const readingHidden = readingMigration.length - readingMigrationVisible.length;
+  const freqHidden = freqMismatch.length - freqMismatchVisible.length;
 
-  // Previous 7-day window (days 14–8 ago) for pace comparison.
-  const prev7d = completion_trend.slice(-14, -7).reduce((s, d) => s + d.count, 0);
+  const critHigh = (urgency_distribution.critical || 0) + (urgency_distribution.high || 0);
+  const neverDoneCount = data.never_done_count ?? 0;
+  const dormantCount = Array.isArray(data.dormant_tasks) ? data.dormant_tasks.length : 0;
 
-  // Percent change vs previous window; null when prev is 0 (avoids divide-by-zero).
-  const paceChangePct = prev7d > 0 ? Math.round(((done7d - prev7d) / prev7d) * 100) : null;
-
-  // Best single day in the 30-day window.
-  const bestDay = Math.max(...completion_trend.map((d) => d.count), 0);
-
-  // Number of days in the last 7 with at least one completion.
-  const activeDays7d = completion_trend.slice(-7).filter((d) => d.count > 0).length;
-
-  // Total completions in the 30-day window.
-  const total30d = completion_trend.reduce((s, d) => s + d.count, 0);
-
-  // Weighted average urgency from category_summary (active non-paused tasks).
-  const catEntries = Object.entries(category_summary);
+  const catEntries = Object.entries(data.category_summary || {});
   const totalActive = catEntries.reduce((s, [, c]) => s + c.count, 0);
   const avgUrgencyRaw = totalActive > 0
     ? catEntries.reduce((s, [, c]) => s + c.avg_urgency * c.count, 0) / totalActive
     : null;
   const avgUrgency = avgUrgencyRaw !== null ? avgUrgencyRaw.toFixed(1) : '—';
 
-  // Peak urgency.
-  const peakUrgency   = top_5_urgent.length > 0 ? top_5_urgent[0].urgency.toFixed(1) : '—';
-  const peakTaskName  = top_5_urgent.length > 0 ? top_5_urgent[0].name : null;
+  const actionWarning = !tasksReady
+    ? (tasksError ? 'Could not load task details — action lists unavailable.' : 'Loading task details…')
+    : null;
 
-  // Tasks at/near peak (urgency ≥ 9.9) within the top-5 shown.
-  const atPeakCount = top_5_urgent.filter(t => t.urgency >= 9.9).length;
+  // Chip → lens config. `count` is shown on the chip; `pop` selects the Task
+  // Diagnosis population when the lens is active.
+  const CHIPS = [
+    { lens: 'donow',    label: 'Do now',        count: tasksReady ? doNow.length : '—',    accent: doNow.length > 0 },
+    { lens: 'quickwins', label: 'Quick wins',   count: tasksReady ? quickWins.length : '—' },
+    { lens: 'decide',   label: 'Decide',        count: tasksReady ? triage.length : '—' },
+    { lens: 'critical', label: 'Critical / High', count: critHigh, warn: critHigh > 0 },
+    { lens: 'pressure', label: 'Avg urgency',   count: avgUrgency, valueClass: avgUrgencyRaw !== null ? urgencyClass(avgUrgencyRaw) : '' },
+    { lens: 'activity', label: 'Done 7d',       count: act.done7d },
+  ];
 
-  // Dormant count per category — crossref from dormant_tasks array.
-  const dormantByCat = {};
-  for (const t of dormant_tasks) {
-    const key = t.category || '—';
-    dormantByCat[key] = (dormantByCat[key] || 0) + 1;
-  }
-
-  // Categories sorted by avg urgency descending.
-  const sortedCats = [...catEntries].sort((a, b) => b[1].avg_urgency - a[1].avg_urgency);
-
-  // Dormant tasks sorted worst-first.
-  const sortedDormant = [...dormant_tasks].sort((a, b) => b.days_since - a.days_since);
+  const lensPop = {
+    donow: doNow,
+    quickwins: quickWins,
+    decide: triageTasks,
+    critical: critHighTasks,
+    pressure: critHighTasks,
+    activity: [],
+  };
+  const diagPopulation = (lensPop[lens] || []).slice(0, 12);
+  const LENS_TITLE = {
+    donow: 'Do Now — task diagnosis',
+    quickwins: 'Likely Quick Wins — task diagnosis',
+    decide: 'Decide / Clarify — task diagnosis',
+    critical: 'Critical / High pressure — task diagnosis',
+    pressure: 'Pressure drivers — task diagnosis',
+    activity: 'Activity',
+  };
 
   return (
     <div className="ws-dashboard">
-
-      {/* ── Serif headline ── */}
       <div className="ws-dash-header">
         <div className="ws-dash-header-left">
-          <div className="ws-dash-title">Pressure readout</div>
+          <div className="ws-dash-title">Dashboard</div>
           <div className="ws-dash-sub">
-            passive readout · active non-paused tasks · {totalActive} in scope
+            action command center · active non-hiatus tasks{tasksReady ? ` · ${inScope} in scope` : ''}
           </div>
         </div>
         <div className="ws-dash-now">{nowLabel()}</div>
       </div>
 
-      {/* ── 5-cell stat strip ── */}
-      <div className="ws-stat-strip">
+      {/* ── Top command panel — contained + inset to align with lower panels ── */}
+      <div className="dashboard-command-panel">
 
-        {/* 1. Avg urgency — weighted avg across all active non-paused tasks */}
-        <div className="ws-stat-cell">
-          <div className="ws-stat-label">Avg urgency</div>
-          <div className={`ws-stat-value dash-stat-urg${avgUrgencyRaw !== null ? ` ${urgencyClass(avgUrgencyRaw)}` : ''}`}>
-            {avgUrgency}<small>/10</small>
-          </div>
-          <div className="ws-stat-delta">{totalActive} active tasks</div>
-          {avgUrgencyRaw !== null && <UrgencyBar value={avgUrgencyRaw} wide />}
-        </div>
-
-        {/* 2. Peak urgency — top-ranked task */}
-        <div className="ws-stat-cell">
-          <div className="ws-stat-label">Peak urgency</div>
-          <div className={`ws-stat-value dash-stat-urg${peakUrgency !== '—' ? ` ${urgencyClass(parseFloat(peakUrgency))}` : ''}`}>
-            {peakUrgency}<small>/10</small>
-          </div>
-          <div className="ws-stat-delta" title={peakTaskName || ''}>
-            {peakTaskName ? peakTaskName.slice(0, 20) : 'no active tasks'}
-          </div>
-          {peakUrgency !== '—' && <UrgencyBar value={parseFloat(peakUrgency)} wide />}
-        </div>
-
-        {/* 3. Done in 7d — sum of last 7 completion_trend entries */}
-        <div className="ws-stat-cell">
-          <div className="ws-stat-label">Done in 7d</div>
-          <div className="ws-stat-value">{done7d}</div>
-          <div className="ws-stat-delta">completions, last 7 days</div>
-        </div>
-
-        {/* 4. Dormant 30d+ */}
-        <div className="ws-stat-cell">
-          <div className="ws-stat-label">Dormant 30d+</div>
-          <div className={`ws-stat-value${dormant_tasks.length > 0 ? ' dn' : ''}`}>
-            {dormant_tasks.length}
-          </div>
-          <div className={`ws-stat-delta${dormant_tasks.length > 0 ? ' dn' : ''}`}>
-            {dormant_tasks.length > 0 ? 'risk zone' : 'clear'}
-          </div>
-        </div>
-
-        {/* 5. Hiatus */}
-        <div className="ws-stat-cell">
-          <div className="ws-stat-label">Hiatus</div>
-          <div className="ws-stat-value">{paused_count}</div>
-          <div className="ws-stat-delta">excluded from pressure</div>
-        </div>
-
+      {/* ── Action area heading ── */}
+      <div className="dashboard-section-heading">
+        <span className="dashboard-section-heading-title">What should I do now?</span>
+        <span className="dashboard-section-heading-sub">select a lens below to focus the analysis</span>
       </div>
 
-      {/* ── Graph strip ── */}
-      <div className="ws-graph-strip">
+      {/* ── Interactive Action Summary chips ── */}
+      <div className="dashboard-action-summary" role="tablist" aria-label="Dashboard lenses">
+        {CHIPS.map((c) => (
+          <button
+            key={c.lens}
+            type="button"
+            role="tab"
+            aria-selected={lens === c.lens}
+            className={`dashboard-summary-chip${lens === c.lens ? ' is-selected' : ''}${c.accent ? ' is-accent' : ''}${c.warn ? ' is-warn' : ''}`}
+            onClick={() => setLens(c.lens)}
+          >
+            <div className={`dashboard-summary-value ${c.valueClass || ''}`}>{c.count}</div>
+            <div className="dashboard-summary-label">{c.label}</div>
+          </button>
+        ))}
+      </div>
 
-        <div className="ws-graph-card">
-          <div className="ws-graph-title">7D Pace</div>
-          <div className="dash-pace-primary">
-            {done7d === 0 && prev7d === 0 ? (
-              <span className="dash-pace-none">no activity</span>
-            ) : (
-              <>
-                <span className="dash-pace-count">{done7d}</span>
-                <span className="dash-pace-unit"> completions</span>
-              </>
-            )}
-          </div>
-          <div className="dash-pace-delta">
-            {paceChangePct !== null ? (
-              <span className={paceChangePct >= 0 ? 'dash-pace-up' : 'dash-pace-dn'}>
-                {paceChangePct >= 0 ? '+' : ''}{paceChangePct}% vs prev 7d
+      {/* ── Compact composition bars (restore urgency distribution + task split) ── */}
+      {tasksReady && (
+        <div className="dashboard-composition-row">
+          <CompositionBar
+            label="Urgency"
+            total={inScope}
+            segments={URGENCY_BANDS.map((b) => ({ key: b.key, label: b.label, cls: b.cls, count: urgComp[b.key] || 0 }))}
+          />
+          <CompositionBar
+            label="Task split"
+            total={diagDist.total}
+            segments={[
+              { key: 'doNow', label: 'Do now', cls: 'urg-critical', count: diagDist.doNow },
+              { key: 'quick', label: 'Quick', cls: 'urg-high', count: diagDist.quick },
+              { key: 'decide', label: 'Decide', cls: 'urg-noticeable', count: diagDist.decide },
+              { key: 'other', label: 'Other', cls: 'urg-none', count: diagDist.other },
+            ]}
+          />
+        </div>
+      )}
+
+      {actionWarning && (
+        <div className={`dashboard-action-warning${tasksError ? ' error' : ''}`}>{actionWarning}</div>
+      )}
+
+      {/* ── Task Diagnosis (lens-driven, in place under the chips) ── */}
+      <div className={`ws-frame ws-frame--full dashboard-diag-frame${hidden('taskDiagnosis') ? ' dashboard-hidden' : ''}`}>
+        <div className="ws-frame-header">
+          <span>{LENS_TITLE[lens]}</span>
+          <span className="ws-frame-header-sub">why these tasks are surfaced · informational only</span>
+        </div>
+        {!tasksReady ? (
+          <div className="ws-empty">{actionWarning}</div>
+        ) : lens === 'activity' ? (
+          <div className="ws-frame-body dashboard-context-stats">
+            <span><strong>{act.total30d}</strong> completions in 30d</span>
+            <span><strong>{act.done7d}</strong> in the last 7d</span>
+            {act.paceChangePct !== null && (
+              <span className={act.paceChangePct >= 0 ? 'dash-pace-up' : 'dash-pace-dn'}>
+                {act.paceChangePct >= 0 ? '+' : ''}{act.paceChangePct}% vs prev 7d
               </span>
-            ) : done7d > 0 ? (
-              <span className="dash-pace-new">new activity</span>
-            ) : null}
+            )}
+            <span>best day {act.bestDay} · {act.activeDays7d}/7 active days</span>
+            <span className="dash-muted">Momentum detail is in Activity Context below.</span>
           </div>
-          <div className="ws-graph-sub">
-            best day: {bestDay} · {activeDays7d}/7 active days
+        ) : diagPopulation.length === 0 ? (
+          <div className="ws-empty">
+            {lens === 'donow' && 'No urgent established tasks right now.'}
+            {lens === 'quickwins' && 'No likely quick wins found. The remaining pressure may require decisions, not quick completions.'}
+            {lens === 'decide' && 'Nothing needs clarification right now.'}
+            {(lens === 'critical' || lens === 'pressure') && 'Critical/high pressure is low — check Activity Context for momentum.'}
           </div>
-        </div>
-
-        <div className="ws-graph-card">
-          <div className="ws-graph-title">Urgency distribution</div>
-          <UrgencyDist dist={urgency_distribution} total={active_count} />
-        </div>
-
-        <div className="ws-graph-card">
-          <div className="ws-graph-title">Active / Hiatus</div>
-          <RatioBar activeCount={active_count} pausedCount={paused_count} />
-          <div className="ws-graph-sub">{active_count} active · {paused_count} hiatus</div>
-        </div>
-
+        ) : (
+          <div className="ws-frame-body dashboard-diag-grid">
+            {diagPopulation.map((t) => <TaskDiagnosisCard key={t.id} task={t} prefs={prefs} onDismiss={handleDismiss} onSnooze={handleSnooze} />)}
+          </div>
+        )}
       </div>
 
-      {/* ── Panels ── */}
-      <div className="ws-panels">
+      </div>{/* /dashboard-command-panel */}
 
-        {/* ── Priority queue — full width ── */}
-        <div className="ws-frame ws-frame--full">
+      <div className="ws-panels">
+        {/* ── Do Now (primary) ── */}
+        <div className={`ws-frame ws-frame--full dashboard-donow${hidden('doNow') ? ' dashboard-hidden' : ''}`}>
           <div className="ws-frame-header">
-            <span>Priority queue</span>
+            <span>Do Now</span>
+            <span className="ws-frame-header-sub">established overdue tasks worth doing today · top 5</span>
+          </div>
+          <ActionTable rows={doNow} emptyText={tasksReady ? 'No urgent established tasks right now.' : (actionWarning || '')} />
+        </div>
+
+        {/* ── Likely Quick Wins (secondary) ── */}
+        <div className={`ws-frame ws-frame--full dashboard-quickwins${hidden('quickWins') ? ' dashboard-hidden' : ''}`}>
+          <div className="ws-frame-header">
+            <span>Likely Quick Wins</span>
+            <span className="ws-frame-header-sub">frequent / overdue tasks that likely shed pressure fast · top 5</span>
+          </div>
+          <ActionTable rows={quickWins} emptyText={tasksReady ? 'No likely quick wins found.' : (actionWarning || '')} reasonPrefix="Likely quick win" />
+        </div>
+
+        {/* ── Decide / Clarify (triage list) ── */}
+        <div className={`ws-frame ws-frame--full dashboard-decide${hidden('decide') ? ' dashboard-hidden' : ''}`}>
+          <div className="ws-frame-header">
+            <span>Decide / Clarify</span>
             <span className="ws-frame-header-sub">
-              top 5 · active non-paused · sorted by pressure score
-              {atPeakCount > 0 && ` · ${atPeakCount} at peak (≥9.9)`}
+              may need a decision, not completion · {neverDoneCount} never done · {dormantCount} dormant · top 6
             </span>
           </div>
-          {top_5_urgent.length === 0 ? (
+          {!tasksReady ? (
+            <div className="ws-empty">{actionWarning}</div>
+          ) : decideRows.length === 0 ? (
+            <div className="ws-empty">
+              {triage.length === 0 ? 'Nothing needs a decision right now.' : 'All suggestions here are dismissed or snoozed.'}
+            </div>
+          ) : (
+            <div className="ws-frame-body dashboard-triage-list">
+              {decideRows.map(({ task, chips, suggestion, activeRecTypes }) => (
+                <div key={task.id} className="dashboard-triage-row">
+                  <span className="dashboard-rec-actions">
+                    <button className="dashboard-rec-btn" title="Hidden from Dashboard only · does not edit the task"
+                      onClick={() => handleDismiss(task.id, activeRecTypes)}>Dismiss</button>
+                    <button className="dashboard-rec-btn" title="Hidden from Dashboard for 30 days"
+                      onClick={() => handleSnooze(task.id, activeRecTypes)}>Snooze 30d</button>
+                  </span>
+                  <span className={`dash-urg-num ${urgencyClass(task.urgency)}`}>{task.urgency.toFixed(1)}</span>
+                  <span className="dashboard-triage-name">{task.name}</span>
+                  <span className="dashboard-diagnosis-chips">
+                    {chips.map((c) => <span key={c} className="dashboard-diagnosis-chip">{c}</span>)}
+                  </span>
+                  <span className="dashboard-triage-sugg">{suggestion}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── Insight diagnostics grid (Part A/B/D/F/G/I) ── */}
+        <div className={`ws-frame ws-frame--full${hidden('pressureDiagnostics') ? ' dashboard-hidden' : ''}`}>
+          <div className="ws-frame-header">
+            <span>Pressure Diagnostics</span>
+            <span className="ws-frame-header-sub">compact insight cards · informational · derived from active tasks</span>
+          </div>
+          {!tasksReady ? (
+            <div className="ws-empty">{actionWarning}</div>
+          ) : (
+            <div className="ws-frame-body dashboard-insight-grid">
+
+              {/* Pressure Reducers */}
+              <div className={`dashboard-insight-card${cardHidden('pressureReducers') ? ' dashboard-hidden' : ''}`}>
+                <div className="dashboard-insight-title">Pressure Reducers</div>
+                <div className="dashboard-insight-hint">completing these likely relieves the most recurring pressure</div>
+                {pressureReducers.length === 0 ? (
+                  <div className="dashboard-insight-empty">No pressure reducers right now.</div>
+                ) : (
+                  <ul className="dashboard-reducer-list">
+                    {pressureReducers.map(({ task, fill, relief }) => (
+                      <li key={task.id}>
+                        <span className="dashboard-reducer-name" title={task.name}>{task.name}</span>
+                        <span className="dashboard-reducer-bar"><span className="dashboard-reducer-fill" style={{ width: `${fill}%` }} /></span>
+                        <span className={`dashboard-relief dashboard-relief--${relief.toLowerCase()}`}>{relief}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {/* System Bloat Meter */}
+              <div className={`dashboard-insight-card${cardHidden('bloatMeter') ? ' dashboard-hidden' : ''}`}>
+                <div className="dashboard-insight-title">System Bloat Meter</div>
+                <div className="dashboard-insight-hint">real recurring work vs. dirty task setup</div>
+                <div className="dashboard-bloat-bar">
+                  <span className="dashboard-bloat-seg dashboard-bloat-healthy" style={{ width: `${bloat.total ? (bloat.healthy / bloat.total) * 100 : 0}%` }} title={`Healthy: ${bloat.healthy}`} />
+                  <span className="dashboard-bloat-seg dashboard-bloat-dirty" style={{ width: `${bloat.dirtyPct}%` }} title={`Dirty: ${bloat.dirty}`} />
+                </div>
+                <div className="dashboard-bloat-legend">
+                  <span><strong>{bloat.healthy}</strong> healthy</span>
+                  <span className={bloat.dirtyPct >= 40 ? 'dashboard-warn-text' : ''}><strong>{bloat.dirty}</strong> dirty ({bloat.dirtyPct}%)</span>
+                </div>
+                {bloat.topSources.length > 0 && (
+                  <div className="dashboard-bloat-sources">
+                    {bloat.topSources.map((s) => (
+                      <span key={s.key} className="dashboard-diagnosis-chip">{s.label} {s.count}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Frequency Mismatch */}
+              <div className={`dashboard-insight-card${cardHidden('frequencyMismatch') ? ' dashboard-hidden' : ''}`}>
+                <div className="dashboard-insight-title">Frequency Mismatch</div>
+                <div className="dashboard-insight-hint">cadence may be misconfigured</div>
+                {freqMismatchVisible.length === 0 ? (
+                  <div className="dashboard-insight-empty">
+                    {freqMismatch.length === 0 ? 'No cadence mismatches detected.' : 'All flagged here are dismissed/snoozed.'}
+                  </div>
+                ) : (
+                  <ul className="dashboard-mini-list">
+                    {freqMismatchVisible.map(({ task, suggestion }) => (
+                      <li key={task.id}>
+                        <button className="dashboard-rec-btn" title="Hidden from Dashboard only · does not edit the task"
+                          onClick={() => handleDismiss(task.id, 'frequency_mismatch')}>Dismiss</button>
+                        <span className="dashboard-mini-name">{task.name} <span className="dash-muted">· every {task.interval_days}d</span></span>
+                        <span className="dashboard-mini-sugg">{suggestion}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {freqHidden > 0 && <div className="dashboard-hidden-note">{freqHidden} dismissed suggestion{freqHidden !== 1 ? 's' : ''} hidden.</div>}
+              </div>
+
+              {/* Uncategorized Impact */}
+              <div className={`dashboard-insight-card${uncatImpact && uncatImpact.warn ? ' dashboard-insight-warn' : ''}${cardHidden('uncategorizedImpact') ? ' dashboard-hidden' : ''}`}>
+                <div className="dashboard-insight-title">Uncategorized Impact</div>
+                {!uncatImpact || uncatImpact.count === 0 ? (
+                  <div className="dashboard-insight-empty">All active tasks are categorized.</div>
+                ) : (
+                  <>
+                    <div className="dashboard-insight-hint">
+                      {uncatImpact.pctHighCrit}% of high/critical pressure is uncategorized · {uncatImpact.count} tasks ({uncatImpact.pctActive}% of active)
+                    </div>
+                    <div className="dashboard-uncat-note">Categorizing these would make Section Pressure more reliable.</div>
+                    {uncatTopVisible.length > 0 && (
+                      <ul className="dashboard-mini-list">
+                        {uncatTopVisible.map((t) => (
+                          <li key={t.id}>
+                            <button className="dashboard-rec-btn" title="Hidden from Dashboard only · does not edit the task"
+                              onClick={() => handleDismiss(t.id, 'uncategorized')}>Dismiss</button>
+                            <span className="dashboard-mini-name">{t.name}</span>
+                            <span className={`dash-urg-num ${urgencyClass(t.urgency)}`}>{t.urgency.toFixed(1)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* Reading Migration — only when active candidates exist */}
+              {readingMigrationVisible.length > 0 && !cardHidden('readingMigration') && (
+                <div className="dashboard-insight-card">
+                  <div className="dashboard-insight-title">Reading Migration</div>
+                  <div className="dashboard-insight-hint">these look like reading — track them in the Reading Sheet</div>
+                  <ul className="dashboard-mini-list">
+                    {readingMigrationVisible.map((t) => (
+                      <li key={t.id}>
+                        <button className="dashboard-rec-btn" title="Hidden from Dashboard only · does not edit the task"
+                          onClick={() => handleDismiss(t.id, 'move_to_reading')}>Dismiss</button>
+                        <span className="dashboard-mini-name">{t.name}</span>
+                        <span className={`dash-urg-num ${urgencyClass(t.urgency)}`}>{t.urgency.toFixed(1)}</span>
+                        <span className="dashboard-mini-sugg">Consider tracking in Reading Sheet.</span>
+                      </li>
+                    ))}
+                  </ul>
+                  {readingHidden > 0 && <div className="dashboard-hidden-note">{readingHidden} dismissed hidden.</div>}
+                </div>
+              )}
+
+              {/* Important but Neglected */}
+              <div className={`dashboard-insight-card${cardHidden('importantNeglected') ? ' dashboard-hidden' : ''}`}>
+                <div className="dashboard-insight-title">Important but Neglected</div>
+                <div className="dashboard-insight-hint">high priority · stale · not necessarily top Do Now</div>
+                {importantNeglected.length === 0 ? (
+                  <div className="dashboard-insight-empty">No important tasks are being neglected.</div>
+                ) : (
+                  <ul className="dashboard-mini-list">
+                    {importantNeglected.map((t) => (
+                      <li key={t.id}>
+                        <span className="dashboard-mini-name">{t.name} <span className="dash-muted">· P{t.priority}</span></span>
+                        <span className={`dash-urg-num ${urgencyClass(t.urgency)}`}>{t.urgency.toFixed(1)}</span>
+                        <span className="dash-muted">{(t.days_overdue ?? 0) > 0 ? `overdue ${t.days_overdue}d` : `stale ${t.days_since}d`}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+            </div>
+          )}
+        </div>
+
+        {/* ── System Hygiene ── */}
+        <div className={`ws-frame ws-frame--full${hidden('systemHygiene') ? ' dashboard-hidden' : ''}`}>
+          <div className="ws-frame-header">
+            <span>System Hygiene</span>
+            <span className="ws-frame-header-sub">system-level cleanup signals · highest-signal first</span>
+          </div>
+          {!tasksReady ? (
+            <div className="ws-empty">{actionWarning}</div>
+          ) : hygiene.length === 0 ? (
+            <div className="ws-empty">No system hygiene warnings triggered.</div>
+          ) : (
+            <div className="dashboard-hygiene-grid">
+              {hygiene.map((h) => (
+                <div key={h.key} className="dashboard-hygiene-card">
+                  <div className="dashboard-hygiene-title">{h.title}</div>
+                  <div className="dashboard-hygiene-body">{h.body}</div>
+                  <div className="dashboard-hygiene-action">{h.action}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── Section Pressure ── */}
+        <div className={`ws-frame ws-frame--full${hidden('sectionPressure') ? ' dashboard-hidden' : ''}`}>
+          <div className="ws-frame-header">
+            <span>Section Pressure</span>
+            <span className="ws-frame-header-sub">active tasks grouped by section · sorted by avg urgency</span>
+          </div>
+          {!tasksReady ? (
+            <div className="ws-empty">{actionWarning}</div>
+          ) : sectionPressure.length === 0 ? (
             <div className="ws-empty">No active tasks.</div>
           ) : (
-            <table className="dash-table">
+            <table className="dash-table dashboard-section-pressure">
               <thead>
                 <tr>
-                  <th className="dash-th-urg">Urgency</th>
-                  <th>Task</th>
                   <th>Section</th>
-                  <th>Category</th>
-                  <th className="dash-th-num">Days</th>
-                  <th className="dash-th-num">Freq</th>
-                  <th>Last done</th>
-                </tr>
-              </thead>
-              <tbody>
-                {top_5_urgent.map((t) => (
-                  <tr key={t.id}>
-                    <td>
-                      <div className="dash-urg-cell">
-                        <span className={`dash-urg-num ${urgencyClass(t.urgency)}`}>
-                          {t.urgency.toFixed(1)}
-                        </span>
-                        <UrgencyBar value={t.urgency} />
-                      </div>
-                    </td>
-                    <td className="dash-task-name">{t.name}</td>
-                    <td className="dash-muted">{t.section || '—'}</td>
-                    <td className="dash-muted">{t.category || '—'}</td>
-                    <td className="dash-num">{t.days_since}d</td>
-                    <td className="dash-num">{t.interval_days}d</td>
-                    <td className="dash-muted">{t.latest_completion || 'never'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        {/* ── Category pressure ── */}
-        <div className="ws-frame">
-          <div className="ws-frame-header">
-            <span>By category</span>
-            <span className="ws-frame-header-sub">avg · max · dormant · sorted by pressure</span>
-          </div>
-          {sortedCats.length === 0 ? (
-            <div className="ws-empty">No categories.</div>
-          ) : (
-            <table className="dash-table">
-              <thead>
-                <tr>
-                  <th>Category</th>
                   <th className="dash-th-num">Tasks</th>
-                  <th className="dash-th-urg">Avg urg</th>
-                  <th className="dash-th-num">Max</th>
-                  <th className="dash-th-num">Dormant</th>
+                  <th className="dash-th-urg">Avg urgency</th>
+                  <th>Distribution</th>
+                  <th className="dash-th-num">High+</th>
+                  <th className="dash-th-num">Neglect</th>
+                  <th className="dash-th-num">Never</th>
+                  <th className="dash-th-num">Uncat</th>
                 </tr>
               </thead>
               <tbody>
-                {sortedCats.map(([cat, s]) => (
-                  <tr key={cat}>
-                    <td>{cat || '—'}</td>
-                    <td className="dash-num">{s.count}</td>
-                    <td>
-                      <div className="dash-urg-cell">
-                        <span className={`dash-urg-num ${urgencyClass(s.avg_urgency)}`}>
-                          {s.avg_urgency.toFixed(1)}
-                        </span>
-                        <UrgencyBar value={s.avg_urgency} />
-                      </div>
-                    </td>
-                    <td className={`dash-num ${urgencyClass(s.max_urgency)}`}>
-                      {s.max_urgency.toFixed(1)}
-                    </td>
-                    <td className={`dash-num${dormantByCat[cat] > 0 ? ' urg-high' : ''}`}>
-                      {dormantByCat[cat] || 0}
-                    </td>
-                  </tr>
-                ))}
+                {sectionPressure.map((s) => {
+                  const maxHc = Math.max(...sectionPressure.map((x) => x.highCrit), 1);
+                  return (
+                    <tr key={s.section} className={s.section === '(no section)' ? 'dashboard-row-warn' : ''}>
+                      <td>{s.section}</td>
+                      <td className="dash-num">{s.count}</td>
+                      <td>
+                        <div className="dash-urg-cell">
+                          <span className={`dash-urg-num ${urgencyClass(s.avgUrg)}`}>{s.avgUrg.toFixed(1)}</span>
+                          <UrgencyBar value={s.avgUrg} wide />
+                        </div>
+                      </td>
+                      <td>
+                        <div className="dashboard-section-stack" title={`Critical ${s.bands.critical} · High ${s.bands.high} · Noticeable ${s.bands.noticeable} · Low ${s.bands.low} · None ${s.bands.none}`}>
+                          {URGENCY_BANDS.map((b) => (
+                            s.bands[b.key] > 0 ? (
+                              <span key={b.key} className={`dashboard-section-stack-seg ${b.cls}`} style={{ width: `${(s.bands[b.key] / s.count) * 100}%` }} />
+                            ) : null
+                          ))}
+                        </div>
+                      </td>
+                      <td className="dash-num">
+                        <div className="dashboard-count-bar-cell">
+                          <span className={s.highCrit > 0 ? 'urg-high' : ''}>{s.highCrit}</span>
+                          <span className="dashboard-count-bar"><span className="dashboard-count-bar-fill" style={{ width: `${(s.highCrit / maxHc) * 100}%` }} /></span>
+                        </div>
+                      </td>
+                      <td className="dash-num">{s.neglected}</td>
+                      <td className="dash-num">{s.neverDone}</td>
+                      <td className={`dash-num${s.uncategorized > 0 ? ' dashboard-warn-text' : ''}`}>{s.uncategorized}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
         </div>
 
-        {/* ── Dormant / risk panel ── */}
-        <div className="ws-frame">
+        {/* ── Activity Context (compressed) ── */}
+        <div className={`ws-frame ws-frame--full${hidden('activityContext') ? ' dashboard-hidden' : ''}`}>
           <div className="ws-frame-header">
-            <span>Dormant tasks</span>
-            <span className="ws-frame-header-sub">30+ days since last completion · risk zone</span>
+            <span>Activity Context</span>
+            <span className="ws-frame-header-sub">recent momentum · context, not action</span>
           </div>
-          {sortedDormant.length === 0 ? (
-            <div className="ws-empty">No dormant tasks. All tasks completed recently.</div>
-          ) : (
-            <table className="dash-table">
-              <thead>
-                <tr>
-                  <th>Task</th>
-                  <th>Category</th>
-                  <th className="dash-th-num">Days</th>
-                  <th className="dash-th-num">Freq</th>
-                  <th className="dash-th-num">Urg</th>
-                  <th>Last done</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedDormant.map((t) => (
-                  <tr key={t.id}>
-                    <td className="dash-task-name">{t.name}</td>
-                    <td className="dash-muted">{t.category || '—'}</td>
-                    <td className="dash-num urg-high">{t.days_since}d</td>
-                    <td className="dash-num">{t.interval_days}d</td>
-                    <td className={`dash-num ${urgencyClass(t.urgency)}`}>
-                      {t.urgency.toFixed(1)}
-                    </td>
-                    <td className="dash-muted">{t.latest_completion || 'never'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        {/* ── Never done — compact metric ── */}
-        <div className="ws-frame">
-          <div className="ws-frame-header">
-            <span>Never completed</span>
-            <span className="ws-frame-header-sub">no completion record · no manual override</span>
-          </div>
-          <div className="ws-frame-body">
-            <div className="dash-metric-block">
-              <div className="dash-metric-value">{never_done_count}</div>
-              <div className="dash-metric-desc">
-                {never_done_count === 0
-                  ? 'All active tasks have at least one completion or manual override on record.'
-                  : `${never_done_count} active task${never_done_count !== 1 ? 's' : ''} have never been marked done. These may be new or persistently neglected.`
-                }
+          <div className="ws-frame-body dashboard-context-panel">
+            <div className="dashboard-context-stats">
+              <span><strong>{act.total30d}</strong> in 30d</span>
+              <span><strong>{act.done7d}</strong> in 7d</span>
+              {act.paceChangePct !== null && (
+                <span className={act.paceChangePct >= 0 ? 'dash-pace-up' : 'dash-pace-dn'}>
+                  {act.paceChangePct >= 0 ? '+' : ''}{act.paceChangePct}% vs prev 7d
+                </span>
+              )}
+              <span>best day {act.bestDay}</span>
+              <span>{act.activeDays7d}/7 active days</span>
+            </div>
+            {coverage && (
+              <div className="dashboard-coverage">
+                <span>Most active: <strong>{coverage.mostActive || '—'}</strong></span>
+                {coverage.uncovered.length > 0 ? (
+                  <span className="dashboard-warn-text">
+                    High-pressure with little recent activity: {coverage.uncovered.slice(0, 3).join(', ')}
+                  </span>
+                ) : (
+                  <span className="dash-muted">Recent activity covers the high-pressure sections.</span>
+                )}
               </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ── Recent completions — 30-day trend ── */}
-        <div className="ws-frame">
-          <div className="ws-frame-header">
-            <span>Recent completions</span>
-            <span className="ws-frame-header-sub">
-              30-day total · all tasks · {completion_trend[0]?.date} → {completion_trend[29]?.date}
-            </span>
-          </div>
-          <div className="ws-frame-body ws-frame-body--chart">
+            )}
             <SparklineBar trend={completion_trend} />
-            <div className="dash-trend-labels">
-              <span>{completion_trend[0]?.date}</span>
-              <span>today</span>
-            </div>
-            <div className="dash-trend-total">
-              {total30d} completion{total30d !== 1 ? 's' : ''} in 30 days
-              {done7d > 0 ? ` · ${done7d} in the last 7` : ''}
-            </div>
-          </div>
-        </div>
-
-        {/* ── Completion heatmap — section × 30d ── */}
-        <div className="ws-frame ws-frame--full">
-          <div className="ws-frame-header">
-            <span>Completion heatmap</span>
-            <span className="ws-frame-header-sub">
-              section × date · SUM(completion_count) · {completion_heatmap.dates[0]} → {completion_heatmap.dates[29]}
-            </span>
-          </div>
-          <div className="ws-frame-body">
             <HeatmapGrid heatmap={completion_heatmap} />
             <InsightStrip heatmap={completion_heatmap} trend={completion_trend} />
           </div>
         </div>
 
-        {/* ── Pressure heatmap — section × historical snapshot dates ── */}
-        <div className="ws-frame ws-frame--full">
+        {/* ── Pressure Changes (section-level, honest fallback) ── */}
+        <div className={`ws-frame ws-frame--full${hidden('pressureChanges') ? ' dashboard-hidden' : ''}`}>
+          <div className="ws-frame-header">
+            <span>Pressure Changes</span>
+            <span className="ws-frame-header-sub">sections getting worse · section-level (task-level history not stored)</span>
+          </div>
+          <div className="ws-frame-body">
+            <PressureChanges currentSections={sectionPressure} />
+          </div>
+        </div>
+
+        {/* ── Pressure History (bottom, unchanged) ── */}
+        <div className={`ws-frame ws-frame--full${hidden('pressureHistory') ? ' dashboard-hidden' : ''}`}>
           <div className="ws-frame-header">
             <span>Pressure history</span>
             <span className="ws-frame-header-sub">
@@ -684,6 +1036,12 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {DASHBOARD_SECTIONS.every((s) => hidden(s.key)) && (
+          <div className="dashboard-hidden-note dashboard-allhidden">
+            All dashboard sections are hidden (change this in Settings → Dashboard).{' '}
+            <button type="button" className="dashboard-reset-btn" onClick={handleResetVisibility}>Show all sections</button>
+          </div>
+        )}
       </div>
     </div>
   );
