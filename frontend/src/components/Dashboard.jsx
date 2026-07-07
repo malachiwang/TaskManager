@@ -20,7 +20,19 @@ import {
   getCompletionCoverage,
   getImportantNeglected,
   getSectionPressureTrend,
+  chipType,
 } from '../dashboardInsights.js';
+import {
+  loadPreferences,
+  isRecommendationActive,
+  dismissRecommendation,
+  snoozeRecommendation,
+  resetDismissals,
+  hasDismissals,
+  toggleSection,
+  toggleCard,
+  resetVisibility,
+} from '../dashboardPreferences.js';
 
 // Section-level pressure trend (Part E) — honestly derived from snapshot history
 // (task-level urgency history is not stored). Falls back to current high/critical
@@ -118,8 +130,14 @@ function CompositionBar({ segments, total, label }) {
 }
 
 // Rich per-task diagnosis card — the core task-by-task analysis surface.
-function TaskDiagnosisCard({ task }) {
+// Dismissed/snoozed recommendation chips (per prefs) are hidden; each remaining
+// dismissible chip carries a subtle × to hide it from the Dashboard only.
+function TaskDiagnosisCard({ task, prefs, onDismiss }) {
   const { chips, reason, action } = diagnoseTask(task);
+  const visibleChips = chips.filter((c) => {
+    const ty = chipType(c);
+    return !ty || isRecommendationActive(prefs, task.id, ty);
+  });
   const never = !task.latest_completion && !task.manual_last_done_override;
   return (
     <div className="dashboard-diag-card">
@@ -137,9 +155,20 @@ function TaskDiagnosisCard({ task }) {
         <span>{(task.days_overdue ?? 0) > 0 ? `overdue ${task.days_overdue}d` : 'not overdue'}</span>
         <span>{never ? 'never done' : `last ${task.latest_completion || task.manual_last_done_override}`}</span>
       </div>
-      {chips.length > 0 && (
+      {visibleChips.length > 0 && (
         <div className="dashboard-diagnosis-chips">
-          {chips.map((c) => <span key={c} className="dashboard-diagnosis-chip">{c}</span>)}
+          {visibleChips.map((c) => {
+            const ty = chipType(c);
+            return (
+              <span key={c} className="dashboard-diagnosis-chip">
+                {c}
+                {ty && onDismiss && (
+                  <button className="dashboard-chip-dismiss" title="Dismiss suggestion (Dashboard only)"
+                    onClick={() => onDismiss(task.id, ty)}>×</button>
+                )}
+              </span>
+            );
+          })}
         </div>
       )}
       <div className="dashboard-diag-why"><strong>Why:</strong> {reason}</div>
@@ -443,17 +472,51 @@ function nowLabel() {
 // Dashboard
 // ---------------------------------------------------------------------------
 
+// Display-toggle config (P6.0A-fix5). Keys are stored in localStorage.
+const SECTION_TOGGLES = [
+  { key: 'taskDiagnosis', label: 'Task Diagnosis' },
+  { key: 'doNow', label: 'Do Now' },
+  { key: 'quickWins', label: 'Likely Quick Wins' },
+  { key: 'decide', label: 'Decide / Clarify' },
+  { key: 'pressureDiagnostics', label: 'Pressure Diagnostics' },
+  { key: 'systemHygiene', label: 'System Hygiene' },
+  { key: 'sectionPressure', label: 'Section Pressure' },
+  { key: 'activityContext', label: 'Activity Context' },
+  { key: 'pressureChanges', label: 'Pressure Changes' },
+  { key: 'pressureHistory', label: 'Pressure History' },
+];
+const CARD_TOGGLES = [
+  { key: 'pressureReducers', label: 'Pressure Reducers' },
+  { key: 'bloatMeter', label: 'System Bloat Meter' },
+  { key: 'frequencyMismatch', label: 'Frequency Mismatch' },
+  { key: 'uncategorizedImpact', label: 'Uncategorized Impact' },
+  { key: 'readingMigration', label: 'Reading Migration' },
+  { key: 'importantNeglected', label: 'Important but Neglected' },
+];
+
 export default function Dashboard() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [tasks, setTasks] = useState(null);
   const [tasksError, setTasksError] = useState(null);
   const [lens, setLens] = useState('donow'); // active dashboard lens (chip selection)
+  const [prefs, setPrefs] = useState(loadPreferences);       // localStorage UI prefs
+  const [customizeOpen, setCustomizeOpen] = useState(false); // display-toggle popover
 
   useEffect(() => {
     fetchDashboard().then(setData).catch((e) => setError(e.message));
     fetchTasks().then(setTasks).catch((e) => setTasksError(e.message));
   }, []);
+
+  // Preference handlers (all update state + persist, never touch task data).
+  const handleDismiss = (taskId, type) => setPrefs((p) => dismissRecommendation(p, taskId, type));
+  const handleSnooze = (taskId, types) => setPrefs((p) => types.reduce((acc, ty) => snoozeRecommendation(acc, taskId, ty, 30), p));
+  const handleResetDismissals = () => setPrefs((p) => resetDismissals(p));
+  const handleToggleSection = (key) => setPrefs((p) => toggleSection(p, key));
+  const handleToggleCard = (key) => setPrefs((p) => toggleCard(p, key));
+  const handleResetVisibility = () => setPrefs((p) => resetVisibility(p));
+  const hidden = (key) => !!prefs.hiddenSections[key];
+  const cardHidden = (key) => !!prefs.hiddenCards[key];
 
   if (error) return <div className="grid-status error">Error: {error}</div>;
   if (!data) return <div className="grid-status">Loading…</div>;
@@ -485,6 +548,28 @@ export default function Dashboard() {
   const inScope = tasksReady
     ? tasks.filter((t) => !(t.is_paused === 1 || t.is_ended || t.is_scheduled)).length
     : 0;
+
+  // Apply recommendation dismissals/snoozes (Dashboard-only; counts stay honest,
+  // lists omit dismissed suggestions — Option A). A Decide row is kept only while
+  // it still has ≥1 active recommendation type.
+  const decideRows = triage
+    .map(({ task, chips, suggestion }) => {
+      const activeChips = chips.filter((c) => {
+        const ty = chipType(c);
+        return !ty || isRecommendationActive(prefs, task.id, ty);
+      });
+      const activeRecTypes = chips
+        .map(chipType).filter(Boolean)
+        .filter((ty) => isRecommendationActive(prefs, task.id, ty));
+      return { task, chips: activeChips, suggestion, activeRecTypes };
+    })
+    .filter((r) => r.activeRecTypes.length > 0);
+  const readingMigrationVisible = readingMigration.filter((t) => isRecommendationActive(prefs, t.id, 'move_to_reading'));
+  const freqMismatchVisible = freqMismatch.filter((r) => isRecommendationActive(prefs, r.task.id, 'frequency_mismatch'));
+  const uncatTopVisible = uncatImpact ? (uncatImpact.top || []).filter((t) => isRecommendationActive(prefs, t.id, 'uncategorized')) : [];
+  const readingHidden = readingMigration.length - readingMigrationVisible.length;
+  const freqHidden = freqMismatch.length - freqMismatchVisible.length;
+  const dismissalsActive = hasDismissals(prefs);
 
   const critHigh = (urgency_distribution.critical || 0) + (urgency_distribution.high || 0);
   const neverDoneCount = data.never_done_count ?? 0;
@@ -539,7 +624,42 @@ export default function Dashboard() {
             action command center · active non-hiatus tasks{tasksReady ? ` · ${inScope} in scope` : ''}
           </div>
         </div>
-        <div className="ws-dash-now">{nowLabel()}</div>
+        <div className="ws-dash-header-right">
+          <span className="ws-dash-now">{nowLabel()}</span>
+          <div className="dashboard-customize">
+            <button
+              type="button"
+              className={`dashboard-customize-btn${customizeOpen ? ' is-open' : ''}`}
+              aria-expanded={customizeOpen}
+              onClick={() => setCustomizeOpen((o) => !o)}
+            >⚙ Customize</button>
+            {customizeOpen && (
+              <div className="dashboard-customize-panel">
+                <div className="dashboard-customize-title">Sections</div>
+                {SECTION_TOGGLES.map((s) => (
+                  <label key={s.key} className="dashboard-toggle-row">
+                    <input type="checkbox" checked={!hidden(s.key)} onChange={() => handleToggleSection(s.key)} />
+                    {s.label}
+                  </label>
+                ))}
+                <div className="dashboard-customize-title">Diagnostic cards</div>
+                {CARD_TOGGLES.map((c) => (
+                  <label key={c.key} className="dashboard-toggle-row">
+                    <input type="checkbox" checked={!cardHidden(c.key)} onChange={() => handleToggleCard(c.key)} />
+                    {c.label}
+                  </label>
+                ))}
+                <div className="dashboard-customize-actions">
+                  <button type="button" className="dashboard-reset-btn" onClick={handleResetVisibility}>Show all sections</button>
+                  <button type="button" className="dashboard-reset-btn" onClick={handleResetDismissals} disabled={!dismissalsActive}>
+                    Reset dismissed suggestions
+                  </button>
+                </div>
+                <div className="dashboard-customize-note">Display preferences only · nothing about your tasks changes.</div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* ── Top command panel — contained + inset to align with lower panels ── */}
@@ -594,7 +714,7 @@ export default function Dashboard() {
       )}
 
       {/* ── Task Diagnosis (lens-driven, in place under the chips) ── */}
-      <div className="ws-frame ws-frame--full dashboard-diag-frame">
+      <div className={`ws-frame ws-frame--full dashboard-diag-frame${hidden('taskDiagnosis') ? ' dashboard-hidden' : ''}`}>
         <div className="ws-frame-header">
           <span>{LENS_TITLE[lens]}</span>
           <span className="ws-frame-header-sub">why these tasks are surfaced · informational only</span>
@@ -622,7 +742,7 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="ws-frame-body dashboard-diag-grid">
-            {diagPopulation.map((t) => <TaskDiagnosisCard key={t.id} task={t} />)}
+            {diagPopulation.map((t) => <TaskDiagnosisCard key={t.id} task={t} prefs={prefs} onDismiss={handleDismiss} />)}
           </div>
         )}
       </div>
@@ -631,7 +751,7 @@ export default function Dashboard() {
 
       <div className="ws-panels">
         {/* ── Do Now (primary) ── */}
-        <div className="ws-frame ws-frame--full dashboard-donow">
+        <div className={`ws-frame ws-frame--full dashboard-donow${hidden('doNow') ? ' dashboard-hidden' : ''}`}>
           <div className="ws-frame-header">
             <span>Do Now</span>
             <span className="ws-frame-header-sub">established overdue tasks worth doing today · top 5</span>
@@ -640,7 +760,7 @@ export default function Dashboard() {
         </div>
 
         {/* ── Likely Quick Wins (secondary) ── */}
-        <div className="ws-frame ws-frame--full dashboard-quickwins">
+        <div className={`ws-frame ws-frame--full dashboard-quickwins${hidden('quickWins') ? ' dashboard-hidden' : ''}`}>
           <div className="ws-frame-header">
             <span>Likely Quick Wins</span>
             <span className="ws-frame-header-sub">frequent / overdue tasks that likely shed pressure fast · top 5</span>
@@ -649,7 +769,7 @@ export default function Dashboard() {
         </div>
 
         {/* ── Decide / Clarify (triage list) ── */}
-        <div className="ws-frame ws-frame--full dashboard-decide">
+        <div className={`ws-frame ws-frame--full dashboard-decide${hidden('decide') ? ' dashboard-hidden' : ''}`}>
           <div className="ws-frame-header">
             <span>Decide / Clarify</span>
             <span className="ws-frame-header-sub">
@@ -658,18 +778,35 @@ export default function Dashboard() {
           </div>
           {!tasksReady ? (
             <div className="ws-empty">{actionWarning}</div>
-          ) : triage.length === 0 ? (
-            <div className="ws-empty">Nothing needs a decision right now.</div>
+          ) : decideRows.length === 0 ? (
+            <div className="ws-empty">
+              {triage.length === 0 ? 'Nothing needs a decision right now.' : 'All suggestions here are dismissed or snoozed.'}
+            </div>
           ) : (
             <div className="ws-frame-body dashboard-triage-list">
-              {triage.map(({ task, chips, suggestion }) => (
+              {decideRows.map(({ task, chips, suggestion, activeRecTypes }) => (
                 <div key={task.id} className="dashboard-triage-row">
                   <span className={`dash-urg-num ${urgencyClass(task.urgency)}`}>{task.urgency.toFixed(1)}</span>
                   <span className="dashboard-triage-name">{task.name}</span>
                   <span className="dashboard-diagnosis-chips">
-                    {chips.map((c) => <span key={c} className="dashboard-diagnosis-chip">{c}</span>)}
+                    {chips.map((c) => {
+                      const ty = chipType(c);
+                      return (
+                        <span key={c} className="dashboard-diagnosis-chip">
+                          {c}
+                          {ty && (
+                            <button className="dashboard-chip-dismiss" title="Dismiss suggestion (Dashboard only)"
+                              onClick={() => handleDismiss(task.id, ty)}>×</button>
+                          )}
+                        </span>
+                      );
+                    })}
                   </span>
-                  <span className="dashboard-triage-sugg">{suggestion}</span>
+                  <span className="dashboard-triage-sugg">
+                    {suggestion}
+                    <button className="dashboard-snooze-btn" title="Hidden from Dashboard for 30 days"
+                      onClick={() => handleSnooze(task.id, activeRecTypes)}>Snooze 30d</button>
+                  </span>
                 </div>
               ))}
             </div>
@@ -677,7 +814,7 @@ export default function Dashboard() {
         </div>
 
         {/* ── Insight diagnostics grid (Part A/B/D/F/G/I) ── */}
-        <div className="ws-frame ws-frame--full">
+        <div className={`ws-frame ws-frame--full${hidden('pressureDiagnostics') ? ' dashboard-hidden' : ''}`}>
           <div className="ws-frame-header">
             <span>Pressure Diagnostics</span>
             <span className="ws-frame-header-sub">compact insight cards · informational · derived from active tasks</span>
@@ -688,7 +825,7 @@ export default function Dashboard() {
             <div className="ws-frame-body dashboard-insight-grid">
 
               {/* Pressure Reducers */}
-              <div className="dashboard-insight-card">
+              <div className={`dashboard-insight-card${cardHidden('pressureReducers') ? ' dashboard-hidden' : ''}`}>
                 <div className="dashboard-insight-title">Pressure Reducers</div>
                 <div className="dashboard-insight-hint">completing these likely relieves the most recurring pressure</div>
                 {pressureReducers.length === 0 ? (
@@ -707,7 +844,7 @@ export default function Dashboard() {
               </div>
 
               {/* System Bloat Meter */}
-              <div className="dashboard-insight-card">
+              <div className={`dashboard-insight-card${cardHidden('bloatMeter') ? ' dashboard-hidden' : ''}`}>
                 <div className="dashboard-insight-title">System Bloat Meter</div>
                 <div className="dashboard-insight-hint">real recurring work vs. dirty task setup</div>
                 <div className="dashboard-bloat-bar">
@@ -728,25 +865,31 @@ export default function Dashboard() {
               </div>
 
               {/* Frequency Mismatch */}
-              <div className="dashboard-insight-card">
+              <div className={`dashboard-insight-card${cardHidden('frequencyMismatch') ? ' dashboard-hidden' : ''}`}>
                 <div className="dashboard-insight-title">Frequency Mismatch</div>
                 <div className="dashboard-insight-hint">cadence may be misconfigured</div>
-                {freqMismatch.length === 0 ? (
-                  <div className="dashboard-insight-empty">No cadence mismatches detected.</div>
+                {freqMismatchVisible.length === 0 ? (
+                  <div className="dashboard-insight-empty">
+                    {freqMismatch.length === 0 ? 'No cadence mismatches detected.' : 'All flagged here are dismissed/snoozed.'}
+                  </div>
                 ) : (
                   <ul className="dashboard-mini-list">
-                    {freqMismatch.map(({ task, suggestion }) => (
+                    {freqMismatchVisible.map(({ task, suggestion }) => (
                       <li key={task.id}>
-                        <span className="dashboard-mini-name">{task.name} <span className="dash-muted">· every {task.interval_days}d</span></span>
+                        <span className="dashboard-mini-name">{task.name} <span className="dash-muted">· every {task.interval_days}d</span>
+                          <button className="dashboard-chip-dismiss" title="Dismiss suggestion (Dashboard only)"
+                            onClick={() => handleDismiss(task.id, 'frequency_mismatch')}>×</button>
+                        </span>
                         <span className="dashboard-mini-sugg">{suggestion}</span>
                       </li>
                     ))}
                   </ul>
                 )}
+                {freqHidden > 0 && <div className="dashboard-hidden-note">{freqHidden} dismissed suggestion{freqHidden !== 1 ? 's' : ''} hidden.</div>}
               </div>
 
               {/* Uncategorized Impact */}
-              <div className={`dashboard-insight-card${uncatImpact && uncatImpact.warn ? ' dashboard-insight-warn' : ''}`}>
+              <div className={`dashboard-insight-card${uncatImpact && uncatImpact.warn ? ' dashboard-insight-warn' : ''}${cardHidden('uncategorizedImpact') ? ' dashboard-hidden' : ''}`}>
                 <div className="dashboard-insight-title">Uncategorized Impact</div>
                 {!uncatImpact || uncatImpact.count === 0 ? (
                   <div className="dashboard-insight-empty">All active tasks are categorized.</div>
@@ -756,11 +899,14 @@ export default function Dashboard() {
                       {uncatImpact.pctHighCrit}% of high/critical pressure is uncategorized · {uncatImpact.count} tasks ({uncatImpact.pctActive}% of active)
                     </div>
                     <div className="dashboard-uncat-note">Categorizing these would make Section Pressure more reliable.</div>
-                    {uncatImpact.top.length > 0 && (
+                    {uncatTopVisible.length > 0 && (
                       <ul className="dashboard-mini-list">
-                        {uncatImpact.top.map((t) => (
+                        {uncatTopVisible.map((t) => (
                           <li key={t.id}>
-                            <span className="dashboard-mini-name">{t.name}</span>
+                            <span className="dashboard-mini-name">{t.name}
+                              <button className="dashboard-chip-dismiss" title="Dismiss suggestion (Dashboard only)"
+                                onClick={() => handleDismiss(t.id, 'uncategorized')}>×</button>
+                            </span>
                             <span className={`dash-urg-num ${urgencyClass(t.urgency)}`}>{t.urgency.toFixed(1)}</span>
                           </li>
                         ))}
@@ -770,25 +916,29 @@ export default function Dashboard() {
                 )}
               </div>
 
-              {/* Reading Migration — only when candidates exist */}
-              {readingMigration.length > 0 && (
+              {/* Reading Migration — only when active candidates exist */}
+              {readingMigrationVisible.length > 0 && !cardHidden('readingMigration') && (
                 <div className="dashboard-insight-card">
                   <div className="dashboard-insight-title">Reading Migration</div>
                   <div className="dashboard-insight-hint">these look like reading — track them in the Reading Sheet</div>
                   <ul className="dashboard-mini-list">
-                    {readingMigration.map((t) => (
+                    {readingMigrationVisible.map((t) => (
                       <li key={t.id}>
-                        <span className="dashboard-mini-name">{t.name}</span>
+                        <span className="dashboard-mini-name">{t.name}
+                          <button className="dashboard-chip-dismiss" title="Dismiss suggestion (Dashboard only)"
+                            onClick={() => handleDismiss(t.id, 'move_to_reading')}>×</button>
+                        </span>
                         <span className={`dash-urg-num ${urgencyClass(t.urgency)}`}>{t.urgency.toFixed(1)}</span>
                         <span className="dashboard-mini-sugg">Consider tracking in Reading Sheet.</span>
                       </li>
                     ))}
                   </ul>
+                  {readingHidden > 0 && <div className="dashboard-hidden-note">{readingHidden} dismissed hidden.</div>}
                 </div>
               )}
 
               {/* Important but Neglected */}
-              <div className="dashboard-insight-card">
+              <div className={`dashboard-insight-card${cardHidden('importantNeglected') ? ' dashboard-hidden' : ''}`}>
                 <div className="dashboard-insight-title">Important but Neglected</div>
                 <div className="dashboard-insight-hint">high priority · stale · not necessarily top Do Now</div>
                 {importantNeglected.length === 0 ? (
@@ -811,7 +961,7 @@ export default function Dashboard() {
         </div>
 
         {/* ── System Hygiene ── */}
-        <div className="ws-frame ws-frame--full">
+        <div className={`ws-frame ws-frame--full${hidden('systemHygiene') ? ' dashboard-hidden' : ''}`}>
           <div className="ws-frame-header">
             <span>System Hygiene</span>
             <span className="ws-frame-header-sub">system-level cleanup signals · highest-signal first</span>
@@ -834,7 +984,7 @@ export default function Dashboard() {
         </div>
 
         {/* ── Section Pressure ── */}
-        <div className="ws-frame ws-frame--full">
+        <div className={`ws-frame ws-frame--full${hidden('sectionPressure') ? ' dashboard-hidden' : ''}`}>
           <div className="ws-frame-header">
             <span>Section Pressure</span>
             <span className="ws-frame-header-sub">active tasks grouped by section · sorted by avg urgency</span>
@@ -897,7 +1047,7 @@ export default function Dashboard() {
         </div>
 
         {/* ── Activity Context (compressed) ── */}
-        <div className="ws-frame ws-frame--full">
+        <div className={`ws-frame ws-frame--full${hidden('activityContext') ? ' dashboard-hidden' : ''}`}>
           <div className="ws-frame-header">
             <span>Activity Context</span>
             <span className="ws-frame-header-sub">recent momentum · context, not action</span>
@@ -933,7 +1083,7 @@ export default function Dashboard() {
         </div>
 
         {/* ── Pressure Changes (section-level, honest fallback) ── */}
-        <div className="ws-frame ws-frame--full">
+        <div className={`ws-frame ws-frame--full${hidden('pressureChanges') ? ' dashboard-hidden' : ''}`}>
           <div className="ws-frame-header">
             <span>Pressure Changes</span>
             <span className="ws-frame-header-sub">sections getting worse · section-level (task-level history not stored)</span>
@@ -944,7 +1094,7 @@ export default function Dashboard() {
         </div>
 
         {/* ── Pressure History (bottom, unchanged) ── */}
-        <div className="ws-frame ws-frame--full">
+        <div className={`ws-frame ws-frame--full${hidden('pressureHistory') ? ' dashboard-hidden' : ''}`}>
           <div className="ws-frame-header">
             <span>Pressure history</span>
             <span className="ws-frame-header-sub">
@@ -955,6 +1105,13 @@ export default function Dashboard() {
             <PressureHeatmap />
           </div>
         </div>
+
+        {SECTION_TOGGLES.every((s) => hidden(s.key)) && (
+          <div className="dashboard-hidden-note dashboard-allhidden">
+            All dashboard sections are hidden.{' '}
+            <button type="button" className="dashboard-reset-btn" onClick={handleResetVisibility}>Show all sections</button>
+          </div>
+        )}
       </div>
     </div>
   );

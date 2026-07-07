@@ -268,6 +268,21 @@ export function getActivitySummary(completionTrend = []) {
   return { total30d, done7d, prev7d, paceChangePct, bestDay, activeDays7d };
 }
 
+// Maps a diagnosis chip label → a stable recommendation type key (used for
+// dismiss/snooze). Chips not listed here (Overdue, High priority, Daily, High,
+// Critical) are informational and cannot be dismissed.
+export const CHIP_TYPE = {
+  'Move to Reading?': 'move_to_reading',
+  'Never done': 'never_done',
+  'Uncategorized': 'uncategorized',
+  'Possibly stale': 'possibly_stale',
+  'Frequency may be wrong': 'frequency_mismatch',
+  'Needs rename': 'needs_rename',
+};
+export function chipType(label) {
+  return CHIP_TYPE[label] || null;
+}
+
 // ── Per-task diagnosis ───────────────────────────────────────────────────────
 // Rich, non-destructive analysis of a single task: diagnosis chips + a short
 // "why" + a suggested (informational) next action. Works from existing fields.

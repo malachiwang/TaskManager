@@ -5403,3 +5403,78 @@ select.task-modal-input {
 .dashboard-changes-list li { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
 .dashboard-changes-sec { font-weight: 500; color: var(--ink); min-width: 100px; }
 .dashboard-changes-delta { font-weight: 600; }
+
+/* ── P6.0A-fix5: dismiss/snooze + display toggles ── */
+
+.dashboard-hidden { display: none !important; }
+
+/* Header right group + Customize popover. */
+.ws-dash-header-right { display: flex; align-items: center; gap: 12px; }
+.dashboard-customize { position: relative; }
+.dashboard-customize-btn {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 4px 10px;
+  border: 1px solid var(--grid-border);
+  border-radius: 4px;
+  background: var(--bg-panel);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.dashboard-customize-btn:hover { border-color: var(--muted-2); }
+.dashboard-customize-btn.is-open { border-color: var(--accent); color: var(--accent); }
+.dashboard-customize-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  width: 220px;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 10px 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--grid-border);
+  border-radius: 5px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+}
+.dashboard-customize-title {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--muted); margin: 8px 0 4px;
+}
+.dashboard-customize-title:first-child { margin-top: 0; }
+.dashboard-toggle-row {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; color: var(--ink-2); padding: 2px 0; cursor: pointer;
+}
+.dashboard-customize-actions { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; }
+.dashboard-reset-btn {
+  font-family: inherit; font-size: 11px; padding: 4px 8px; cursor: pointer;
+  border: 1px solid var(--grid-border); border-radius: 3px;
+  background: var(--paused-bg); color: var(--ink-2); text-align: left;
+}
+.dashboard-reset-btn:hover:not(:disabled) { border-color: var(--accent); }
+.dashboard-reset-btn:disabled { opacity: 0.45; cursor: default; }
+.dashboard-customize-note { font-size: 10px; color: var(--muted); margin-top: 8px; font-style: italic; }
+
+/* Subtle chip dismiss "×" and row snooze — non-destructive (no red). */
+.dashboard-chip-dismiss {
+  border: none; background: none; cursor: pointer;
+  color: var(--muted-2); font-size: 12px; line-height: 1;
+  padding: 0 0 0 4px; margin-left: 2px;
+}
+.dashboard-chip-dismiss:hover { color: var(--ink-2); }
+.dashboard-snooze-btn {
+  border: 1px solid var(--grid-border); background: var(--bg-panel);
+  color: var(--muted); font-family: inherit; font-size: 10px;
+  padding: 1px 6px; border-radius: 3px; cursor: pointer; margin-left: 8px;
+}
+.dashboard-snooze-btn:hover { border-color: var(--muted-2); color: var(--ink-2); }
+
+.dashboard-hidden-note { font-size: 10px; color: var(--muted); font-style: italic; margin-top: 4px; }
+.dashboard-allhidden {
+  grid-column: 1 / -1;
+  padding: 16px;
+  text-align: center;
+  font-style: normal;
+  font-size: 13px;
+}
