@@ -548,6 +548,257 @@ def reorder_tasks(body: ReorderBody):
 
 
 # ---------------------------------------------------------------------------
+# Reading Sheet (P5.0) — books + page-checkpoint history
+# ---------------------------------------------------------------------------
+
+_READING_STATUSES = frozenset({"active", "finished", "archived"})
+
+
+class ReadingBookBody(BaseModel):
+    title: Optional[str] = None
+    author: Optional[str] = None
+    total_pages: Optional[int] = None
+    current_page: Optional[int] = None
+    status: Optional[str] = None
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ReadingEntryBody(BaseModel):
+    page: int
+    entry_date: Optional[str] = None
+    note: Optional[str] = None
+
+
+class ReadingReorderBody(BaseModel):
+    order: list[int]
+
+
+def _clamp_page(page: Optional[int], total_pages: Optional[int]) -> int:
+    """Clamp a page number to [0, total_pages]. total_pages None → no upper bound."""
+    p = int(page or 0)
+    if p < 0:
+        p = 0
+    if total_pages is not None and total_pages >= 0 and p > total_pages:
+        p = total_pages
+    return p
+
+
+def _enrich_book(row: dict, conn) -> dict:
+    """Add derived progress fields to a reading_books row."""
+    b = dict(row)
+    total = b.get("total_pages")
+    current = b.get("current_page") or 0
+    if total is not None and total > 0:
+        b["percent_complete"] = round(min(100.0, current / total * 100), 1)
+        b["pages_remaining"] = max(0, total - current)
+    else:
+        b["percent_complete"] = None
+        b["pages_remaining"] = None
+
+    last = conn.execute(
+        "SELECT entry_date, page FROM reading_entries "
+        "WHERE book_id = ? ORDER BY entry_date DESC, id DESC LIMIT 1",
+        (b["id"],),
+    ).fetchone()
+    b["last_entry_date"] = last["entry_date"] if last else None
+    b["last_page_logged"] = last["page"] if last else None
+
+    # days_since_update from updated_at date (falls back to created_at).
+    ref = (b.get("updated_at") or b.get("created_at") or "")[:10]
+    try:
+        b["days_since_update"] = max(0, (date.today() - date.fromisoformat(ref)).days)
+    except (ValueError, TypeError):
+        b["days_since_update"] = None
+    return b
+
+
+@app.get("/reading/books")
+def list_reading_books():
+    """All books ordered: active first, then finished, then archived; within a
+    status by display_order then title. Each row includes derived progress."""
+    conn = get_connection()
+    status_rank = "CASE status WHEN 'active' THEN 0 WHEN 'finished' THEN 1 ELSE 2 END"
+    rows = conn.execute(
+        f"SELECT * FROM reading_books ORDER BY {status_rank}, display_order, title COLLATE NOCASE"
+    ).fetchall()
+    books = [_enrich_book(r, conn) for r in rows]
+    conn.close()
+    return books
+
+
+@app.post("/reading/books", status_code=201)
+def create_reading_book(body: ReadingBookBody):
+    """Create a book. Title is required. current_page is clamped to
+    [0, total_pages]; if > 0 an initial checkpoint entry seeds the history."""
+    title = (body.title or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="title is required")
+    total = body.total_pages
+    if total is not None and total < 0:
+        total = None
+    current = _clamp_page(body.current_page, total)
+    status = body.status if body.status in _READING_STATUSES else "active"
+    now = datetime.now().isoformat()
+    today = date.today().isoformat()
+    started = body.started_at or today
+
+    conn = get_connection()
+    with conn:
+        next_order = conn.execute(
+            "SELECT COALESCE(MAX(display_order), -1) + 1 FROM reading_books"
+        ).fetchone()[0]
+        cur = conn.execute(
+            """INSERT INTO reading_books
+                 (title, author, total_pages, current_page, status, started_at,
+                  finished_at, notes, display_order, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (title, (body.author or "").strip(), total, current, status, started,
+             body.finished_at, (body.notes or ""), next_order, now, now),
+        )
+        book_id = cur.lastrowid
+        if current > 0:
+            conn.execute(
+                """INSERT INTO reading_entries
+                     (book_id, entry_date, page, note, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (book_id, today, current, "", now, now),
+            )
+        row = conn.execute("SELECT * FROM reading_books WHERE id = ?", (book_id,)).fetchone()
+        result = _enrich_book(row, conn)
+    conn.close()
+    return result
+
+
+@app.patch("/reading/books/{book_id}")
+def update_reading_book(book_id: int, body: ReadingBookBody):
+    """Update book metadata. Setting status='finished' stamps finished_at (if not
+    supplied). current_page here is a metadata correction — it does NOT create a
+    checkpoint entry (use POST .../entries for that). History is never deleted."""
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM reading_books WHERE id = ?", (book_id,)).fetchone()
+    if row is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Book not found")
+    book = dict(row)
+
+    updates: dict = {}
+    if body.title is not None:
+        t = body.title.strip()
+        if not t:
+            conn.close()
+            raise HTTPException(status_code=400, detail="title cannot be blank")
+        updates["title"] = t
+    if body.author is not None:
+        updates["author"] = body.author.strip()
+    if body.total_pages is not None:
+        updates["total_pages"] = body.total_pages if body.total_pages >= 0 else None
+    if body.notes is not None:
+        updates["notes"] = body.notes
+    if body.started_at is not None:
+        updates["started_at"] = body.started_at or None
+    if body.status is not None and body.status in _READING_STATUSES:
+        updates["status"] = body.status
+        if body.status == "finished" and not book.get("finished_at") and body.finished_at is None:
+            updates["finished_at"] = date.today().isoformat()
+    if body.finished_at is not None:
+        updates["finished_at"] = body.finished_at or None
+    if body.current_page is not None:
+        total = updates.get("total_pages", book.get("total_pages"))
+        updates["current_page"] = _clamp_page(body.current_page, total)
+
+    if updates:
+        updates["updated_at"] = datetime.now().isoformat()
+        sets = ", ".join(f"{k} = :{k}" for k in updates)
+        updates["id"] = book_id
+        with conn:
+            conn.execute(f"UPDATE reading_books SET {sets} WHERE id = :id", updates)
+    row = conn.execute("SELECT * FROM reading_books WHERE id = ?", (book_id,)).fetchone()
+    result = _enrich_book(row, conn)
+    conn.close()
+    return result
+
+
+@app.delete("/reading/books/{book_id}", status_code=200)
+def delete_reading_book(book_id: int):
+    """Hard-delete a book and its entries (cascade). The UI prefers Archive
+    (status change) which preserves history; this is for true removal."""
+    conn = get_connection()
+    row = conn.execute("SELECT id FROM reading_books WHERE id = ?", (book_id,)).fetchone()
+    if row is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Book not found")
+    with conn:
+        conn.execute("DELETE FROM reading_books WHERE id = ?", (book_id,))
+    conn.close()
+    return {"deleted": book_id}
+
+
+@app.get("/reading/books/{book_id}/entries")
+def list_reading_entries(book_id: int):
+    """Historical page checkpoints for a book, oldest → newest."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM reading_entries WHERE book_id = ? ORDER BY entry_date, id",
+        (book_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.post("/reading/books/{book_id}/entries", status_code=201)
+def create_reading_entry(book_id: int, body: ReadingEntryBody):
+    """Log a page checkpoint (current page, not pages-read). Updates the book's
+    current_page and preserves history. One checkpoint per date (upsert)."""
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM reading_books WHERE id = ?", (book_id,)).fetchone()
+    if row is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Book not found")
+    book = dict(row)
+    page = _clamp_page(body.page, book.get("total_pages"))
+    entry_date = body.entry_date or date.today().isoformat()
+    now = datetime.now().isoformat()
+
+    with conn:
+        conn.execute(
+            """INSERT INTO reading_entries
+                 (book_id, entry_date, page, note, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(book_id, entry_date) DO UPDATE SET
+                 page = excluded.page,
+                 note = excluded.note,
+                 updated_at = excluded.updated_at""",
+            (book_id, entry_date, page, (body.note or ""), now, now),
+        )
+        conn.execute(
+            "UPDATE reading_books SET current_page = ?, updated_at = ? WHERE id = ?",
+            (page, now, book_id),
+        )
+        row = conn.execute("SELECT * FROM reading_books WHERE id = ?", (book_id,)).fetchone()
+        result = _enrich_book(row, conn)
+    conn.close()
+    return result
+
+
+@app.post("/reading/books/reorder", status_code=200)
+def reorder_reading_books(body: ReadingReorderBody):
+    """Set display_order for books in bulk from an ordered list of IDs."""
+    if not body.order:
+        return {"reordered": 0}
+    conn = get_connection()
+    with conn:
+        for i, book_id in enumerate(body.order):
+            conn.execute(
+                "UPDATE reading_books SET display_order = ? WHERE id = ?",
+                (i, book_id),
+            )
+    conn.close()
+    return {"reordered": len(body.order)}
+
+
+# ---------------------------------------------------------------------------
 # Completions
 # ---------------------------------------------------------------------------
 
@@ -1276,16 +1527,26 @@ def export_backup():
             "SELECT * FROM task_daily_snapshots ORDER BY snapshot_date, task_id"
         ).fetchall()
     ]
+    reading_books = [
+        dict(r) for r in conn.execute("SELECT * FROM reading_books ORDER BY id").fetchall()
+    ]
+    reading_entries = [
+        dict(r) for r in conn.execute(
+            "SELECT * FROM reading_entries ORDER BY book_id, entry_date, id"
+        ).fetchall()
+    ]
     conn.close()
 
     payload = {
-        "schema_version": 3,
+        "schema_version": 4,
         "exported_at": datetime.now().isoformat(),
         "tasks": tasks,
         "completions": completions,
         "cell_notes": cell_notes,
         "archive_snapshots": archives,
         "task_daily_snapshots": daily_snapshots,
+        "reading_books": reading_books,
+        "reading_entries": reading_entries,
     }
     filename = f"taskos-backup-{date.today().isoformat()}.json"
     return Response(
@@ -1378,7 +1639,7 @@ def export_sheet_csv(
 # Restore
 # ---------------------------------------------------------------------------
 
-_SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2, 3})
+_SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4})
 
 
 @app.post("/restore/backup.json", status_code=200)
@@ -1415,6 +1676,8 @@ async def restore_backup(file: UploadFile = File(...)):
     cell_notes_data = payload.get("cell_notes", [])
     archives_data = payload.get("archive_snapshots", [])
     snapshots_data = payload.get("task_daily_snapshots", [])
+    reading_books_data = payload.get("reading_books", [])
+    reading_entries_data = payload.get("reading_entries", [])
 
     # Safety backup before any writes.
     backup_dir = DB_PATH.parent / "backups"
@@ -1431,6 +1694,8 @@ async def restore_backup(file: UploadFile = File(...)):
     try:
         with conn:
             # Delete in dependency order (child tables first, then parent).
+            conn.execute("DELETE FROM reading_entries")
+            conn.execute("DELETE FROM reading_books")
             conn.execute("DELETE FROM task_daily_snapshots")
             conn.execute("DELETE FROM cell_notes")
             conn.execute("DELETE FROM completions")
@@ -1574,6 +1839,56 @@ async def restore_backup(file: UploadFile = File(...)):
                         "updated_at":         s.get("updated_at"),
                     },
                 )
+
+            # Reading Sheet (P5.0) — books first (parent), then entries.
+            for b in reading_books_data:
+                conn.execute(
+                    """
+                    INSERT INTO reading_books (
+                        id, title, author, total_pages, current_page, status,
+                        started_at, finished_at, notes, display_order,
+                        created_at, updated_at
+                    ) VALUES (
+                        :id, :title, :author, :total_pages, :current_page, :status,
+                        :started_at, :finished_at, :notes, :display_order,
+                        :created_at, :updated_at
+                    )
+                    """,
+                    {
+                        "id":            b.get("id"),
+                        "title":         b["title"],
+                        "author":        b.get("author", ""),
+                        "total_pages":   b.get("total_pages"),
+                        "current_page":  b.get("current_page", 0),
+                        "status":        b.get("status", "active"),
+                        "started_at":    b.get("started_at"),
+                        "finished_at":   b.get("finished_at"),
+                        "notes":         b.get("notes", ""),
+                        "display_order": b.get("display_order", 0),
+                        "created_at":    b.get("created_at"),
+                        "updated_at":    b.get("updated_at"),
+                    },
+                )
+
+            for e in reading_entries_data:
+                conn.execute(
+                    """
+                    INSERT INTO reading_entries (
+                        id, book_id, entry_date, page, note, created_at, updated_at
+                    ) VALUES (
+                        :id, :book_id, :entry_date, :page, :note, :created_at, :updated_at
+                    )
+                    """,
+                    {
+                        "id":         e.get("id"),
+                        "book_id":    e["book_id"],
+                        "entry_date": e["entry_date"],
+                        "page":       e.get("page", 0),
+                        "note":       e.get("note", ""),
+                        "created_at": e.get("created_at"),
+                        "updated_at": e.get("updated_at"),
+                    },
+                )
     except Exception as exc:
         conn.close()
         raise HTTPException(status_code=500, detail=f"Restore failed: {exc}")
@@ -1587,6 +1902,8 @@ async def restore_backup(file: UploadFile = File(...)):
         "cell_notes": len(cell_notes_data),
         "archive_snapshots": len(archives_data),
         "task_daily_snapshots": len(snapshots_data),
+        "reading_books": len(reading_books_data),
+        "reading_entries": len(reading_entries_data),
         "safety_backup": str(safety_path),
     }
 

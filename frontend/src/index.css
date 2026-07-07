@@ -186,6 +186,72 @@ body {
   cursor: not-allowed;
 }
 
+/* Top utility/tool nav (P5.0-fix1, aligned left in fix2) — Dashboard/Archive/
+   Settings sit next to the brand on the left, not pushed to the far right.
+   Reuses the .tab button styling. */
+.app-utility-nav {
+  display: flex;
+  gap: 2px;
+  padding-left: 16px;
+}
+
+/* Bottom worksheet-tab strip (P5.0-fix1/2, Sheets-styled in fix3) — primary
+   sheet switch (Tasks / Reading) matching Google Sheets worksheet tabs: a light
+   gray bottom strip with substantial bottom-left tab blocks, an active tab that
+   reads as selected (paper fill + blue text/accent) and inactive tabs in muted
+   dark text. It is a normal flex child at the bottom of the column layout (not
+   fixed), so it never overlaps content or the horizontal scrollbar. */
+.sheet-tabbar {
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  flex-shrink: 0;
+  height: 34px;
+  padding: 0 8px;
+  background: var(--header-bg, #f1f1f1);
+  border-top: 1px solid var(--grid-border);
+}
+
+.sheet-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 20px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-top: none;
+  border-radius: 0 0 3px 3px;
+  color: var(--ink-2);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* Visual-only caret (▾) after the label, à la Sheets worksheet tabs. */
+.sheet-tab::after {
+  content: '▾';
+  font-size: 9px;
+  opacity: 0.45;
+}
+
+.sheet-tab:hover:not(.sheet-tab-active) {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+/* Active tab: paper fill connected to the sheet above (via top overlap),
+   blue label + accent underline — the selected worksheet. */
+.sheet-tab-active {
+  background: var(--bg-panel);
+  color: var(--accent);
+  font-weight: 600;
+  border-color: var(--grid-border);
+  border-bottom: 2px solid var(--accent);
+  margin-top: -1px;
+}
+
+.sheet-tab-active::after { opacity: 0.6; }
+
 .app-main {
   flex: 1;
   overflow: hidden;
@@ -3151,7 +3217,8 @@ thead .meta-col {
 }
 
 /* ── App-level grid state: slightly cooler bg behind sheet ── */
-.app-main[data-tab='grid'] {
+.app-main[data-tab='tasks'],
+.app-main[data-tab='reading'] {
   background: var(--bg-app);
 }
 
@@ -4907,3 +4974,135 @@ select.task-modal-input {
   background: var(--row-hover-bg);
   text-decoration: underline;
 }
+
+/* ===========================================================================
+   Reading Sheet (P5.0) — dense grid, sibling of the task grid
+   =========================================================================== */
+.reading-grid {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  font-size: 12px;
+}
+.reading-grid th,
+.reading-grid td {
+  border-right: 1px solid var(--grid-border);
+  border-bottom: 1px solid var(--grid-border);
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.reading-grid th:first-child,
+.reading-grid td:first-child { border-left: 1px solid var(--grid-border); }
+.reading-grid thead th {
+  border-top: 1px solid var(--grid-border);
+  background: var(--header-bg);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.reading-row:hover td { background: var(--row-hover-bg); }
+.reading-row.status-archived td,
+.reading-row.status-finished td { color: var(--muted); }
+
+.rd-col-title   { font-weight: 500; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+.rd-col-author  { color: var(--muted); max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.rd-col-page    { width: 96px; text-align: right; }
+.rd-col-total   { width: 60px; text-align: right; color: var(--muted); }
+.rd-col-progress { width: 170px; }
+.rd-col-updated { width: 92px; color: var(--muted); }
+.rd-col-status  { width: 92px; }
+.rd-col-actions { width: 1%; white-space: nowrap; }
+
+.rd-page-input {
+  width: 64px;
+  font-size: 12px;
+  text-align: right;
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 2px 4px;
+  color: var(--ink);
+  border-radius: 2px;
+}
+.rd-page-input:hover { border-color: var(--grid-border); }
+.rd-page-input:focus { outline: none; border-color: var(--accent); background: var(--bg-panel); }
+
+.rd-progress { display: flex; align-items: center; gap: 6px; }
+.rd-progress-bar { flex: 1; height: 6px; background: var(--grid-border); border-radius: 3px; overflow: hidden; }
+.rd-progress-fill { height: 100%; background: var(--good); }
+.rd-progress-pct { font-size: 11px; color: var(--muted); min-width: 34px; text-align: right; }
+.rd-progress-unknown { color: var(--muted-2); }
+
+.rd-stale { color: var(--urg-hi); }
+
+.rd-status-badge {
+  display: inline-block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: var(--muted);
+  background: var(--paused-bg);
+}
+.rd-status-active   { color: var(--good); }
+.rd-status-finished { color: var(--accent); }
+.rd-status-archived { color: var(--muted-2); }
+
+.rd-action-group { display: flex; gap: 4px; justify-content: flex-end; }
+
+/* Inline page checkpoints (P5.0-fix3) — a horizontal "page, date" strip on each
+   book row, extending right (the grid-wrapper scrolls if it overflows). */
+.rd-col-checkpoints { white-space: nowrap; }
+.rd-checkpoints { display: flex; align-items: center; gap: 4px; }
+
+.rd-checkpoint {
+  display: inline-flex;
+  align-items: baseline;
+  font-size: 11px;
+  padding: 1px 6px;
+  background: var(--paused-bg);
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.rd-cp-date { color: var(--muted); }
+
+.rd-checkpoint-add {
+  cursor: pointer;
+  color: var(--accent);
+  background: transparent;
+  border: 1px dashed var(--grid-border);
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 7px;
+}
+.rd-checkpoint-add:hover { background: var(--row-hover-bg); }
+
+.rd-checkpoint-add-form { gap: 3px; background: var(--bg-panel); padding: 1px 4px; }
+.rd-cp-page,
+.rd-cp-dateinput {
+  font-size: 11px;
+  border: 1px solid var(--grid-border);
+  border-radius: 2px;
+  padding: 1px 3px;
+}
+.rd-cp-page { width: 46px; }
+.rd-cp-dateinput { width: 118px; }
+.rd-cp-save,
+.rd-cp-cancel {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 2px;
+  line-height: 1;
+}
+.rd-cp-save { color: var(--good); }
+.rd-cp-cancel { color: var(--muted-2); }

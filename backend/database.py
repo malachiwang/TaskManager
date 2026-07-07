@@ -226,4 +226,45 @@ def init_db() -> None:
     except Exception:
         pass  # Column already exists.
 
+    # ── Migration 8: Reading Sheet (P5.0) — books + page-checkpoint history ────
+    # reading_books holds one row per book with its current page and lifecycle
+    # status. reading_entries records historical page checkpoints (one per day
+    # per book via the UNIQUE constraint); archiving/finishing a book never
+    # deletes its entries. total_pages may be NULL (unknown length).
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS reading_books (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            title         TEXT    NOT NULL,
+            author        TEXT             DEFAULT '',
+            total_pages   INTEGER          DEFAULT NULL,
+            current_page  INTEGER NOT NULL DEFAULT 0,
+            status        TEXT    NOT NULL DEFAULT 'active',
+            started_at    TEXT             DEFAULT NULL,
+            finished_at   TEXT             DEFAULT NULL,
+            notes         TEXT             DEFAULT '',
+            display_order INTEGER NOT NULL DEFAULT 0,
+            created_at    TEXT    NOT NULL,
+            updated_at    TEXT    NOT NULL,
+            CHECK (current_page >= 0),
+            CHECK (total_pages IS NULL OR total_pages >= 0),
+            CHECK (status IN ('active', 'finished', 'archived'))
+        );
+
+        CREATE TABLE IF NOT EXISTS reading_entries (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            book_id    INTEGER NOT NULL REFERENCES reading_books(id) ON DELETE CASCADE,
+            entry_date TEXT    NOT NULL,
+            page       INTEGER NOT NULL,
+            note       TEXT             DEFAULT '',
+            created_at TEXT    NOT NULL,
+            updated_at TEXT    NOT NULL,
+            CHECK (page >= 0),
+            UNIQUE (book_id, entry_date)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_reading_entries_book
+            ON reading_entries(book_id);
+    """)
+    conn.commit()
+
     conn.close()

@@ -197,6 +197,86 @@ export async function reorderTasks(orderedIds) {
   return res.json();
 }
 
+// ---------------------------------------------------------------------------
+// Reading Sheet (P5.0)
+// ---------------------------------------------------------------------------
+
+export async function fetchReadingBooks() {
+  const res = await fetch(`${BASE}/reading/books`);
+  if (!res.ok) throw new Error(`fetchReadingBooks failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createReadingBook(fields) {
+  const res = await fetch(`${BASE}/reading/books`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) {
+    let detail = `createReadingBook failed: ${res.status}`;
+    try { const b = await res.json(); if (b.detail) detail = b.detail; } catch {}
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+export async function updateReadingBook(id, fields) {
+  const res = await fetch(`${BASE}/reading/books/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) {
+    let detail = `updateReadingBook failed: ${res.status}`;
+    try { const b = await res.json(); if (b.detail) detail = b.detail; } catch {}
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+// Convenience wrappers over updateReadingBook for status changes.
+export async function finishReadingBook(id) {
+  return updateReadingBook(id, { status: 'finished' });
+}
+
+export async function archiveReadingBook(id) {
+  return updateReadingBook(id, { status: 'archived' });
+}
+
+export async function deleteReadingBook(id) {
+  const res = await fetch(`${BASE}/reading/books/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`deleteReadingBook failed: ${res.status}`);
+  return res.json();
+}
+
+// Log a page checkpoint (current page). Updates current_page + preserves history.
+export async function createReadingEntry(bookId, page, opts = {}) {
+  const res = await fetch(`${BASE}/reading/books/${bookId}/entries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ page, entry_date: opts.entry_date ?? null, note: opts.note ?? null }),
+  });
+  if (!res.ok) throw new Error(`createReadingEntry failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchReadingEntries(bookId) {
+  const res = await fetch(`${BASE}/reading/books/${bookId}/entries`);
+  if (!res.ok) throw new Error(`fetchReadingEntries failed: ${res.status}`);
+  return res.json();
+}
+
+export async function reorderReadingBooks(orderedIds) {
+  const res = await fetch(`${BASE}/reading/books/reorder`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ order: orderedIds }),
+  });
+  if (!res.ok) throw new Error(`reorderReadingBooks failed: ${res.status}`);
+  return res.json();
+}
+
 export async function applyImport(file) {
   const formData = new FormData();
   formData.append('file', file);
