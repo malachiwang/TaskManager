@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import DateCell from './DateCell.jsx';
 import LinkifiedText from './LinkifiedText.jsx';
 import LinkPopover from './LinkPopover.jsx';
@@ -38,6 +39,7 @@ function InlineTextCell({
   const [insertLinkState, setInsertLinkState] = useState(null);
   const [linkText, setLinkText] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
+  const editorWrapRef = useRef(null);
   const inputRef = useRef(null);
   const linkUrlRef = useRef(null);
   const cancelledRef = useRef(false);
@@ -51,6 +53,12 @@ function InlineTextCell({
       inputRef.current?.select();
     }
   }, [isEditing]); // intentionally omits `value` — only reset on mode entry
+
+  useEffect(() => {
+    if (!insertLinkState) return;
+    const raf = requestAnimationFrame(() => linkUrlRef.current?.focus());
+    return () => cancelAnimationFrame(raf);
+  }, [insertLinkState]);
 
   function commit() {
     const trimmed = draft.trim();
@@ -75,7 +83,8 @@ function InlineTextCell({
   function openInsertLink(e = null) {
     if (e) stopLinkUiEvent(e);
     const selection = getSelection();
-    const anchorRect = (e?.currentTarget || inputRef.current)?.getBoundingClientRect?.();
+    const anchorRect = editorWrapRef.current?.getBoundingClientRect?.()
+      || inputRef.current?.getBoundingClientRect?.();
     insertingLinkRef.current = true;
     setInsertLinkState({
       field: colKey,
@@ -95,7 +104,6 @@ function InlineTextCell({
     });
     setLinkText(selection.selectedText);
     setLinkUrl('');
-    requestAnimationFrame(() => linkUrlRef.current?.focus());
   }
 
   function closeInsertLink() {
@@ -152,35 +160,22 @@ function InlineTextCell({
 
   if (isEditing) {
     const linkUrlSafe = normalizeSafeUrl(linkUrl);
-    return (
-      <span className="cell-edit-wrap">
-        <span className="cell-edit-main">
-          <input
-            ref={inputRef}
-            className="cell-edit-input"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onBlur={handleBlur}
-          />
-          {supportsLinks && (
-            <button
-              type="button"
-              className="insert-link-btn insert-link-btn--cell"
-              onMouseDown={openInsertLink}
-              onClick={stopLinkUiEvent}
-            >
-              Link
-            </button>
-          )}
-        </span>
-        {supportsLinks && insertLinkState && (
+    const insertLinkPanel = supportsLinks && insertLinkState
+      ? createPortal(
           <span
             className="insert-link-panel insert-link-panel--cell"
-            style={insertLinkState.anchorRect ? {
-              top: insertLinkState.anchorRect.bottom + 4,
-              left: Math.max(12, Math.min(insertLinkState.anchorRect.left, window.innerWidth - 340)),
-            } : undefined}
+            style={(() => {
+              if (!insertLinkState.anchorRect) return undefined;
+              const panelWidth = Math.min(
+                Math.max(insertLinkState.anchorRect.right - insertLinkState.anchorRect.left, 320),
+                window.innerWidth - 16,
+              );
+              return {
+                top: insertLinkState.anchorRect.bottom + 4,
+                left: Math.max(8, Math.min(insertLinkState.anchorRect.left, window.innerWidth - panelWidth - 8)),
+                width: panelWidth,
+              };
+            })()}
             role="dialog"
             aria-label="Insert link"
             onMouseDown={stopLinkUiPropagation}
@@ -240,8 +235,33 @@ function InlineTextCell({
                 Insert
               </button>
             </span>
-          </span>
-        )}
+          </span>,
+          document.body,
+        )
+      : null;
+    return (
+      <span ref={editorWrapRef} className="cell-edit-wrap">
+        <span className="cell-edit-main">
+          <input
+            ref={inputRef}
+            className="cell-edit-input"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onBlur={handleBlur}
+          />
+          {supportsLinks && (
+            <button
+              type="button"
+              className="insert-link-btn insert-link-btn--cell"
+              onMouseDown={openInsertLink}
+              onClick={stopLinkUiEvent}
+            >
+              Link
+            </button>
+          )}
+        </span>
+        {insertLinkPanel}
       </span>
     );
   }

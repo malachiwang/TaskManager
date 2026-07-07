@@ -691,7 +691,8 @@ thead .meta-col {
 
 .insert-link-panel--cell {
   position: fixed;
-  z-index: 1000;
+  z-index: 99999;
+  pointer-events: auto;
   width: min(320px, calc(100vw - 24px));
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.14);
