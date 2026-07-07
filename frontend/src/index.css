@@ -888,6 +888,13 @@ thead .meta-col {
   opacity: 0.75;
 }
 
+.note-link:focus-visible,
+.task-link-url:focus-visible,
+.task-modal-reference-link:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* -------------------------------------------------------------------------
    Loading / error / empty states
    ---------------------------------------------------------------------- */

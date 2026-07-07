@@ -4,7 +4,7 @@
 // http://, https://, www., and mailto: links. Unsafe schemes stay plain text.
 
 export const URL_RE = /https?:\/\/\S+|www\.\S+|mailto:[^\s<>()]+/gi;
-const MARKDOWN_LINK_RE = /\[([^\]\n]+)\]\(([^()\s]+)\)/g;
+const MARKDOWN_LINK_RE = /\[([^\]\n]*)\]\(([^()\s]+)\)/g;
 const SAFE_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
 
 export function stripTrailingPunct(s) {
@@ -50,7 +50,9 @@ function parseBareLinks(text, offset = 0) {
 
     const raw = stripTrailingPunct(match[0]);
     const trailing = match[0].slice(raw.length);
-    const href = normalizeHref(raw);
+    const href = text.slice(Math.max(0, match.index - 2), match.index) === ']('
+      ? null
+      : normalizeHref(raw);
 
     if (href) {
       tokens.push({
@@ -90,7 +92,7 @@ export function tokenizeLinkText(text) {
     }
 
     const [raw, label, url] = match;
-    const href = normalizeHref(url);
+    const href = label ? normalizeHref(url) : null;
     if (href) {
       tokens.push({
         type: 'link',
