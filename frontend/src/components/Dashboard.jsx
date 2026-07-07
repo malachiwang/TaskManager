@@ -27,11 +27,8 @@ import {
   isRecommendationActive,
   dismissRecommendation,
   snoozeRecommendation,
-  resetDismissals,
-  hasDismissals,
-  toggleSection,
-  toggleCard,
   resetVisibility,
+  DASHBOARD_SECTIONS,
 } from '../dashboardPreferences.js';
 
 // Section-level pressure trend (Part E) — honestly derived from snapshot history
@@ -130,17 +127,27 @@ function CompositionBar({ segments, total, label }) {
 }
 
 // Rich per-task diagnosis card — the core task-by-task analysis surface.
-// Dismissed/snoozed recommendation chips (per prefs) are hidden; each remaining
-// dismissible chip carries a subtle × to hide it from the Dashboard only.
-function TaskDiagnosisCard({ task, prefs, onDismiss }) {
+// Dismissed/snoozed recommendation chips are hidden. Clean row-level Dismiss /
+// Snooze controls (not per-chip ×) act on all of the task's active suggestions.
+function TaskDiagnosisCard({ task, prefs, onDismiss, onSnooze }) {
   const { chips, reason, action } = diagnoseTask(task);
   const visibleChips = chips.filter((c) => {
     const ty = chipType(c);
     return !ty || isRecommendationActive(prefs, task.id, ty);
   });
+  const activeRecTypes = chips.map(chipType).filter(Boolean)
+    .filter((ty) => isRecommendationActive(prefs, task.id, ty));
   const never = !task.latest_completion && !task.manual_last_done_override;
   return (
     <div className="dashboard-diag-card">
+      {activeRecTypes.length > 0 && onDismiss && (
+        <div className="dashboard-rec-actions dashboard-rec-actions--lead">
+          <button className="dashboard-rec-btn" title="Hidden from Dashboard only · does not edit the task"
+            onClick={() => onDismiss(task.id, activeRecTypes)}>Dismiss</button>
+          <button className="dashboard-rec-btn" title="Hidden from Dashboard for 30 days"
+            onClick={() => onSnooze(task.id, activeRecTypes)}>Snooze 30d</button>
+        </div>
+      )}
       <div className="dashboard-diag-head">
         <span className={`dashboard-diag-urg ${urgencyClass(task.urgency)}`}>{(task.urgency ?? 0).toFixed(1)}</span>
         <span className="dashboard-diag-name">{task.name}</span>
@@ -157,18 +164,7 @@ function TaskDiagnosisCard({ task, prefs, onDismiss }) {
       </div>
       {visibleChips.length > 0 && (
         <div className="dashboard-diagnosis-chips">
-          {visibleChips.map((c) => {
-            const ty = chipType(c);
-            return (
-              <span key={c} className="dashboard-diagnosis-chip">
-                {c}
-                {ty && onDismiss && (
-                  <button className="dashboard-chip-dismiss" title="Dismiss suggestion (Dashboard only)"
-                    onClick={() => onDismiss(task.id, ty)}>×</button>
-                )}
-              </span>
-            );
-          })}
+          {visibleChips.map((c) => <span key={c} className="dashboard-diagnosis-chip">{c}</span>)}
         </div>
       )}
       <div className="dashboard-diag-why"><strong>Why:</strong> {reason}</div>
@@ -472,48 +468,30 @@ function nowLabel() {
 // Dashboard
 // ---------------------------------------------------------------------------
 
-// Display-toggle config (P6.0A-fix5). Keys are stored in localStorage.
-const SECTION_TOGGLES = [
-  { key: 'taskDiagnosis', label: 'Task Diagnosis' },
-  { key: 'doNow', label: 'Do Now' },
-  { key: 'quickWins', label: 'Likely Quick Wins' },
-  { key: 'decide', label: 'Decide / Clarify' },
-  { key: 'pressureDiagnostics', label: 'Pressure Diagnostics' },
-  { key: 'systemHygiene', label: 'System Hygiene' },
-  { key: 'sectionPressure', label: 'Section Pressure' },
-  { key: 'activityContext', label: 'Activity Context' },
-  { key: 'pressureChanges', label: 'Pressure Changes' },
-  { key: 'pressureHistory', label: 'Pressure History' },
-];
-const CARD_TOGGLES = [
-  { key: 'pressureReducers', label: 'Pressure Reducers' },
-  { key: 'bloatMeter', label: 'System Bloat Meter' },
-  { key: 'frequencyMismatch', label: 'Frequency Mismatch' },
-  { key: 'uncategorizedImpact', label: 'Uncategorized Impact' },
-  { key: 'readingMigration', label: 'Reading Migration' },
-  { key: 'importantNeglected', label: 'Important but Neglected' },
-];
-
 export default function Dashboard() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [tasks, setTasks] = useState(null);
   const [tasksError, setTasksError] = useState(null);
   const [lens, setLens] = useState('donow'); // active dashboard lens (chip selection)
-  const [prefs, setPrefs] = useState(loadPreferences);       // localStorage UI prefs
-  const [customizeOpen, setCustomizeOpen] = useState(false); // display-toggle popover
+  // Dashboard reads display/recommendation preferences on mount (they are edited
+  // in Settings → Dashboard; the tab remounts on switch, so changes apply then).
+  const [prefs, setPrefs] = useState(loadPreferences);
 
   useEffect(() => {
     fetchDashboard().then(setData).catch((e) => setError(e.message));
     fetchTasks().then(setTasks).catch((e) => setTasksError(e.message));
   }, []);
 
-  // Preference handlers (all update state + persist, never touch task data).
-  const handleDismiss = (taskId, type) => setPrefs((p) => dismissRecommendation(p, taskId, type));
-  const handleSnooze = (taskId, types) => setPrefs((p) => types.reduce((acc, ty) => snoozeRecommendation(acc, taskId, ty, 30), p));
-  const handleResetDismissals = () => setPrefs((p) => resetDismissals(p));
-  const handleToggleSection = (key) => setPrefs((p) => toggleSection(p, key));
-  const handleToggleCard = (key) => setPrefs((p) => toggleCard(p, key));
+  // Recommendation handlers (localStorage + state only; never touch task data).
+  const handleDismiss = (taskId, types) => {
+    const list = Array.isArray(types) ? types : [types];
+    setPrefs((p) => list.reduce((acc, ty) => dismissRecommendation(acc, taskId, ty), p));
+  };
+  const handleSnooze = (taskId, types) => {
+    const list = Array.isArray(types) ? types : [types];
+    setPrefs((p) => list.reduce((acc, ty) => snoozeRecommendation(acc, taskId, ty, 30), p));
+  };
   const handleResetVisibility = () => setPrefs((p) => resetVisibility(p));
   const hidden = (key) => !!prefs.hiddenSections[key];
   const cardHidden = (key) => !!prefs.hiddenCards[key];
@@ -569,7 +547,6 @@ export default function Dashboard() {
   const uncatTopVisible = uncatImpact ? (uncatImpact.top || []).filter((t) => isRecommendationActive(prefs, t.id, 'uncategorized')) : [];
   const readingHidden = readingMigration.length - readingMigrationVisible.length;
   const freqHidden = freqMismatch.length - freqMismatchVisible.length;
-  const dismissalsActive = hasDismissals(prefs);
 
   const critHigh = (urgency_distribution.critical || 0) + (urgency_distribution.high || 0);
   const neverDoneCount = data.never_done_count ?? 0;
@@ -624,42 +601,7 @@ export default function Dashboard() {
             action command center · active non-hiatus tasks{tasksReady ? ` · ${inScope} in scope` : ''}
           </div>
         </div>
-        <div className="ws-dash-header-right">
-          <span className="ws-dash-now">{nowLabel()}</span>
-          <div className="dashboard-customize">
-            <button
-              type="button"
-              className={`dashboard-customize-btn${customizeOpen ? ' is-open' : ''}`}
-              aria-expanded={customizeOpen}
-              onClick={() => setCustomizeOpen((o) => !o)}
-            >⚙ Customize</button>
-            {customizeOpen && (
-              <div className="dashboard-customize-panel">
-                <div className="dashboard-customize-title">Sections</div>
-                {SECTION_TOGGLES.map((s) => (
-                  <label key={s.key} className="dashboard-toggle-row">
-                    <input type="checkbox" checked={!hidden(s.key)} onChange={() => handleToggleSection(s.key)} />
-                    {s.label}
-                  </label>
-                ))}
-                <div className="dashboard-customize-title">Diagnostic cards</div>
-                {CARD_TOGGLES.map((c) => (
-                  <label key={c.key} className="dashboard-toggle-row">
-                    <input type="checkbox" checked={!cardHidden(c.key)} onChange={() => handleToggleCard(c.key)} />
-                    {c.label}
-                  </label>
-                ))}
-                <div className="dashboard-customize-actions">
-                  <button type="button" className="dashboard-reset-btn" onClick={handleResetVisibility}>Show all sections</button>
-                  <button type="button" className="dashboard-reset-btn" onClick={handleResetDismissals} disabled={!dismissalsActive}>
-                    Reset dismissed suggestions
-                  </button>
-                </div>
-                <div className="dashboard-customize-note">Display preferences only · nothing about your tasks changes.</div>
-              </div>
-            )}
-          </div>
-        </div>
+        <div className="ws-dash-now">{nowLabel()}</div>
       </div>
 
       {/* ── Top command panel — contained + inset to align with lower panels ── */}
@@ -742,7 +684,7 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="ws-frame-body dashboard-diag-grid">
-            {diagPopulation.map((t) => <TaskDiagnosisCard key={t.id} task={t} prefs={prefs} onDismiss={handleDismiss} />)}
+            {diagPopulation.map((t) => <TaskDiagnosisCard key={t.id} task={t} prefs={prefs} onDismiss={handleDismiss} onSnooze={handleSnooze} />)}
           </div>
         )}
       </div>
@@ -786,27 +728,18 @@ export default function Dashboard() {
             <div className="ws-frame-body dashboard-triage-list">
               {decideRows.map(({ task, chips, suggestion, activeRecTypes }) => (
                 <div key={task.id} className="dashboard-triage-row">
+                  <span className="dashboard-rec-actions">
+                    <button className="dashboard-rec-btn" title="Hidden from Dashboard only · does not edit the task"
+                      onClick={() => handleDismiss(task.id, activeRecTypes)}>Dismiss</button>
+                    <button className="dashboard-rec-btn" title="Hidden from Dashboard for 30 days"
+                      onClick={() => handleSnooze(task.id, activeRecTypes)}>Snooze 30d</button>
+                  </span>
                   <span className={`dash-urg-num ${urgencyClass(task.urgency)}`}>{task.urgency.toFixed(1)}</span>
                   <span className="dashboard-triage-name">{task.name}</span>
                   <span className="dashboard-diagnosis-chips">
-                    {chips.map((c) => {
-                      const ty = chipType(c);
-                      return (
-                        <span key={c} className="dashboard-diagnosis-chip">
-                          {c}
-                          {ty && (
-                            <button className="dashboard-chip-dismiss" title="Dismiss suggestion (Dashboard only)"
-                              onClick={() => handleDismiss(task.id, ty)}>×</button>
-                          )}
-                        </span>
-                      );
-                    })}
+                    {chips.map((c) => <span key={c} className="dashboard-diagnosis-chip">{c}</span>)}
                   </span>
-                  <span className="dashboard-triage-sugg">
-                    {suggestion}
-                    <button className="dashboard-snooze-btn" title="Hidden from Dashboard for 30 days"
-                      onClick={() => handleSnooze(task.id, activeRecTypes)}>Snooze 30d</button>
-                  </span>
+                  <span className="dashboard-triage-sugg">{suggestion}</span>
                 </div>
               ))}
             </div>
@@ -876,10 +809,9 @@ export default function Dashboard() {
                   <ul className="dashboard-mini-list">
                     {freqMismatchVisible.map(({ task, suggestion }) => (
                       <li key={task.id}>
-                        <span className="dashboard-mini-name">{task.name} <span className="dash-muted">· every {task.interval_days}d</span>
-                          <button className="dashboard-chip-dismiss" title="Dismiss suggestion (Dashboard only)"
-                            onClick={() => handleDismiss(task.id, 'frequency_mismatch')}>×</button>
-                        </span>
+                        <button className="dashboard-rec-btn" title="Hidden from Dashboard only · does not edit the task"
+                          onClick={() => handleDismiss(task.id, 'frequency_mismatch')}>Dismiss</button>
+                        <span className="dashboard-mini-name">{task.name} <span className="dash-muted">· every {task.interval_days}d</span></span>
                         <span className="dashboard-mini-sugg">{suggestion}</span>
                       </li>
                     ))}
@@ -903,10 +835,9 @@ export default function Dashboard() {
                       <ul className="dashboard-mini-list">
                         {uncatTopVisible.map((t) => (
                           <li key={t.id}>
-                            <span className="dashboard-mini-name">{t.name}
-                              <button className="dashboard-chip-dismiss" title="Dismiss suggestion (Dashboard only)"
-                                onClick={() => handleDismiss(t.id, 'uncategorized')}>×</button>
-                            </span>
+                            <button className="dashboard-rec-btn" title="Hidden from Dashboard only · does not edit the task"
+                              onClick={() => handleDismiss(t.id, 'uncategorized')}>Dismiss</button>
+                            <span className="dashboard-mini-name">{t.name}</span>
                             <span className={`dash-urg-num ${urgencyClass(t.urgency)}`}>{t.urgency.toFixed(1)}</span>
                           </li>
                         ))}
@@ -924,10 +855,9 @@ export default function Dashboard() {
                   <ul className="dashboard-mini-list">
                     {readingMigrationVisible.map((t) => (
                       <li key={t.id}>
-                        <span className="dashboard-mini-name">{t.name}
-                          <button className="dashboard-chip-dismiss" title="Dismiss suggestion (Dashboard only)"
-                            onClick={() => handleDismiss(t.id, 'move_to_reading')}>×</button>
-                        </span>
+                        <button className="dashboard-rec-btn" title="Hidden from Dashboard only · does not edit the task"
+                          onClick={() => handleDismiss(t.id, 'move_to_reading')}>Dismiss</button>
+                        <span className="dashboard-mini-name">{t.name}</span>
                         <span className={`dash-urg-num ${urgencyClass(t.urgency)}`}>{t.urgency.toFixed(1)}</span>
                         <span className="dashboard-mini-sugg">Consider tracking in Reading Sheet.</span>
                       </li>
@@ -1106,9 +1036,9 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {SECTION_TOGGLES.every((s) => hidden(s.key)) && (
+        {DASHBOARD_SECTIONS.every((s) => hidden(s.key)) && (
           <div className="dashboard-hidden-note dashboard-allhidden">
-            All dashboard sections are hidden.{' '}
+            All dashboard sections are hidden (change this in Settings → Dashboard).{' '}
             <button type="button" className="dashboard-reset-btn" onClick={handleResetVisibility}>Show all sections</button>
           </div>
         )}

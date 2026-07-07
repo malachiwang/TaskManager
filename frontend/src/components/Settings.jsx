@@ -6,6 +6,15 @@ import {
   isReservedBinding, findBindingConflict, captureEventToBinding,
   bindingLabel, bindingSignature, normalizeBinding,
 } from '../keybinds.js';
+import {
+  loadPreferences as loadDashPrefs,
+  toggleSection as dashToggleSection,
+  toggleCard as dashToggleCard,
+  resetVisibility as dashResetVisibility,
+  resetDismissals as dashResetDismissals,
+  hasDismissals as dashHasDismissals,
+  DASHBOARD_SECTIONS, DASHBOARD_CARDS,
+} from '../dashboardPreferences.js';
 
 const LS_SETTINGS_KEY   = 'taskos-settings';
 const LS_COL_WIDTHS_KEY = 'taskos-col-widths';
@@ -57,6 +66,15 @@ export default function Settings() {
   const [quickJumpEnabled, setQuickJumpEnabled] = useState(() => loadSettings().quickJumpEnabled  ?? true);
   const [savedMsg, setSavedMsg]               = useState(false);
   const [colResetMsg, setColResetMsg]         = useState(false);
+
+  // Dashboard display/recommendation preferences (localStorage-only, P6.0A-fix6).
+  const [dashPrefs, setDashPrefs] = useState(loadDashPrefs);
+  const dashHidden = (k) => !!dashPrefs.hiddenSections[k];
+  const dashCardHidden = (k) => !!dashPrefs.hiddenCards[k];
+  const handleDashToggleSection = (k) => setDashPrefs((p) => dashToggleSection(p, k));
+  const handleDashToggleCard = (k) => setDashPrefs((p) => dashToggleCard(p, k));
+  const handleDashResetVisibility = () => setDashPrefs((p) => dashResetVisibility(p));
+  const handleDashResetDismissals = () => setDashPrefs((p) => dashResetDismissals(p));
 
   // Keybind overrides state — only the overrides (not full resolved map).
   // Updating this state re-derives resolvedKb immediately.
@@ -381,15 +399,73 @@ export default function Settings() {
             </div>
           </div>
 
+          {/* 04 Dashboard */}
+          <div className="ws-frame">
+            <div className="ws-frame-header">
+              <span className="ws-frame-kicker">04</span>
+              <span>Dashboard</span>
+              <span className="ws-frame-header-sub">show/hide panels · browser storage · no task data changed</span>
+            </div>
+
+            <div className="ws-settings-group">Dashboard sections</div>
+            <div className="settings-toggle-grid">
+              {DASHBOARD_SECTIONS.map((s) => (
+                <label key={s.key} className="settings-switch-row">
+                  <input
+                    type="checkbox"
+                    className="settings-switch-input"
+                    checked={!dashHidden(s.key)}
+                    onChange={() => handleDashToggleSection(s.key)}
+                  />
+                  <span className="settings-switch"><span className="settings-switch-thumb" /></span>
+                  <span className="settings-switch-label">{s.label}</span>
+                </label>
+              ))}
+            </div>
+
+            <div className="ws-settings-group">Pressure diagnostics cards</div>
+            <div className="settings-toggle-grid">
+              {DASHBOARD_CARDS.map((c) => (
+                <label key={c.key} className="settings-switch-row">
+                  <input
+                    type="checkbox"
+                    className="settings-switch-input"
+                    checked={!dashCardHidden(c.key)}
+                    onChange={() => handleDashToggleCard(c.key)}
+                  />
+                  <span className="settings-switch"><span className="settings-switch-thumb" /></span>
+                  <span className="settings-switch-label">{c.label}</span>
+                </label>
+              ))}
+            </div>
+
+            <div className="ws-settings-group">Recommendation dismissals</div>
+            <div className="ws-ctrl-row">
+              <div className="ws-ctrl-info">
+                <span className="ws-ctrl-label">Reset display &amp; dismissals</span>
+                <span className="ws-ctrl-desc">
+                  Dashboard-only preferences — hidden from Dashboard, does not edit any task.
+                  Changes apply next time you open the Dashboard.
+                </span>
+              </div>
+              <div className="ws-ctrl-action settings-dash-reset">
+                <button className="button-secondary" onClick={handleDashResetVisibility}>Show all sections</button>
+                <button className="button-secondary" onClick={handleDashResetDismissals} disabled={!dashHasDismissals(dashPrefs)}>
+                  Reset dismissed suggestions
+                </button>
+              </div>
+            </div>
+          </div>
+
         </div>{/* end left column */}
 
         {/* ══ Right column ══ */}
         <div className="ws-settings-col">
 
-          {/* 04 Data & Backup */}
+          {/* 05 Data & Backup */}
           <div className="ws-frame">
             <div className="ws-frame-header">
-              <span className="ws-frame-kicker">04</span>
+              <span className="ws-frame-kicker">05</span>
               <span>Data &amp; backup</span>
               <span className="ws-frame-header-sub">export before bulk changes or imports</span>
             </div>
@@ -438,7 +514,7 @@ export default function Settings() {
           {/* 05 Keyboard Shortcuts */}
           <div className="ws-frame">
             <div className="ws-frame-header">
-              <span className="ws-frame-kicker">05</span>
+              <span className="ws-frame-kicker">06</span>
               <span>Keyboard shortcuts</span>
               <span className="ws-frame-header-sub">customizable · saved in browser storage</span>
             </div>
@@ -500,7 +576,7 @@ export default function Settings() {
           {/* 06 System Behavior */}
           <div className="ws-frame">
             <div className="ws-frame-header">
-              <span className="ws-frame-kicker">06</span>
+              <span className="ws-frame-kicker">07</span>
               <span>System behavior</span>
               <span className="ws-frame-header-sub">reference</span>
             </div>
@@ -562,7 +638,7 @@ D = days_since   I = interval_days`}</pre>
           {/* 07 About */}
           <div className="ws-frame">
             <div className="ws-frame-header">
-              <span className="ws-frame-kicker">07</span>
+              <span className="ws-frame-kicker">08</span>
               <span>About</span>
             </div>
             <div className="ws-frame-body settings-prose">

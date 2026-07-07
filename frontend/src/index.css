@@ -5312,7 +5312,7 @@ select.task-modal-input {
 .dashboard-triage-list { display: flex; flex-direction: column; }
 .dashboard-triage-row {
   display: grid;
-  grid-template-columns: 34px minmax(120px, 1.2fr) minmax(120px, 1.4fr) 2fr;
+  grid-template-columns: auto 30px minmax(100px, 1.1fr) minmax(110px, 1.3fr) 1.6fr;
   align-items: center;
   gap: 8px;
   padding: 5px 8px;
@@ -5404,71 +5404,36 @@ select.task-modal-input {
 .dashboard-changes-sec { font-weight: 500; color: var(--ink); min-width: 100px; }
 .dashboard-changes-delta { font-weight: 600; }
 
-/* ── P6.0A-fix5: dismiss/snooze + display toggles ── */
+/* ── P6.0A-fix5/fix6: display toggles (in Settings) + recommendation controls ── */
 
 .dashboard-hidden { display: none !important; }
 
-/* Header right group + Customize popover. */
-.ws-dash-header-right { display: flex; align-items: center; gap: 12px; }
-.dashboard-customize { position: relative; }
-.dashboard-customize-btn {
+/* Row-level recommendation controls (fix6) — subtle text buttons, no per-chip ×,
+   no destructive red. Dashboard-only; they never edit tasks. */
+.dashboard-rec-actions { display: inline-flex; gap: 6px; }
+.dashboard-rec-actions--lead { margin-bottom: 5px; }
+.dashboard-rec-btn {
+  border: 1px solid var(--grid-border);
+  background: var(--bg-panel);
+  color: var(--muted);
   font-family: inherit;
-  font-size: 11px;
-  padding: 4px 10px;
-  border: 1px solid var(--grid-border);
-  border-radius: 4px;
-  background: var(--bg-panel);
-  color: var(--ink-2);
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 3px;
   cursor: pointer;
+  white-space: nowrap;
 }
-.dashboard-customize-btn:hover { border-color: var(--muted-2); }
-.dashboard-customize-btn.is-open { border-color: var(--accent); color: var(--accent); }
-.dashboard-customize-panel {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 40;
-  width: 220px;
-  max-height: 70vh;
-  overflow-y: auto;
-  padding: 10px 12px;
-  background: var(--bg-panel);
-  border: 1px solid var(--grid-border);
-  border-radius: 5px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
-}
-.dashboard-customize-title {
-  font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
-  color: var(--muted); margin: 8px 0 4px;
-}
-.dashboard-customize-title:first-child { margin-top: 0; }
-.dashboard-toggle-row {
-  display: flex; align-items: center; gap: 7px;
-  font-size: 12px; color: var(--ink-2); padding: 2px 0; cursor: pointer;
-}
-.dashboard-customize-actions { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; }
+.dashboard-rec-btn:hover { border-color: var(--muted-2); color: var(--ink-2); }
+.dashboard-triage-sugg-text { margin-right: 8px; }
+
+/* Reset button used by the Dashboard all-hidden fallback. */
 .dashboard-reset-btn {
-  font-family: inherit; font-size: 11px; padding: 4px 8px; cursor: pointer;
+  font-family: inherit; font-size: 12px; padding: 4px 10px; cursor: pointer;
   border: 1px solid var(--grid-border); border-radius: 3px;
-  background: var(--paused-bg); color: var(--ink-2); text-align: left;
+  background: var(--paused-bg); color: var(--ink-2);
 }
 .dashboard-reset-btn:hover:not(:disabled) { border-color: var(--accent); }
 .dashboard-reset-btn:disabled { opacity: 0.45; cursor: default; }
-.dashboard-customize-note { font-size: 10px; color: var(--muted); margin-top: 8px; font-style: italic; }
-
-/* Subtle chip dismiss "×" and row snooze — non-destructive (no red). */
-.dashboard-chip-dismiss {
-  border: none; background: none; cursor: pointer;
-  color: var(--muted-2); font-size: 12px; line-height: 1;
-  padding: 0 0 0 4px; margin-left: 2px;
-}
-.dashboard-chip-dismiss:hover { color: var(--ink-2); }
-.dashboard-snooze-btn {
-  border: 1px solid var(--grid-border); background: var(--bg-panel);
-  color: var(--muted); font-family: inherit; font-size: 10px;
-  padding: 1px 6px; border-radius: 3px; cursor: pointer; margin-left: 8px;
-}
-.dashboard-snooze-btn:hover { border-color: var(--muted-2); color: var(--ink-2); }
 
 .dashboard-hidden-note { font-size: 10px; color: var(--muted); font-style: italic; margin-top: 4px; }
 .dashboard-allhidden {
@@ -5478,3 +5443,55 @@ select.task-modal-input {
   font-style: normal;
   font-size: 13px;
 }
+
+/* Settings → Dashboard toggle grid (fix6). */
+.settings-toggle-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 14px;
+  padding: 4px 0 8px;
+}
+.settings-dash-reset { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Switch toggles (P6.0A-fix6-polish) — pill track + sliding knob, driven by a
+   visually-hidden but keyboard-accessible native checkbox. On = visible. */
+.settings-switch-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--ink-2);
+  padding: 3px 0;
+}
+.settings-switch-input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+}
+.settings-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 30px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--grid-border);
+  transition: background 0.12s ease;
+}
+.settings-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.12s ease;
+}
+.settings-switch-input:checked + .settings-switch { background: var(--accent); }
+.settings-switch-input:checked + .settings-switch .settings-switch-thumb { transform: translateX(14px); }
+.settings-switch-input:focus-visible + .settings-switch { outline: 2px solid var(--accent); outline-offset: 1px; }
+.settings-switch-label { user-select: none; }

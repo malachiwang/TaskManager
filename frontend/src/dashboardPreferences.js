@@ -3,6 +3,29 @@
 // urgency, or any backend/SQLite state. Storage is resilient: missing or corrupt
 // values fall back to sensible defaults and never crash the dashboard.
 
+// Toggle config — the single source of truth for both the Dashboard (which
+// reads these to hide sections/cards) and Settings (which renders the toggles).
+export const DASHBOARD_SECTIONS = [
+  { key: 'taskDiagnosis', label: 'Task Diagnosis' },
+  { key: 'doNow', label: 'Do Now' },
+  { key: 'quickWins', label: 'Likely Quick Wins' },
+  { key: 'decide', label: 'Decide / Clarify' },
+  { key: 'pressureDiagnostics', label: 'Pressure Diagnostics' },
+  { key: 'systemHygiene', label: 'System Hygiene' },
+  { key: 'sectionPressure', label: 'Section Pressure' },
+  { key: 'activityContext', label: 'Activity Context' },
+  { key: 'pressureChanges', label: 'Pressure Changes' },
+  { key: 'pressureHistory', label: 'Pressure History' },
+];
+export const DASHBOARD_CARDS = [
+  { key: 'pressureReducers', label: 'Pressure Reducers' },
+  { key: 'bloatMeter', label: 'System Bloat Meter' },
+  { key: 'frequencyMismatch', label: 'Frequency Mismatch' },
+  { key: 'uncategorizedImpact', label: 'Uncategorized Impact' },
+  { key: 'readingMigration', label: 'Reading Migration' },
+  { key: 'importantNeglected', label: 'Important but Neglected' },
+];
+
 const NS = 'taskmanager.dashboard.v1.';
 const KEYS = {
   hiddenSections: NS + 'hiddenSections',
