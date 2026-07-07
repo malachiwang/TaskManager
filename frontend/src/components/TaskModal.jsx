@@ -137,13 +137,6 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
     });
   }
 
-  function handleNotesKeyDown(e) {
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-      e.preventDefault();
-      openInsertLink('notes', e);
-    }
-  }
-
   function handleTextFieldKeyDown(key, e) {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
       e.preventDefault();
@@ -440,17 +433,7 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
 
           {/* Notes */}
           <div className="task-modal-section">
-            <div className="notes-toolbar">
-              <div className="task-modal-section-title">Notes</div>
-              <button
-                type="button"
-                className="insert-link-btn"
-                onMouseDown={(e) => openInsertLink('notes', e)}
-                onClick={stopLinkUiEvent}
-              >
-                Insert link
-              </button>
-            </div>
+            <div className="task-modal-section-title">Notes</div>
             <div className="task-modal-field task-modal-field--full">
               <textarea
                 ref={notesRef}
@@ -458,9 +441,7 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
                 className="task-modal-textarea"
                 value={form.notes}
                 onChange={(e) => set('notes', e.target.value)}
-                onKeyDown={handleNotesKeyDown}
               />
-              {renderInsertLinkPanel('notes')}
               {noteLinks.length > 0 && (
                 <div className="task-modal-link-reference">
                   <div className="task-modal-link-preview">
