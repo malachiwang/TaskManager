@@ -5327,3 +5327,79 @@ select.task-modal-input {
 .dashboard-count-bar-cell { display: flex; align-items: center; gap: 5px; justify-content: flex-end; }
 .dashboard-count-bar { width: 40px; height: 5px; background: var(--grid-border); border-radius: 2px; overflow: hidden; }
 .dashboard-count-bar-fill { display: block; height: 100%; background: var(--urg-hi); }
+
+/* ── P6.0A-fix4: insight diagnostics ── */
+
+/* Insight grid — compact cards, 2–3 across, wrapping. */
+.dashboard-insight-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+  padding: 10px;
+}
+.dashboard-insight-card {
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  padding: 8px 10px;
+  background: var(--bg-panel);
+}
+.dashboard-insight-card.dashboard-insight-warn { border-left: 3px solid var(--urg-hi); }
+.dashboard-insight-title { font-size: 12px; font-weight: 600; color: var(--ink); }
+.dashboard-insight-hint { font-size: 10px; color: var(--muted); margin: 2px 0 5px; }
+.dashboard-insight-empty { font-size: 11px; color: var(--muted-2); font-style: italic; padding: 4px 0; }
+
+/* Pressure Reducers list — name · relative bar · relief tier. */
+.dashboard-reducer-list, .dashboard-mini-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.dashboard-reducer-list li {
+  display: grid;
+  grid-template-columns: 1fr 46px 52px;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+.dashboard-reducer-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dashboard-reducer-bar { height: 6px; background: var(--grid-border); border-radius: 3px; overflow: hidden; }
+.dashboard-reducer-fill { display: block; height: 100%; background: var(--accent); }
+.dashboard-relief { font-size: 10px; text-align: right; font-weight: 600; }
+.dashboard-relief--high { color: var(--urg-crit); }
+.dashboard-relief--medium { color: var(--urg-hi); }
+.dashboard-relief--low { color: var(--muted); }
+
+/* System Bloat meter. */
+.dashboard-bloat-bar {
+  display: flex; height: 12px; border-radius: 3px; overflow: hidden;
+  background: var(--grid-border); margin: 4px 0;
+}
+.dashboard-bloat-seg { height: 100%; }
+.dashboard-bloat-healthy { background: var(--good); }
+.dashboard-bloat-dirty { background: var(--urg-hi); }
+.dashboard-bloat-legend { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
+.dashboard-bloat-legend strong { color: var(--ink-2); }
+.dashboard-bloat-sources { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+
+/* Mini lists (freq mismatch / uncat / reading / neglected). */
+.dashboard-mini-list li { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; font-size: 11px; }
+.dashboard-mini-name { font-weight: 500; color: var(--ink); }
+.dashboard-mini-sugg { flex-basis: 100%; font-size: 10px; color: var(--muted); }
+.dashboard-uncat-note { font-size: 10px; color: var(--muted); font-style: italic; margin-bottom: 4px; }
+
+/* Section pressure stacked distribution bar. */
+.dashboard-section-stack {
+  display: flex; height: 9px; width: 100%; min-width: 80px;
+  border-radius: 2px; overflow: hidden; background: var(--grid-border);
+}
+.dashboard-section-stack-seg { height: 100%; }
+.dashboard-section-stack-seg.urg-critical { background: var(--urg-crit); }
+.dashboard-section-stack-seg.urg-high { background: var(--urg-hi); }
+.dashboard-section-stack-seg.urg-noticeable { background: var(--urg-mid); }
+.dashboard-section-stack-seg.urg-low { background: var(--urg-low); }
+.dashboard-section-stack-seg.urg-none { background: var(--muted-2); }
+
+/* Completion coverage line + Pressure Changes list. */
+.dashboard-coverage { display: flex; flex-wrap: wrap; gap: 14px; font-size: 11px; color: var(--muted); }
+.dashboard-coverage strong { color: var(--ink); }
+.dashboard-changes-note { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+.dashboard-changes-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.dashboard-changes-list li { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dashboard-changes-sec { font-weight: 500; color: var(--ink); min-width: 100px; }
+.dashboard-changes-delta { font-weight: 600; }

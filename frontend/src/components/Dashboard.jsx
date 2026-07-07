@@ -12,7 +12,77 @@ import {
   getCriticalHighTasks,
   getDiagnosisDistribution,
   getUrgencyComposition,
+  getPressureReducers,
+  getBloatBreakdown,
+  getFrequencyMismatch,
+  getUncategorizedImpact,
+  getReadingMigration,
+  getCompletionCoverage,
+  getImportantNeglected,
+  getSectionPressureTrend,
 } from '../dashboardInsights.js';
+
+// Section-level pressure trend (Part E) — honestly derived from snapshot history
+// (task-level urgency history is not stored). Falls back to current high/critical
+// sections when there isn't enough snapshot history to call a trend.
+function PressureChanges({ currentSections }) {
+  const [snap, setSnap] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    fetchSnapshotPressure(30).then(setSnap).catch((e) => setErr(e.message));
+  }, []);
+
+  if (err) return <div className="ws-empty">Error: {err}</div>;
+  if (!snap) return <div className="ws-empty">Loading…</div>;
+
+  const trend = getSectionPressureTrend(snap);
+  const currentHot = (currentSections || [])
+    .filter((s) => s.highCrit > 0)
+    .slice(0, 5);
+
+  if (!trend.supported) {
+    // Honest fallback — no usable multi-day history yet.
+    return (
+      <div className="dashboard-changes">
+        <div className="dashboard-changes-note">
+          Not enough snapshot history to detect worsening yet (task-level urgency history isn’t stored;
+          section trends need a few days of snapshots). Showing current high/critical sections instead.
+        </div>
+        {currentHot.length === 0 ? (
+          <div className="ws-empty">No sections are currently high/critical.</div>
+        ) : (
+          <ul className="dashboard-changes-list">
+            {currentHot.map((s) => (
+              <li key={s.section}>
+                <span className="dashboard-changes-sec">{s.section}</span>
+                <span className={`dash-urg-num ${urgencyClass(s.avgUrg)}`}>{s.avgUrg.toFixed(1)}</span>
+                <span className="dash-muted">{s.highCrit} high/critical</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="dashboard-changes">
+      {trend.rising.length === 0 ? (
+        <div className="ws-empty">No sections are getting notably worse over the snapshot window.</div>
+      ) : (
+        <ul className="dashboard-changes-list">
+          {trend.rising.map((r) => (
+            <li key={r.label}>
+              <span className="dashboard-changes-sec">{r.label}</span>
+              <span className="dashboard-changes-delta dash-pace-dn">▲ +{r.delta}</span>
+              <span className="dash-muted">now avg {r.now}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 // Compact stacked composition bar (urgency bands or diagnosis buckets).
 // segments: [{ key, label, count, cls }]. Uses shared urgency classes for color.
@@ -404,6 +474,14 @@ export default function Dashboard() {
     ? getDiagnosisDistribution(tasks, doNowIds, quickWins.map((t) => t.id), triageTasks.map((t) => t.id))
     : null;
   const urgComp = tasksReady ? getUrgencyComposition(tasks) : null;
+  // P6.0A-fix4 insight diagnostics (all derived from the enriched task list).
+  const pressureReducers = tasksReady ? getPressureReducers(tasks) : [];
+  const bloat = tasksReady ? getBloatBreakdown(tasks) : null;
+  const freqMismatch = tasksReady ? getFrequencyMismatch(tasks) : [];
+  const uncatImpact = tasksReady ? getUncategorizedImpact(tasks) : null;
+  const readingMigration = tasksReady ? getReadingMigration(tasks) : [];
+  const importantNeglected = tasksReady ? getImportantNeglected(tasks, doNowIds) : [];
+  const coverage = tasksReady ? getCompletionCoverage(sectionPressure, completion_heatmap) : null;
   const inScope = tasksReady
     ? tasks.filter((t) => !(t.is_paused === 1 || t.is_ended || t.is_scheduled)).length
     : 0;
@@ -598,6 +676,140 @@ export default function Dashboard() {
           )}
         </div>
 
+        {/* ── Insight diagnostics grid (Part A/B/D/F/G/I) ── */}
+        <div className="ws-frame ws-frame--full">
+          <div className="ws-frame-header">
+            <span>Pressure Diagnostics</span>
+            <span className="ws-frame-header-sub">compact insight cards · informational · derived from active tasks</span>
+          </div>
+          {!tasksReady ? (
+            <div className="ws-empty">{actionWarning}</div>
+          ) : (
+            <div className="ws-frame-body dashboard-insight-grid">
+
+              {/* Pressure Reducers */}
+              <div className="dashboard-insight-card">
+                <div className="dashboard-insight-title">Pressure Reducers</div>
+                <div className="dashboard-insight-hint">completing these likely relieves the most recurring pressure</div>
+                {pressureReducers.length === 0 ? (
+                  <div className="dashboard-insight-empty">No pressure reducers right now.</div>
+                ) : (
+                  <ul className="dashboard-reducer-list">
+                    {pressureReducers.map(({ task, fill, relief }) => (
+                      <li key={task.id}>
+                        <span className="dashboard-reducer-name" title={task.name}>{task.name}</span>
+                        <span className="dashboard-reducer-bar"><span className="dashboard-reducer-fill" style={{ width: `${fill}%` }} /></span>
+                        <span className={`dashboard-relief dashboard-relief--${relief.toLowerCase()}`}>{relief}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {/* System Bloat Meter */}
+              <div className="dashboard-insight-card">
+                <div className="dashboard-insight-title">System Bloat Meter</div>
+                <div className="dashboard-insight-hint">real recurring work vs. dirty task setup</div>
+                <div className="dashboard-bloat-bar">
+                  <span className="dashboard-bloat-seg dashboard-bloat-healthy" style={{ width: `${bloat.total ? (bloat.healthy / bloat.total) * 100 : 0}%` }} title={`Healthy: ${bloat.healthy}`} />
+                  <span className="dashboard-bloat-seg dashboard-bloat-dirty" style={{ width: `${bloat.dirtyPct}%` }} title={`Dirty: ${bloat.dirty}`} />
+                </div>
+                <div className="dashboard-bloat-legend">
+                  <span><strong>{bloat.healthy}</strong> healthy</span>
+                  <span className={bloat.dirtyPct >= 40 ? 'dashboard-warn-text' : ''}><strong>{bloat.dirty}</strong> dirty ({bloat.dirtyPct}%)</span>
+                </div>
+                {bloat.topSources.length > 0 && (
+                  <div className="dashboard-bloat-sources">
+                    {bloat.topSources.map((s) => (
+                      <span key={s.key} className="dashboard-diagnosis-chip">{s.label} {s.count}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Frequency Mismatch */}
+              <div className="dashboard-insight-card">
+                <div className="dashboard-insight-title">Frequency Mismatch</div>
+                <div className="dashboard-insight-hint">cadence may be misconfigured</div>
+                {freqMismatch.length === 0 ? (
+                  <div className="dashboard-insight-empty">No cadence mismatches detected.</div>
+                ) : (
+                  <ul className="dashboard-mini-list">
+                    {freqMismatch.map(({ task, suggestion }) => (
+                      <li key={task.id}>
+                        <span className="dashboard-mini-name">{task.name} <span className="dash-muted">· every {task.interval_days}d</span></span>
+                        <span className="dashboard-mini-sugg">{suggestion}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {/* Uncategorized Impact */}
+              <div className={`dashboard-insight-card${uncatImpact && uncatImpact.warn ? ' dashboard-insight-warn' : ''}`}>
+                <div className="dashboard-insight-title">Uncategorized Impact</div>
+                {!uncatImpact || uncatImpact.count === 0 ? (
+                  <div className="dashboard-insight-empty">All active tasks are categorized.</div>
+                ) : (
+                  <>
+                    <div className="dashboard-insight-hint">
+                      {uncatImpact.pctHighCrit}% of high/critical pressure is uncategorized · {uncatImpact.count} tasks ({uncatImpact.pctActive}% of active)
+                    </div>
+                    <div className="dashboard-uncat-note">Categorizing these would make Section Pressure more reliable.</div>
+                    {uncatImpact.top.length > 0 && (
+                      <ul className="dashboard-mini-list">
+                        {uncatImpact.top.map((t) => (
+                          <li key={t.id}>
+                            <span className="dashboard-mini-name">{t.name}</span>
+                            <span className={`dash-urg-num ${urgencyClass(t.urgency)}`}>{t.urgency.toFixed(1)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* Reading Migration — only when candidates exist */}
+              {readingMigration.length > 0 && (
+                <div className="dashboard-insight-card">
+                  <div className="dashboard-insight-title">Reading Migration</div>
+                  <div className="dashboard-insight-hint">these look like reading — track them in the Reading Sheet</div>
+                  <ul className="dashboard-mini-list">
+                    {readingMigration.map((t) => (
+                      <li key={t.id}>
+                        <span className="dashboard-mini-name">{t.name}</span>
+                        <span className={`dash-urg-num ${urgencyClass(t.urgency)}`}>{t.urgency.toFixed(1)}</span>
+                        <span className="dashboard-mini-sugg">Consider tracking in Reading Sheet.</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Important but Neglected */}
+              <div className="dashboard-insight-card">
+                <div className="dashboard-insight-title">Important but Neglected</div>
+                <div className="dashboard-insight-hint">high priority · stale · not necessarily top Do Now</div>
+                {importantNeglected.length === 0 ? (
+                  <div className="dashboard-insight-empty">No important tasks are being neglected.</div>
+                ) : (
+                  <ul className="dashboard-mini-list">
+                    {importantNeglected.map((t) => (
+                      <li key={t.id}>
+                        <span className="dashboard-mini-name">{t.name} <span className="dash-muted">· P{t.priority}</span></span>
+                        <span className={`dash-urg-num ${urgencyClass(t.urgency)}`}>{t.urgency.toFixed(1)}</span>
+                        <span className="dash-muted">{(t.days_overdue ?? 0) > 0 ? `overdue ${t.days_overdue}d` : `stale ${t.days_since}d`}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+            </div>
+          )}
+        </div>
+
         {/* ── System Hygiene ── */}
         <div className="ws-frame ws-frame--full">
           <div className="ws-frame-header">
@@ -638,6 +850,7 @@ export default function Dashboard() {
                   <th>Section</th>
                   <th className="dash-th-num">Tasks</th>
                   <th className="dash-th-urg">Avg urgency</th>
+                  <th>Distribution</th>
                   <th className="dash-th-num">High+</th>
                   <th className="dash-th-num">Neglect</th>
                   <th className="dash-th-num">Never</th>
@@ -655,6 +868,15 @@ export default function Dashboard() {
                         <div className="dash-urg-cell">
                           <span className={`dash-urg-num ${urgencyClass(s.avgUrg)}`}>{s.avgUrg.toFixed(1)}</span>
                           <UrgencyBar value={s.avgUrg} wide />
+                        </div>
+                      </td>
+                      <td>
+                        <div className="dashboard-section-stack" title={`Critical ${s.bands.critical} · High ${s.bands.high} · Noticeable ${s.bands.noticeable} · Low ${s.bands.low} · None ${s.bands.none}`}>
+                          {URGENCY_BANDS.map((b) => (
+                            s.bands[b.key] > 0 ? (
+                              <span key={b.key} className={`dashboard-section-stack-seg ${b.cls}`} style={{ width: `${(s.bands[b.key] / s.count) * 100}%` }} />
+                            ) : null
+                          ))}
                         </div>
                       </td>
                       <td className="dash-num">
@@ -692,9 +914,32 @@ export default function Dashboard() {
               <span>best day {act.bestDay}</span>
               <span>{act.activeDays7d}/7 active days</span>
             </div>
+            {coverage && (
+              <div className="dashboard-coverage">
+                <span>Most active: <strong>{coverage.mostActive || '—'}</strong></span>
+                {coverage.uncovered.length > 0 ? (
+                  <span className="dashboard-warn-text">
+                    High-pressure with little recent activity: {coverage.uncovered.slice(0, 3).join(', ')}
+                  </span>
+                ) : (
+                  <span className="dash-muted">Recent activity covers the high-pressure sections.</span>
+                )}
+              </div>
+            )}
             <SparklineBar trend={completion_trend} />
             <HeatmapGrid heatmap={completion_heatmap} />
             <InsightStrip heatmap={completion_heatmap} trend={completion_trend} />
+          </div>
+        </div>
+
+        {/* ── Pressure Changes (section-level, honest fallback) ── */}
+        <div className="ws-frame ws-frame--full">
+          <div className="ws-frame-header">
+            <span>Pressure Changes</span>
+            <span className="ws-frame-header-sub">sections getting worse · section-level (task-level history not stored)</span>
+          </div>
+          <div className="ws-frame-body">
+            <PressureChanges currentSections={sectionPressure} />
           </div>
         </div>
 

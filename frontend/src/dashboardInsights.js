@@ -235,12 +235,14 @@ export function getSectionPressure(tasks) {
       map.set(key, {
         section: key, count: 0, sumUrg: 0, maxUrg: 0,
         highCrit: 0, neglected: 0, neverDone: 0, uncategorized: 0,
+        bands: { critical: 0, high: 0, noticeable: 0, low: 0, none: 0 },
       });
     }
     const s = map.get(key);
     s.count++;
     s.sumUrg += t.urgency ?? 0;
     s.maxUrg = Math.max(s.maxUrg, t.urgency ?? 0);
+    s.bands[band(t)]++;
     if (bandRank(band(t)) >= bandRank('high')) s.highCrit++;
     if (ratio(t) >= NEGLECT_RATIO || (t.days_since ?? 0) >= 30) s.neglected++;
     if (isNeverDoneTask(t)) s.neverDone++;
@@ -349,4 +351,169 @@ export function getUrgencyComposition(tasks) {
   const out = { critical: 0, high: 0, noticeable: 0, low: 0, none: 0 };
   for (const t of active) out[band(t)]++;
   return out;
+}
+
+// ── Pressure Reducers (Part A) ───────────────────────────────────────────────
+// Estimated leverage of completing a task: current urgency, weighted up for
+// frequent tasks (they rebuild pressure fast, so clearing them relieves the most
+// recurring load) and for overdue tasks. Output is an honest relief *tier* + a
+// relative bar — no fake "points reduced". Ranked differently from Do Now
+// (which is pure urgency), so it surfaces high-leverage recurring work.
+export function getPressureReducers(tasks) {
+  const scored = tasks
+    .filter((t) => isActionableTask(t) && bandRank(band(t)) >= bandRank('noticeable'))
+    .map((t) => {
+      const iv = Math.max(1, Math.min(t.interval_days ?? 7, 30));
+      const freqWeight = 7 / iv;                 // daily ≈ 7, weekly = 1, monthly ≈ 0.23
+      const overdueBoost = 1 + Math.min(ratio(t), 3) * 0.15;
+      return { task: t, score: (t.urgency ?? 0) * freqWeight * overdueBoost };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+  const max = scored.length ? scored[0].score : 0;
+  return scored.map((r) => ({
+    task: r.task,
+    fill: max > 0 ? Math.round((r.score / max) * 100) : 0,
+    relief: max > 0 && r.score >= max * 0.66 ? 'High'
+      : max > 0 && r.score >= max * 0.33 ? 'Medium' : 'Low',
+  }));
+}
+
+// ── Frequency Mismatch (Part D) ──────────────────────────────────────────────
+export function isFrequencyMismatch(task) {
+  if (isFutureOrInactiveTask(task)) return false;
+  const iv = task.interval_days ?? Infinity;
+  const never = isNeverDoneTask(task);
+  const r = ratio(task);
+  if (iv <= 1 && never) return true;                              // daily, never done
+  if (iv <= 2 && r >= VERY_STALE_RATIO) return true;              // near-daily, very overdue
+  if (iv <= 7 && never && r >= STALE_RATIO) return true;          // weekly-ish never done after many intervals
+  if (iv <= 2 && band(task) === 'critical' && r >= NEGLECT_RATIO) return true; // very frequent + always critical
+  return false;
+}
+function freqSuggestion(t) {
+  const iv = t.interval_days ?? Infinity;
+  const never = isNeverDoneTask(t);
+  if (never && iv <= 2) return 'Never done at a daily cadence — do once to initialize, or lower the frequency.';
+  if (never) return 'Never done after several intervals — lower frequency, clarify, or archive if obsolete.';
+  return 'Frequent but always overdue — the interval may be unrealistic; consider raising it.';
+}
+export function getFrequencyMismatch(tasks) {
+  return tasks
+    .filter(isFrequencyMismatch)
+    .sort((a, b) => ratio(b) - ratio(a))
+    .slice(0, 5)
+    .map((t) => ({ task: t, suggestion: freqSuggestion(t) }));
+}
+
+// ── System Bloat Meter (Part B) ──────────────────────────────────────────────
+// Splits active pressure into "real recurring work" vs system dirtiness, and
+// surfaces the top few bloat sources.
+export function getBloatBreakdown(tasks) {
+  const active = tasks.filter((t) => !isFutureOrInactiveTask(t));
+  const n = active.length;
+  const neverDone = active.filter(isNeverDoneTask).length;
+  const stale = active.filter((t) => isNeverDoneTask(t) && ratio(t) >= STALE_RATIO).length;
+  const uncategorized = active.filter(isUncategorized).length;
+  const reading = active.filter(looksLikeReading).length;
+  const freqMismatch = active.filter(isFrequencyMismatch).length;
+  // "dirty" = a task that is never-done OR uncategorized OR reading-like (rough).
+  const dirty = active.filter((t) => isNeverDoneTask(t) || isUncategorized(t) || looksLikeReading(t)).length;
+  const sources = [
+    { key: 'neverDone', label: 'Never done', count: neverDone },
+    { key: 'uncategorized', label: 'Uncategorized', count: uncategorized },
+    { key: 'stale', label: 'Possibly stale', count: stale },
+    { key: 'freqMismatch', label: 'Frequency mismatch', count: freqMismatch },
+    { key: 'reading', label: 'Reading-like', count: reading },
+  ].filter((s) => s.count > 0).sort((a, b) => b.count - a.count);
+  return {
+    total: n,
+    established: n - neverDone,
+    neverDone, stale, uncategorized, reading, freqMismatch,
+    dirty, healthy: Math.max(0, n - dirty),
+    dirtyPct: n ? Math.round((dirty / n) * 100) : 0,
+    topSources: sources.slice(0, 3),
+  };
+}
+
+// ── Uncategorized Pressure Impact (Part F) ───────────────────────────────────
+export function getUncategorizedImpact(tasks) {
+  const active = tasks.filter((t) => !isFutureOrInactiveTask(t));
+  const n = active.length;
+  if (n === 0) return null;
+  const uncat = active.filter(isUncategorized);
+  if (uncat.length === 0) return { count: 0, pctActive: 0, pctHighCrit: 0, avgUrg: 0, top: [], warn: false };
+  const highCrit = active.filter((t) => bandRank(band(t)) >= bandRank('high'));
+  const uncatHighCrit = highCrit.filter(isUncategorized);
+  const avgUrg = uncat.reduce((s, t) => s + (t.urgency ?? 0), 0) / uncat.length;
+  const pctHighCrit = highCrit.length ? Math.round((uncatHighCrit.length / highCrit.length) * 100) : 0;
+  return {
+    count: uncat.length,
+    pctActive: Math.round((uncat.length / n) * 100),
+    pctHighCrit,
+    avgUrg,
+    top: [...uncat].sort((a, b) => (b.urgency ?? 0) - (a.urgency ?? 0)).slice(0, 3),
+    warn: uncat.length / n >= 0.4 || pctHighCrit >= 40,
+  };
+}
+
+// ── Reading Migration Candidates (Part G) ────────────────────────────────────
+export function getReadingMigration(tasks) {
+  return tasks
+    .filter((t) => !isFutureOrInactiveTask(t) && looksLikeReading(t))
+    .sort((a, b) => (b.urgency ?? 0) - (a.urgency ?? 0))
+    .slice(0, 5);
+}
+
+// ── Completion Coverage (Part H) ─────────────────────────────────────────────
+// Are recent completions covering the high-pressure sections? Uses the
+// completion heatmap (section × 30d) + current section pressure.
+export function getCompletionCoverage(sectionRows = [], completionHeatmap = {}) {
+  const rows = completionHeatmap.rows || [];
+  const activeSections = new Set(rows.filter((r) => r.total > 0).map((r) => r.label));
+  const mostActive = rows.length ? rows[0].label : null; // heatmap rows sorted by total desc
+  const uncovered = sectionRows
+    .filter((s) => s.highCrit > 0 && !activeSections.has(s.section))
+    .map((s) => s.section);
+  return { mostActive, uncovered, sectionsWithCompletions: activeSections.size };
+}
+
+// ── Important but Neglected (Part I) ─────────────────────────────────────────
+export function getImportantNeglected(tasks, doNowIds = []) {
+  const excl = new Set(doNowIds);
+  return tasks
+    .filter((t) => {
+      if (isFutureOrInactiveTask(t) || excl.has(t.id)) return false;
+      if ((t.priority ?? 0) < 7) return false;
+      return isOverdue(t) || (t.days_since ?? 0) >= 30 || ratio(t) >= 1.5;
+    })
+    .sort(cmpChain(
+      (a, b) => (b.priority ?? 0) - (a.priority ?? 0),
+      (a, b) => ratio(b) - ratio(a),
+      (a, b) => (b.urgency ?? 0) - (a.urgency ?? 0),
+      (a, b) => a.id - b.id,
+    ))
+    .slice(0, 5);
+}
+
+// ── Pressure Changes (Part E) — section-level worsening from snapshots ────────
+// Snapshots are section-level avg urgency over dates (task-level urgency history
+// is NOT stored), so we can only honestly report section trends. Compares the
+// mean of the first third of non-null values to the last third per section.
+export function getSectionPressureTrend(snapshot) {
+  if (!snapshot || !Array.isArray(snapshot.rows) || snapshot.rows.length === 0) {
+    return { supported: false, rising: [] };
+  }
+  const rising = [];
+  for (const row of snapshot.rows) {
+    const vals = (row.avg_values || []).filter((v) => v !== null && v !== undefined);
+    if (vals.length < 4) continue; // not enough history to call a trend
+    const k = Math.max(1, Math.floor(vals.length / 3));
+    const early = vals.slice(0, k).reduce((s, v) => s + v, 0) / k;
+    const late = vals.slice(-k).reduce((s, v) => s + v, 0) / k;
+    const delta = +(late - early).toFixed(1);
+    if (delta >= 0.5) rising.push({ label: row.label, delta, now: +late.toFixed(1) });
+  }
+  rising.sort((a, b) => b.delta - a.delta);
+  return { supported: rising.length > 0 || snapshot.rows.some((r) => (r.avg_values || []).filter((v) => v != null).length >= 4), rising: rising.slice(0, 5) };
 }
