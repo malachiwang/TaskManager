@@ -5118,6 +5118,7 @@ select.task-modal-input {
   gap: 6px;
   margin: 8px 0 4px;
 }
+/* Chips are buttons (dashboard lenses) — clickable, with a clear selected state. */
 .dashboard-summary-chip {
   flex: 1 1 90px;
   min-width: 90px;
@@ -5125,9 +5126,19 @@ select.task-modal-input {
   background: var(--bg-panel);
   border: 1px solid var(--grid-border);
   border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: border-color 0.1s, box-shadow 0.1s;
 }
+.dashboard-summary-chip:hover { border-color: var(--muted-2); }
 .dashboard-summary-chip.is-accent { border-color: var(--accent); }
 .dashboard-summary-chip.is-warn { border-color: var(--urg-hi); }
+.dashboard-summary-chip.is-selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
+  background: var(--accent-soft);
+}
 .dashboard-summary-value { font-size: 20px; font-weight: 700; line-height: 1.1; color: var(--ink); }
 .dashboard-summary-label {
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
@@ -5194,3 +5205,103 @@ select.task-modal-input {
   color: var(--muted);
 }
 .dashboard-context-stats strong { color: var(--ink); font-weight: 700; }
+
+/* ── P6.0A-fix1: lens header, composition bars, task diagnosis, hierarchy ── */
+
+/* Action-area section heading (below the Dashboard title). */
+.dashboard-section-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 10px 0 2px;
+}
+.dashboard-section-heading-title { font-size: 15px; font-weight: 700; color: var(--ink); }
+.dashboard-section-heading-sub { font-size: 11px; color: var(--muted); }
+
+/* Compact stacked composition bars (urgency bands / task split). */
+.dashboard-composition-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 6px 0 4px;
+}
+.dashboard-composition { flex: 1 1 260px; min-width: 240px; }
+.dashboard-composition-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
+}
+.dashboard-composition-bar {
+  display: flex;
+  height: 10px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--grid-border);
+  margin: 3px 0;
+}
+.dashboard-composition-seg { height: 100%; }
+.dashboard-composition-empty { width: 100%; height: 100%; }
+.dashboard-composition-seg.urg-critical, .dashboard-composition-dot.urg-critical { background: var(--urg-crit); }
+.dashboard-composition-seg.urg-high, .dashboard-composition-dot.urg-high { background: var(--urg-hi); }
+.dashboard-composition-seg.urg-noticeable, .dashboard-composition-dot.urg-noticeable { background: var(--urg-mid); }
+.dashboard-composition-seg.urg-low, .dashboard-composition-dot.urg-low { background: var(--urg-low); }
+.dashboard-composition-seg.urg-none, .dashboard-composition-dot.urg-none { background: var(--muted-2); }
+.dashboard-composition-legend {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  font-size: 10px; color: var(--muted);
+}
+.dashboard-composition-legend-item { display: inline-flex; align-items: center; gap: 3px; }
+.dashboard-composition-legend-item strong { color: var(--ink-2); }
+.dashboard-composition-dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+
+/* Focused frame ring — the panel matching the selected lens. */
+.ws-frame.is-focused { box-shadow: 0 0 0 2px var(--accent); }
+
+/* Do Now is the primary action queue; Quick Wins/Decide read as secondary. */
+.dashboard-donow > .ws-frame-header span:first-child { color: var(--accent); }
+.dashboard-quickwins, .dashboard-decide { opacity: 0.98; }
+
+/* Task Diagnosis grid + cards. */
+.dashboard-diag-frame { margin-bottom: 8px; }
+.dashboard-diag-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px;
+  padding: 8px;
+}
+.dashboard-diag-card {
+  border: 1px solid var(--grid-border);
+  border-left: 3px solid var(--accent);
+  border-radius: 3px;
+  padding: 7px 9px;
+  background: var(--bg-panel);
+}
+.dashboard-diag-head { display: flex; align-items: baseline; gap: 6px; }
+.dashboard-diag-urg { font-weight: 700; font-size: 13px; }
+.dashboard-diag-name { font-weight: 600; font-size: 12px; color: var(--ink); }
+.dashboard-diag-meta { font-size: 10px; color: var(--muted); margin-left: auto; }
+.dashboard-diag-facts {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  font-size: 10px; color: var(--muted); margin: 4px 0;
+}
+.dashboard-diag-why, .dashboard-diag-action { font-size: 11px; color: var(--ink-2); margin-top: 3px; }
+.dashboard-diag-action { color: var(--muted); }
+.dashboard-diag-why strong, .dashboard-diag-action strong { color: var(--ink); font-weight: 600; }
+
+/* Decide / Clarify as a triage list (not another urgency table). */
+.dashboard-triage-list { display: flex; flex-direction: column; }
+.dashboard-triage-row {
+  display: grid;
+  grid-template-columns: 34px minmax(120px, 1.2fr) minmax(120px, 1.4fr) 2fr;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--grid-border);
+  font-size: 12px;
+}
+.dashboard-triage-row:last-child { border-bottom: none; }
+.dashboard-triage-name { font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
+.dashboard-triage-sugg { font-size: 11px; color: var(--muted); }
+
+/* Inline high+ count bar in Section Pressure. */
+.dashboard-count-bar-cell { display: flex; align-items: center; gap: 5px; justify-content: flex-end; }
+.dashboard-count-bar { width: 40px; height: 5px; background: var(--grid-border); border-radius: 2px; overflow: hidden; }
+.dashboard-count-bar-fill { display: block; height: 100%; background: var(--urg-hi); }

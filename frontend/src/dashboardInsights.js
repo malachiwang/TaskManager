@@ -265,3 +265,88 @@ export function getActivitySummary(completionTrend = []) {
   const activeDays7d = completionTrend.slice(-7).filter((d) => d.count > 0).length;
   return { total30d, done7d, prev7d, paceChangePct, bestDay, activeDays7d };
 }
+
+// ── Per-task diagnosis ───────────────────────────────────────────────────────
+// Rich, non-destructive analysis of a single task: diagnosis chips + a short
+// "why" + a suggested (informational) next action. Works from existing fields.
+export function diagnoseTask(task) {
+  const never = isNeverDoneTask(task);
+  const uncat = isUncategorized(task);
+  const r = ratio(task);
+  const stale = r >= STALE_RATIO;
+  const daily = (task.interval_days ?? Infinity) <= SHORT_INTERVAL;
+  const overdueNow = isOverdue(task);
+  const bandKey = band(task);
+  const highPri = (task.priority ?? 0) >= HIGH_PRIORITY;
+  const reading = looksLikeReading(task);
+  const days = task.days_overdue ?? 0;
+
+  const chips = [];
+  if (reading) chips.push('Move to Reading?');
+  if (never) chips.push('Never done');
+  else if (overdueNow) chips.push('Overdue');
+  if (uncat) chips.push('Uncategorized');
+  if (never && stale) chips.push('Possibly stale');
+  if (never && daily && r >= VERY_STALE_RATIO) chips.push('Frequency may be wrong');
+  if (highPri) chips.push('High priority');
+  if (daily && !never) chips.push('Daily');
+  if (bandRank(bandKey) >= bandRank('critical')) chips.push('Critical');
+  else if (bandRank(bandKey) >= bandRank('high')) chips.push('High');
+
+  let reason, action;
+  if (reading) {
+    reason = 'Looks like reading — likely tracked better in the Reading Sheet, and it may be inflating task pressure.';
+    action = 'Consider moving tracking to the Reading Sheet, then archive or Hiatus this task.';
+  } else if (never && daily && r >= VERY_STALE_RATIO) {
+    reason = 'Short-interval task with no completion record and very high staleness — possibly a stale configuration.';
+    action = 'Decide: do it once, lower the frequency, or move to Hiatus.';
+  } else if (never && (stale || uncat)) {
+    reason = `Never completed${uncat ? ' and uncategorized' : ''} — its urgency is inflated by age, not a real cadence.`;
+    action = uncat ? 'Categorize it, or decide: do once / archive / Hiatus.' : 'Decide: do it once, archive, or move to Hiatus.';
+  } else if (never) {
+    reason = 'Never completed yet — it may simply be new.';
+    action = 'Do it once to establish a cadence, or clarify it.';
+  } else if (overdueNow) {
+    reason = `Established recurring task, overdue by ${days} day${days !== 1 ? 's' : ''}${daily ? ' (daily)' : ''}.`;
+    action = 'Do it today.';
+  } else {
+    reason = 'Active and roughly on track — no action needed right now.';
+    action = 'Safe to defer.';
+  }
+  return { chips: chips.slice(0, 4), reason, action };
+}
+
+// High/critical active tasks — the pressure drivers, for the Critical/Pressure lens.
+export function getCriticalHighTasks(tasks) {
+  return tasks
+    .filter((t) => !isFutureOrInactiveTask(t) && bandRank(band(t)) >= bandRank('high'))
+    .sort(cmpChain(
+      (a, b) => (b.urgency ?? 0) - (a.urgency ?? 0),
+      (a, b) => a.id - b.id,
+    ))
+    .slice(0, 12);
+}
+
+// Compress task-by-task analysis into an overview: how active tasks split across
+// the action buckets (first match wins: Do Now → Quick Win → Decide → Other).
+export function getDiagnosisDistribution(tasks, doNowIds = [], quickWinIds = [], triageIds = []) {
+  const active = tasks.filter((t) => !isFutureOrInactiveTask(t));
+  const dn = new Set(doNowIds), qw = new Set(quickWinIds), tr = new Set(triageIds);
+  const out = { doNow: 0, quick: 0, decide: 0, other: 0, total: active.length };
+  for (const t of active) {
+    if (dn.has(t.id)) out.doNow++;
+    else if (qw.has(t.id)) out.quick++;
+    else if (tr.has(t.id)) out.decide++;
+    else out.other++;
+  }
+  return out;
+}
+
+// Count active tasks in each urgency band (for the compact composition bar).
+// Uses the shared band model — no fresh thresholds.
+export function getUrgencyComposition(tasks) {
+  const active = tasks.filter((t) => !isFutureOrInactiveTask(t));
+  const out = { critical: 0, high: 0, noticeable: 0, low: 0, none: 0 };
+  for (const t of active) out[band(t)]++;
+  return out;
+}

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { fetchDashboard, fetchSnapshotPressure, fetchTasks } from '../api.js';
-import { urgencyClass, urgencyReason } from '../urgency.js';
+import { urgencyClass, urgencyReason, urgencyLabel, URGENCY_BANDS } from '../urgency.js';
 import {
   getDoNowTasks,
   getQuickWinTasks,
@@ -8,7 +8,75 @@ import {
   getSystemHygieneInsights,
   getSectionPressure,
   getActivitySummary,
+  diagnoseTask,
+  getCriticalHighTasks,
+  getDiagnosisDistribution,
+  getUrgencyComposition,
 } from '../dashboardInsights.js';
+
+// Compact stacked composition bar (urgency bands or diagnosis buckets).
+// segments: [{ key, label, count, cls }]. Uses shared urgency classes for color.
+function CompositionBar({ segments, total, label }) {
+  const t = total || segments.reduce((s, x) => s + x.count, 0);
+  return (
+    <div className="dashboard-composition">
+      {label && <span className="dashboard-composition-label">{label}</span>}
+      <div className="dashboard-composition-bar" role="img" aria-label={label}>
+        {t === 0 ? (
+          <div className="dashboard-composition-empty" />
+        ) : segments.map((s) => (
+          s.count > 0 ? (
+            <div
+              key={s.key}
+              className={`dashboard-composition-seg ${s.cls}`}
+              style={{ width: `${(s.count / t) * 100}%` }}
+              title={`${s.label}: ${s.count}`}
+            />
+          ) : null
+        ))}
+      </div>
+      <div className="dashboard-composition-legend">
+        {segments.map((s) => (
+          <span key={s.key} className="dashboard-composition-legend-item">
+            <span className={`dashboard-composition-dot ${s.cls}`} />
+            {s.label} <strong>{s.count}</strong>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Rich per-task diagnosis card — the core task-by-task analysis surface.
+function TaskDiagnosisCard({ task }) {
+  const { chips, reason, action } = diagnoseTask(task);
+  const never = !task.latest_completion && !task.manual_last_done_override;
+  return (
+    <div className="dashboard-diag-card">
+      <div className="dashboard-diag-head">
+        <span className={`dashboard-diag-urg ${urgencyClass(task.urgency)}`}>{(task.urgency ?? 0).toFixed(1)}</span>
+        <span className="dashboard-diag-name">{task.name}</span>
+        <span className="dashboard-diag-meta">
+          {task.section || '—'}{task.category ? ` · ${task.category}` : ''}
+        </span>
+      </div>
+      <div className="dashboard-diag-facts">
+        <span>{urgencyLabel(task.urgency)}</span>
+        <span>P{task.priority}</span>
+        <span>every {task.interval_days}d</span>
+        <span>{(task.days_overdue ?? 0) > 0 ? `overdue ${task.days_overdue}d` : 'not overdue'}</span>
+        <span>{never ? 'never done' : `last ${task.latest_completion || task.manual_last_done_override}`}</span>
+      </div>
+      {chips.length > 0 && (
+        <div className="dashboard-diagnosis-chips">
+          {chips.map((c) => <span key={c} className="dashboard-diagnosis-chip">{c}</span>)}
+        </div>
+      )}
+      <div className="dashboard-diag-why"><strong>Why:</strong> {reason}</div>
+      <div className="dashboard-diag-action"><strong>Suggested:</strong> {action}</div>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -310,6 +378,7 @@ export default function Dashboard() {
   const [error, setError] = useState(null);
   const [tasks, setTasks] = useState(null);
   const [tasksError, setTasksError] = useState(null);
+  const [lens, setLens] = useState('donow'); // active dashboard lens (chip selection)
 
   useEffect(() => {
     fetchDashboard().then(setData).catch((e) => setError(e.message));
@@ -320,26 +389,29 @@ export default function Dashboard() {
   if (!data) return <div className="grid-status">Loading…</div>;
 
   const { urgency_distribution, completion_trend, completion_heatmap } = data;
-
-  // Activity momentum (from completion_trend).
   const act = getActivitySummary(completion_trend);
 
-  // Task-level action insights (from GET /tasks). Guard against a failed/pending
-  // /tasks fetch — the rest of the dashboard still renders from /dashboard.
   const tasksReady = Array.isArray(tasks);
   const doNow = tasksReady ? getDoNowTasks(tasks) : [];
   const doNowIds = doNow.map((t) => t.id);
   const quickWins = tasksReady ? getQuickWinTasks(tasks, doNowIds) : [];
   const triage = tasksReady ? getTriageTasks(tasks) : [];
+  const triageTasks = triage.map((r) => r.task);
   const hygiene = tasksReady ? getSystemHygieneInsights(tasks) : [];
   const sectionPressure = tasksReady ? getSectionPressure(tasks) : [];
+  const critHighTasks = tasksReady ? getCriticalHighTasks(tasks) : [];
+  const diagDist = tasksReady
+    ? getDiagnosisDistribution(tasks, doNowIds, quickWins.map((t) => t.id), triageTasks.map((t) => t.id))
+    : null;
+  const urgComp = tasksReady ? getUrgencyComposition(tasks) : null;
   const inScope = tasksReady
     ? tasks.filter((t) => !(t.is_paused === 1 || t.is_ended || t.is_scheduled)).length
     : 0;
 
   const critHigh = (urgency_distribution.critical || 0) + (urgency_distribution.high || 0);
+  const neverDoneCount = data.never_done_count ?? 0;
+  const dormantCount = Array.isArray(data.dormant_tasks) ? data.dormant_tasks.length : 0;
 
-  // Weighted avg urgency across active tasks (from /dashboard category_summary).
   const catEntries = Object.entries(data.category_summary || {});
   const totalActive = catEntries.reduce((s, [, c]) => s + c.count, 0);
   const avgUrgencyRaw = totalActive > 0
@@ -351,53 +423,132 @@ export default function Dashboard() {
     ? (tasksError ? 'Could not load task details — action lists unavailable.' : 'Loading task details…')
     : null;
 
+  // Chip → lens config. `count` is shown on the chip; `pop` selects the Task
+  // Diagnosis population when the lens is active.
+  const CHIPS = [
+    { lens: 'donow',    label: 'Do now',        count: tasksReady ? doNow.length : '—',    accent: doNow.length > 0 },
+    { lens: 'quickwins', label: 'Quick wins',   count: tasksReady ? quickWins.length : '—' },
+    { lens: 'decide',   label: 'Decide',        count: tasksReady ? triage.length : '—' },
+    { lens: 'critical', label: 'Critical / High', count: critHigh, warn: critHigh > 0 },
+    { lens: 'pressure', label: 'Avg urgency',   count: avgUrgency, valueClass: avgUrgencyRaw !== null ? urgencyClass(avgUrgencyRaw) : '' },
+    { lens: 'activity', label: 'Done 7d',       count: act.done7d },
+  ];
+
+  const lensPop = {
+    donow: doNow,
+    quickwins: quickWins,
+    decide: triageTasks,
+    critical: critHighTasks,
+    pressure: critHighTasks,
+    activity: [],
+  };
+  const diagPopulation = (lensPop[lens] || []).slice(0, 12);
+  const LENS_TITLE = {
+    donow: 'Do Now — task diagnosis',
+    quickwins: 'Likely Quick Wins — task diagnosis',
+    decide: 'Decide / Clarify — task diagnosis',
+    critical: 'Critical / High pressure — task diagnosis',
+    pressure: 'Pressure drivers — task diagnosis',
+    activity: 'Activity',
+  };
+
   return (
     <div className="ws-dashboard">
       <div className="ws-dash-header">
         <div className="ws-dash-header-left">
-          <div className="ws-dash-title">What should I do now?</div>
+          <div className="ws-dash-title">Dashboard</div>
           <div className="ws-dash-sub">
-            action queue · active non-hiatus tasks{tasksReady ? ` · ${inScope} in scope` : ''}
+            action command center · active non-hiatus tasks{tasksReady ? ` · ${inScope} in scope` : ''}
           </div>
         </div>
         <div className="ws-dash-now">{nowLabel()}</div>
       </div>
 
-      {/* ── Action Summary ── */}
-      <div className="dashboard-action-summary">
-        <div className={`dashboard-summary-chip${doNow.length ? ' is-accent' : ''}`}>
-          <div className="dashboard-summary-value">{tasksReady ? doNow.length : '—'}</div>
-          <div className="dashboard-summary-label">Do now</div>
-        </div>
-        <div className="dashboard-summary-chip">
-          <div className="dashboard-summary-value">{tasksReady ? quickWins.length : '—'}</div>
-          <div className="dashboard-summary-label">Quick wins</div>
-        </div>
-        <div className="dashboard-summary-chip">
-          <div className="dashboard-summary-value">{tasksReady ? triage.length : '—'}</div>
-          <div className="dashboard-summary-label">Decide</div>
-        </div>
-        <div className={`dashboard-summary-chip${critHigh ? ' is-warn' : ''}`}>
-          <div className="dashboard-summary-value">{critHigh}</div>
-          <div className="dashboard-summary-label">Critical / High</div>
-        </div>
-        <div className="dashboard-summary-chip">
-          <div className={`dashboard-summary-value ${avgUrgencyRaw !== null ? urgencyClass(avgUrgencyRaw) : ''}`}>{avgUrgency}</div>
-          <div className="dashboard-summary-label">Avg urgency</div>
-        </div>
-        <div className="dashboard-summary-chip">
-          <div className="dashboard-summary-value">{act.done7d}</div>
-          <div className="dashboard-summary-label">Done 7d</div>
-        </div>
+      {/* ── Action area heading ── */}
+      <div className="dashboard-section-heading">
+        <span className="dashboard-section-heading-title">What should I do now?</span>
+        <span className="dashboard-section-heading-sub">select a lens below to focus the analysis</span>
       </div>
+
+      {/* ── Interactive Action Summary chips ── */}
+      <div className="dashboard-action-summary" role="tablist" aria-label="Dashboard lenses">
+        {CHIPS.map((c) => (
+          <button
+            key={c.lens}
+            type="button"
+            role="tab"
+            aria-selected={lens === c.lens}
+            className={`dashboard-summary-chip${lens === c.lens ? ' is-selected' : ''}${c.accent ? ' is-accent' : ''}${c.warn ? ' is-warn' : ''}`}
+            onClick={() => setLens(c.lens)}
+          >
+            <div className={`dashboard-summary-value ${c.valueClass || ''}`}>{c.count}</div>
+            <div className="dashboard-summary-label">{c.label}</div>
+          </button>
+        ))}
+      </div>
+
+      {/* ── Compact composition bars (restore urgency distribution + task split) ── */}
+      {tasksReady && (
+        <div className="dashboard-composition-row">
+          <CompositionBar
+            label="Urgency"
+            total={inScope}
+            segments={URGENCY_BANDS.map((b) => ({ key: b.key, label: b.label, cls: b.cls, count: urgComp[b.key] || 0 }))}
+          />
+          <CompositionBar
+            label="Task split"
+            total={diagDist.total}
+            segments={[
+              { key: 'doNow', label: 'Do now', cls: 'urg-critical', count: diagDist.doNow },
+              { key: 'quick', label: 'Quick', cls: 'urg-high', count: diagDist.quick },
+              { key: 'decide', label: 'Decide', cls: 'urg-noticeable', count: diagDist.decide },
+              { key: 'other', label: 'Other', cls: 'urg-none', count: diagDist.other },
+            ]}
+          />
+        </div>
+      )}
 
       {actionWarning && (
         <div className={`dashboard-action-warning${tasksError ? ' error' : ''}`}>{actionWarning}</div>
       )}
 
+      {/* ── Task Diagnosis (lens-driven, in place under the chips) ── */}
+      <div className="ws-frame ws-frame--full dashboard-diag-frame">
+        <div className="ws-frame-header">
+          <span>{LENS_TITLE[lens]}</span>
+          <span className="ws-frame-header-sub">why these tasks are surfaced · informational only</span>
+        </div>
+        {!tasksReady ? (
+          <div className="ws-empty">{actionWarning}</div>
+        ) : lens === 'activity' ? (
+          <div className="ws-frame-body dashboard-context-stats">
+            <span><strong>{act.total30d}</strong> completions in 30d</span>
+            <span><strong>{act.done7d}</strong> in the last 7d</span>
+            {act.paceChangePct !== null && (
+              <span className={act.paceChangePct >= 0 ? 'dash-pace-up' : 'dash-pace-dn'}>
+                {act.paceChangePct >= 0 ? '+' : ''}{act.paceChangePct}% vs prev 7d
+              </span>
+            )}
+            <span>best day {act.bestDay} · {act.activeDays7d}/7 active days</span>
+            <span className="dash-muted">Momentum detail is in Activity Context below.</span>
+          </div>
+        ) : diagPopulation.length === 0 ? (
+          <div className="ws-empty">
+            {lens === 'donow' && 'No urgent established tasks right now.'}
+            {lens === 'quickwins' && 'No likely quick wins found. The remaining pressure may require decisions, not quick completions.'}
+            {lens === 'decide' && 'Nothing needs clarification right now.'}
+            {(lens === 'critical' || lens === 'pressure') && 'Critical/high pressure is low — check Activity Context for momentum.'}
+          </div>
+        ) : (
+          <div className="ws-frame-body dashboard-diag-grid">
+            {diagPopulation.map((t) => <TaskDiagnosisCard key={t.id} task={t} />)}
+          </div>
+        )}
+      </div>
+
       <div className="ws-panels">
-        {/* ── Do Now ── */}
-        <div className="ws-frame ws-frame--full">
+        {/* ── Do Now (primary) ── */}
+        <div className={`ws-frame ws-frame--full dashboard-donow${lens === 'donow' ? ' is-focused' : ''}`}>
           <div className="ws-frame-header">
             <span>Do Now</span>
             <span className="ws-frame-header-sub">established overdue tasks worth doing today · top 5</span>
@@ -405,8 +556,8 @@ export default function Dashboard() {
           <ActionTable rows={doNow} emptyText={tasksReady ? 'No urgent established tasks right now.' : (actionWarning || '')} />
         </div>
 
-        {/* ── Likely Quick Wins ── */}
-        <div className="ws-frame ws-frame--full">
+        {/* ── Likely Quick Wins (secondary) ── */}
+        <div className={`ws-frame ws-frame--full dashboard-quickwins${lens === 'quickwins' ? ' is-focused' : ''}`}>
           <div className="ws-frame-header">
             <span>Likely Quick Wins</span>
             <span className="ws-frame-header-sub">frequent / overdue tasks that likely shed pressure fast · top 5</span>
@@ -414,41 +565,31 @@ export default function Dashboard() {
           <ActionTable rows={quickWins} emptyText={tasksReady ? 'No likely quick wins found.' : (actionWarning || '')} reasonPrefix="Likely quick win" />
         </div>
 
-        {/* ── Decide / Clarify ── */}
-        <div className="ws-frame ws-frame--full">
+        {/* ── Decide / Clarify (triage list) ── */}
+        <div className={`ws-frame ws-frame--full dashboard-decide${lens === 'decide' ? ' is-focused' : ''}`}>
           <div className="ws-frame-header">
             <span>Decide / Clarify</span>
-            <span className="ws-frame-header-sub">tasks that may need a decision, not immediate completion · top 6</span>
+            <span className="ws-frame-header-sub">
+              may need a decision, not completion · {neverDoneCount} never done · {dormantCount} dormant · top 6
+            </span>
           </div>
           {!tasksReady ? (
             <div className="ws-empty">{actionWarning}</div>
           ) : triage.length === 0 ? (
             <div className="ws-empty">Nothing needs a decision right now.</div>
           ) : (
-            <table className="dash-table">
-              <thead>
-                <tr>
-                  <th className="dash-th-urg">Urg</th>
-                  <th>Task</th>
-                  <th>Diagnosis</th>
-                  <th>Suggestion</th>
-                </tr>
-              </thead>
-              <tbody>
-                {triage.map(({ task, chips, suggestion }) => (
-                  <tr key={task.id}>
-                    <td><span className={`dash-urg-num ${urgencyClass(task.urgency)}`}>{task.urgency.toFixed(1)}</span></td>
-                    <td className="dash-task-name">{task.name}</td>
-                    <td>
-                      <div className="dashboard-diagnosis-chips">
-                        {chips.map((c) => <span key={c} className="dashboard-diagnosis-chip">{c}</span>)}
-                      </div>
-                    </td>
-                    <td className="dash-muted dash-reason">{suggestion}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="ws-frame-body dashboard-triage-list">
+              {triage.map(({ task, chips, suggestion }) => (
+                <div key={task.id} className="dashboard-triage-row">
+                  <span className={`dash-urg-num ${urgencyClass(task.urgency)}`}>{task.urgency.toFixed(1)}</span>
+                  <span className="dashboard-triage-name">{task.name}</span>
+                  <span className="dashboard-diagnosis-chips">
+                    {chips.map((c) => <span key={c} className="dashboard-diagnosis-chip">{c}</span>)}
+                  </span>
+                  <span className="dashboard-triage-sugg">{suggestion}</span>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 
@@ -476,7 +617,7 @@ export default function Dashboard() {
         </div>
 
         {/* ── Section Pressure ── */}
-        <div className="ws-frame ws-frame--full">
+        <div className={`ws-frame ws-frame--full${lens === 'pressure' ? ' is-focused' : ''}`}>
           <div className="ws-frame-header">
             <span>Section Pressure</span>
             <span className="ws-frame-header-sub">active tasks grouped by section · sorted by avg urgency</span>
@@ -491,8 +632,7 @@ export default function Dashboard() {
                 <tr>
                   <th>Section</th>
                   <th className="dash-th-num">Tasks</th>
-                  <th className="dash-th-urg">Avg</th>
-                  <th className="dash-th-num">Max</th>
+                  <th className="dash-th-urg">Avg urgency</th>
                   <th className="dash-th-num">High+</th>
                   <th className="dash-th-num">Neglect</th>
                   <th className="dash-th-num">Never</th>
@@ -500,30 +640,37 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {sectionPressure.map((s) => (
-                  <tr key={s.section} className={s.section === '(no section)' ? 'dashboard-row-warn' : ''}>
-                    <td>{s.section}</td>
-                    <td className="dash-num">{s.count}</td>
-                    <td>
-                      <div className="dash-urg-cell">
-                        <span className={`dash-urg-num ${urgencyClass(s.avgUrg)}`}>{s.avgUrg.toFixed(1)}</span>
-                        <UrgencyBar value={s.avgUrg} />
-                      </div>
-                    </td>
-                    <td className={`dash-num ${urgencyClass(s.maxUrg)}`}>{s.maxUrg.toFixed(1)}</td>
-                    <td className={`dash-num${s.highCrit > 0 ? ' urg-high' : ''}`}>{s.highCrit}</td>
-                    <td className="dash-num">{s.neglected}</td>
-                    <td className="dash-num">{s.neverDone}</td>
-                    <td className={`dash-num${s.uncategorized > 0 ? ' dashboard-warn-text' : ''}`}>{s.uncategorized}</td>
-                  </tr>
-                ))}
+                {sectionPressure.map((s) => {
+                  const maxHc = Math.max(...sectionPressure.map((x) => x.highCrit), 1);
+                  return (
+                    <tr key={s.section} className={s.section === '(no section)' ? 'dashboard-row-warn' : ''}>
+                      <td>{s.section}</td>
+                      <td className="dash-num">{s.count}</td>
+                      <td>
+                        <div className="dash-urg-cell">
+                          <span className={`dash-urg-num ${urgencyClass(s.avgUrg)}`}>{s.avgUrg.toFixed(1)}</span>
+                          <UrgencyBar value={s.avgUrg} wide />
+                        </div>
+                      </td>
+                      <td className="dash-num">
+                        <div className="dashboard-count-bar-cell">
+                          <span className={s.highCrit > 0 ? 'urg-high' : ''}>{s.highCrit}</span>
+                          <span className="dashboard-count-bar"><span className="dashboard-count-bar-fill" style={{ width: `${(s.highCrit / maxHc) * 100}%` }} /></span>
+                        </div>
+                      </td>
+                      <td className="dash-num">{s.neglected}</td>
+                      <td className="dash-num">{s.neverDone}</td>
+                      <td className={`dash-num${s.uncategorized > 0 ? ' dashboard-warn-text' : ''}`}>{s.uncategorized}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
         </div>
 
         {/* ── Activity Context (compressed) ── */}
-        <div className="ws-frame ws-frame--full">
+        <div className={`ws-frame ws-frame--full${lens === 'activity' ? ' is-focused' : ''}`}>
           <div className="ws-frame-header">
             <span>Activity Context</span>
             <span className="ws-frame-header-sub">recent momentum · context, not action</span>
