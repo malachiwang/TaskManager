@@ -93,6 +93,15 @@ pyinstaller \
   --specpath "$WORK_DIR" \
   --paths "$PROJECT_ROOT" \
   --collect-submodules backend \
+  --exclude-module PyQt5 \
+  --exclude-module PyQt6 \
+  --exclude-module PySide2 \
+  --exclude-module PySide6 \
+  --exclude-module tkinter \
+  --exclude-module IPython \
+  --exclude-module jedi \
+  --exclude-module nbformat \
+  --exclude-module pytest \
   --noconfirm \
   --add-data "$PROJECT_ROOT/PRIVACY.md:." \
   --add-data "$PROJECT_ROOT/ACCESSIBILITY.md:." \
