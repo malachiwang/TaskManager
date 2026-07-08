@@ -247,11 +247,14 @@ body {
   border-radius: 2px;
 }
 
+/* Active tool view — a clearly filled state with no blue bottom line (P8.2).
+   The previous `inset 0 -2px 0 var(--accent)` underline read as a leftover
+   browser focus artifact when a tab was clicked; active is now signalled by
+   fill + border + full-white text only. Focus is handled separately below. */
 .tab.active {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.16);
   color: #fff;
-  border-color: rgba(255, 255, 255, 0.35);
-  box-shadow: inset 0 -2px 0 var(--accent);
+  border-color: rgba(255, 255, 255, 0.45);
 }
 
 .tab:hover:not(.active) {
@@ -259,7 +262,8 @@ body {
   color: rgba(255, 255, 255, 0.85);
 }
 
-.tab:focus {
+/* Mouse click leaves no focus ring; keyboard focus gets the app-blue ring. */
+.tab:focus:not(:focus-visible) {
   outline: none;
 }
 
@@ -326,7 +330,7 @@ body {
   background: rgba(0, 0, 0, 0.05);
 }
 
-.sheet-tab:focus {
+.sheet-tab:focus:not(:focus-visible) {
   outline: none;
 }
 

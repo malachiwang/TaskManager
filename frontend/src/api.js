@@ -1,5 +1,13 @@
 const BASE = import.meta.env.VITE_API_BASE ?? '/api';
 
+// Cheap readiness probe — used by the App boot gate. Hits the backend /health
+// endpoint (no DB work) instead of a heavy data endpoint.
+export async function fetchHealth() {
+  const res = await fetch(`${BASE}/health`);
+  if (!res.ok) throw new Error(`fetchHealth failed: ${res.status}`);
+  return res.json();
+}
+
 export async function fetchDoc(name) {
   const res = await fetch(`${BASE}/docs/${name}`);
   if (!res.ok) throw new Error(`fetchDoc failed: ${res.status}`);

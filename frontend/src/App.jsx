@@ -7,7 +7,7 @@ import ReadingSheet from './components/ReadingSheet.jsx';
 import MonthlyReport from './components/MonthlyReport.jsx';
 import TopBarNetwork from './components/TopBarNetwork.jsx';
 import LoadingScreen from './components/LoadingScreen.jsx';
-import { fetchTasks } from './api.js';
+import { fetchHealth } from './api.js';
 
 export default function App() {
   // Navigation is split into two concepts (P5.0-fix1):
@@ -22,10 +22,12 @@ export default function App() {
   // Boot gate (P8.0B) — the surfaces (TaskGrid, ReadingSheet, …) each own their
   // inline data loading, so there is no global data store to wait on. What is
   // worth waiting on is the backend actually being reachable: in the packaged
-  // desktop build the Python sidecar takes a moment to come up. We poll a cheap
-  // real endpoint until it answers, then reveal the app. A hard cap guarantees
-  // we never trap the user on the loading screen — if the backend stays down we
-  // still reveal the shell and let each surface show its own error state.
+  // desktop build the Python sidecar takes a moment to come up. We poll the
+  // dedicated /health endpoint (no DB work — P8.2; previously this probed
+  // /tasks, duplicating TaskGrid's own heavier first fetch) until it answers,
+  // then reveal the app. A hard cap guarantees we never trap the user on the
+  // loading screen — if the backend stays down we still reveal the shell and
+  // let each surface show its own error state.
   const [booting, setBooting] = useState(true);
   useEffect(() => {
     let cancelled = false;
@@ -33,7 +35,7 @@ export default function App() {
     const MAX_WAIT_MS = 6000;
     async function probe() {
       try {
-        await fetchTasks();
+        await fetchHealth();
         if (!cancelled) setBooting(false);
       } catch {
         if (cancelled) return;

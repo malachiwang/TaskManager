@@ -817,7 +817,7 @@ export default function TaskGrid() {
     }
   }, [helpOpen]);
 
-  // Register once on mount; TaskGrid only mounts on the Grid tab, so the
+  // Register once on mount; TaskGrid only mounts on the Tasks sheet, so the
   // handler is automatically removed when the user switches to another tab.
   useEffect(() => {
     function onKeyDown(e) {
