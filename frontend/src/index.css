@@ -122,6 +122,76 @@ body {
   border-bottom: 2px solid var(--ink-2);
   flex-shrink: 0;
   height: 46px;
+  /* Positioning context + clip for the absolutely-positioned network canvas
+     (P8.0B). The black background stays part of the bar; the canvas paints on
+     top of it but behind the content wrapper. */
+  position: relative;
+  overflow: hidden;
+}
+
+/* Node-edge network canvas (P8.0B) — fills the bar, sits behind content, and
+   never intercepts pointer events so toolbar buttons stay fully clickable. */
+.topbar-network-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Toolbar content sits above the network. Preserves the header's original
+   flex row layout (identity + utility nav) now that it is wrapped. */
+.app-topbar-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  width: 100%;
+}
+
+/* Loading screen (P8.0B) — full-viewport black boot overlay sharing the top
+   bar's node-edge visual language. Shown only while confirming the backend is
+   reachable, then unmounted. */
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ink, #14140f);
+  overflow: hidden;
+}
+
+.loading-network {
+  position: absolute;
+  inset: 0;
+}
+
+.loading-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.loading-title {
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #fff;
+}
+
+.loading-subtitle {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.5);
 }
 
 /* App product identity zone — title + tagline stacked */
@@ -324,6 +394,17 @@ body {
   position: sticky;
   top: 0;
   z-index: 2;
+}
+
+/* Column headers clip without an ellipsis (P8.0A) — a fuller label (e.g.
+   "Priority", "Frequency") in a narrow default column is hard-clipped rather
+   than showing "…", and reads fully when the column is resized or on hover
+   (title tooltip). Scoped to headers only — body cell text keeps its ellipsis.
+   The absolutely-positioned resize handle sits inside the header box, so it is
+   not affected by the clip. */
+.task-grid thead th {
+  overflow: hidden;
+  text-overflow: clip;
 }
 
 /* -------------------------------------------------------------------------
