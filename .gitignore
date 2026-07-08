@@ -17,6 +17,9 @@ backups/
 *.db
 *.sqlite
 *.sqlite3
+# SQLite WAL-mode runtime companions (created by PRAGMA journal_mode=WAL)
+*.db-shm
+*.db-wal
 
 # Frontend dependencies/build output
 frontend/node_modules/

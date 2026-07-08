@@ -1371,10 +1371,10 @@ export default function TaskGrid() {
             <tr>
               <th className="meta-col sticky-col col-actions" style={thStyle('col-actions')}></th>
               <th className="meta-col sticky-col col-urg" title="Urgency" style={thStyle('col-urg')}>
-                Urg{rh('col-urg')}
+                Urgency{rh('col-urg')}
               </th>
               <th className="meta-col sticky-col col-pri" title="Priority" style={thStyle('col-pri')}>
-                P{rh('col-pri')}
+                Priority{rh('col-pri')}
               </th>
               <th className="meta-col sticky-col col-status" style={thStyle('col-status')}>
                 Status{rh('col-status')}
@@ -1392,7 +1392,7 @@ export default function TaskGrid() {
                 Subtask{rh('col-sub')}
               </th>
               <th className="meta-col scroll-meta-col col-freq" title="Frequency (days)" style={thStyle('col-freq')}>
-                Freq{rh('col-freq')}
+                Frequency{rh('col-freq')}
               </th>
               <th className="meta-col scroll-meta-col col-days" title="Days since last done" style={thStyle('col-days')}>
                 Days{rh('col-days')}

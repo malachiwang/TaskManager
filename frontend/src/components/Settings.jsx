@@ -393,7 +393,7 @@ export default function Settings() {
               </div>
               <div className="ws-ctrl-action">
                 <button className="button-secondary" onClick={handleResetColumns}>
-                  Reset widths
+                  Reset grid column widths
                 </button>
               </div>
             </div>
