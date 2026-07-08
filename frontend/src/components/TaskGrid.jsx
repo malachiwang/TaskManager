@@ -432,7 +432,11 @@ export default function TaskGrid() {
       closeModal();
       await loadData();
     } catch (e) {
+      // Re-throw so the modal can surface the failure to the user instead of
+      // the save silently doing "nothing". Modal stays open (closeModal above
+      // is skipped on throw), so no edits are lost.
       console.error('save failed:', e);
+      throw e;
     }
   }
 
@@ -863,10 +867,13 @@ export default function TaskGrid() {
         return;
       }
 
-      // E — open Task Details modal (requires selection; no auto-edit on bootstrap)
+      // E — open Task Details modal. Works for a selected date/grid cell OR a
+      // selected Task/Subtask/meta text cell (parity fix) — both carry taskId.
+      // The typing guard above already prevents this from firing while editing.
       if (matchKeybind(e, kb.EDIT_TASK)) {
-        if (!sel) return;
-        const task = tasks.find((t) => t.id === sel.taskId);
+        const editTaskId = sel?.taskId ?? selectedMetaCellRef.current?.taskId;
+        if (editTaskId == null) return;
+        const task = tasks.find((t) => t.id === editTaskId);
         if (task) openEdit(task);
         return;
       }
@@ -1371,10 +1378,10 @@ export default function TaskGrid() {
             <tr>
               <th className="meta-col sticky-col col-actions" style={thStyle('col-actions')}></th>
               <th className="meta-col sticky-col col-urg" title="Urgency" style={thStyle('col-urg')}>
-                Urg{rh('col-urg')}
+                Urgency{rh('col-urg')}
               </th>
               <th className="meta-col sticky-col col-pri" title="Priority" style={thStyle('col-pri')}>
-                P{rh('col-pri')}
+                Priority{rh('col-pri')}
               </th>
               <th className="meta-col sticky-col col-status" style={thStyle('col-status')}>
                 Status{rh('col-status')}
@@ -1392,7 +1399,7 @@ export default function TaskGrid() {
                 Subtask{rh('col-sub')}
               </th>
               <th className="meta-col scroll-meta-col col-freq" title="Frequency (days)" style={thStyle('col-freq')}>
-                Freq{rh('col-freq')}
+                Frequency{rh('col-freq')}
               </th>
               <th className="meta-col scroll-meta-col col-days" title="Days since last done" style={thStyle('col-days')}>
                 Days{rh('col-days')}
