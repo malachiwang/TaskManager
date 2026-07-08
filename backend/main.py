@@ -12,6 +12,7 @@ import io
 import json
 import re
 import sqlite3
+import sys
 from pathlib import Path
 from collections import defaultdict
 from contextlib import asynccontextmanager
@@ -23,7 +24,8 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
-from backend.database import DB_PATH, get_connection, init_db
+from backend import database as db_config
+from backend.database import get_connection, init_db
 from backend.logic import (
     calculate_days_since,
     calculate_effective_last_done,
@@ -86,6 +88,9 @@ def _normalize_date_override(value: Optional[str]) -> Optional[str]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Log the resolved DB location so dev/packaged runs are unambiguous
+    # (overridable via TASKOS_DB_PATH — see backend/database.py).
+    print(f"TaskManager backend — SQLite database: {db_config.DB_PATH}", flush=True)
     init_db()
     yield
 
@@ -1036,6 +1041,99 @@ def delete_note(task_id: int, note_date: str):
 
 
 # ---------------------------------------------------------------------------
+# Date-cell text overrides (P9.1)
+#
+# A row converts one exact task/date grid cell from a completion checkbox into
+# a plain-text cell. Existing completion rows for that task/date are preserved
+# (hidden) while the override exists; deleting the override returns the cell
+# to checkbox mode with any prior completion visible again. Text is plain text
+# only — the frontend never renders it as HTML.
+# ---------------------------------------------------------------------------
+
+def _validate_iso_date(value: str, field: str = "date") -> None:
+    try:
+        date.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"Invalid {field} format. Use YYYY-MM-DD.")
+
+
+@app.get("/date-cell-overrides")
+def list_date_cell_overrides(
+    start: str = Query(..., description="Start date YYYY-MM-DD"),
+    end: str = Query(..., description="End date YYYY-MM-DD"),
+):
+    """Return all date-cell overrides whose date falls in [start, end]."""
+    _validate_iso_date(start, "start")
+    _validate_iso_date(end, "end")
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT task_id, date, mode, text FROM date_cell_overrides "
+        "WHERE date BETWEEN ? AND ?",
+        (start, end),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.put("/date-cell-overrides/{task_id}/{cell_date}", status_code=200)
+def upsert_date_cell_override(task_id: int, cell_date: str, text: str = ""):
+    """
+    Create or update the text override for a task/date cell.
+
+    Unlike cell notes, an empty text value KEEPS the override row — an empty
+    text cell is still intentionally in text mode. Use DELETE to return the
+    cell to checkbox mode.
+    """
+    _validate_iso_date(cell_date)
+    conn = get_connection()
+    if not conn.execute("SELECT id FROM tasks WHERE id = ?", (task_id,)).fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    now = datetime.now().isoformat()
+    existing = conn.execute(
+        "SELECT id FROM date_cell_overrides WHERE task_id = ? AND date = ?",
+        (task_id, cell_date),
+    ).fetchone()
+    with conn:
+        if existing:
+            conn.execute(
+                "UPDATE date_cell_overrides SET text = ?, updated_at = ? "
+                "WHERE task_id = ? AND date = ?",
+                (text, now, task_id, cell_date),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO date_cell_overrides (task_id, date, mode, text, created_at, updated_at) "
+                "VALUES (?, ?, 'text', ?, ?, ?)",
+                (task_id, cell_date, text, now, now),
+            )
+    conn.close()
+    return {"task_id": task_id, "date": cell_date, "mode": "text", "text": text}
+
+
+@app.delete("/date-cell-overrides/{task_id}/{cell_date}")
+def delete_date_cell_override(task_id: int, cell_date: str):
+    """Remove the override, returning the cell to normal checkbox mode."""
+    _validate_iso_date(cell_date)
+    conn = get_connection()
+    existing = conn.execute(
+        "SELECT id FROM date_cell_overrides WHERE task_id = ? AND date = ?",
+        (task_id, cell_date),
+    ).fetchone()
+    if not existing:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Override not found")
+    with conn:
+        conn.execute(
+            "DELETE FROM date_cell_overrides WHERE task_id = ? AND date = ?",
+            (task_id, cell_date),
+        )
+    conn.close()
+    return {"deleted": True, "task_id": task_id, "date": cell_date}
+
+
+# ---------------------------------------------------------------------------
 # Dashboard
 # ---------------------------------------------------------------------------
 
@@ -1483,7 +1581,9 @@ def delete_archive(archive_id: int):
 # Project docs (Privacy, Accessibility, Terms)
 # ---------------------------------------------------------------------------
 
-_DOCS_ROOT = Path(__file__).parent.parent
+# Project root in dev; PyInstaller extraction dir (sys._MEIPASS) in the packaged
+# sidecar, where build-sidecar.sh bundles the policy .md files via --add-data.
+_DOCS_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).parent.parent))
 _ALLOWED_DOCS: dict[str, str] = {
     "privacy":       "PRIVACY.md",
     "accessibility": "ACCESSIBILITY.md",
@@ -1535,10 +1635,15 @@ def export_backup():
             "SELECT * FROM reading_entries ORDER BY book_id, entry_date, id"
         ).fetchall()
     ]
+    date_cell_overrides = [
+        dict(r) for r in conn.execute(
+            "SELECT * FROM date_cell_overrides ORDER BY task_id, date"
+        ).fetchall()
+    ]
     conn.close()
 
     payload = {
-        "schema_version": 4,
+        "schema_version": 5,  # P9.1 added date_cell_overrides
         "exported_at": datetime.now().isoformat(),
         "tasks": tasks,
         "completions": completions,
@@ -1547,6 +1652,7 @@ def export_backup():
         "task_daily_snapshots": daily_snapshots,
         "reading_books": reading_books,
         "reading_entries": reading_entries,
+        "date_cell_overrides": date_cell_overrides,
     }
     filename = f"taskos-backup-{date.today().isoformat()}.json"
     return Response(
@@ -1639,7 +1745,7 @@ def export_sheet_csv(
 # Restore
 # ---------------------------------------------------------------------------
 
-_SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4})
+_SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4, 5})
 
 
 @app.post("/restore/backup.json", status_code=200)
@@ -1650,7 +1756,8 @@ async def restore_backup(file: UploadFile = File(...)):
     Before overwriting anything, a safety copy of the current DB is written to
     <db-dir>/backups/pre-restore-<timestamp>.db using the SQLite backup API.
 
-    Supported schema_versions: 1, 2, 3.
+    Supported schema_versions: 1, 2, 3, 4, 5. Older backups without the
+    date_cell_overrides section restore with no overrides (treated as empty).
     All existing rows are deleted and replaced with backup data in a single
     transaction; if the insert phase fails the transaction rolls back and the
     safety copy lets you recover manually.
@@ -1678,13 +1785,16 @@ async def restore_backup(file: UploadFile = File(...)):
     snapshots_data = payload.get("task_daily_snapshots", [])
     reading_books_data = payload.get("reading_books", [])
     reading_entries_data = payload.get("reading_entries", [])
+    date_cell_overrides_data = payload.get("date_cell_overrides", [])
 
-    # Safety backup before any writes.
-    backup_dir = DB_PATH.parent / "backups"
+    # Safety backup before any writes. Resolved via the database module so the
+    # copy always sits next to the DB actually in use (TASKOS_DB_PATH included).
+    db_path = db_config.DB_PATH
+    backup_dir = db_path.parent / "backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
     safety_path = backup_dir / f"pre-restore-{datetime.now().strftime('%Y%m%d-%H%M%S')}.db"
-    if DB_PATH.exists():
-        src = sqlite3.connect(str(DB_PATH))
+    if db_path.exists():
+        src = sqlite3.connect(str(db_path))
         dst = sqlite3.connect(str(safety_path))
         src.backup(dst)
         dst.close()
@@ -1697,6 +1807,7 @@ async def restore_backup(file: UploadFile = File(...)):
             conn.execute("DELETE FROM reading_entries")
             conn.execute("DELETE FROM reading_books")
             conn.execute("DELETE FROM task_daily_snapshots")
+            conn.execute("DELETE FROM date_cell_overrides")
             conn.execute("DELETE FROM cell_notes")
             conn.execute("DELETE FROM completions")
             conn.execute("DELETE FROM archive_snapshots")
@@ -1889,6 +2000,28 @@ async def restore_backup(file: UploadFile = File(...)):
                         "updated_at": e.get("updated_at"),
                     },
                 )
+
+            # Date-cell text overrides (P9.1, schema_version 5+). Absent in
+            # older backups — the loop simply runs zero times.
+            for o in date_cell_overrides_data:
+                conn.execute(
+                    """
+                    INSERT INTO date_cell_overrides (
+                        id, task_id, date, mode, text, created_at, updated_at
+                    ) VALUES (
+                        :id, :task_id, :date, :mode, :text, :created_at, :updated_at
+                    )
+                    """,
+                    {
+                        "id":         o.get("id"),
+                        "task_id":    o["task_id"],
+                        "date":       o["date"],
+                        "mode":       o.get("mode", "text"),
+                        "text":       o.get("text", ""),
+                        "created_at": o.get("created_at"),
+                        "updated_at": o.get("updated_at"),
+                    },
+                )
     except Exception as exc:
         conn.close()
         raise HTTPException(status_code=500, detail=f"Restore failed: {exc}")
@@ -1904,6 +2037,7 @@ async def restore_backup(file: UploadFile = File(...)):
         "task_daily_snapshots": len(snapshots_data),
         "reading_books": len(reading_books_data),
         "reading_entries": len(reading_entries_data),
+        "date_cell_overrides": len(date_cell_overrides_data),
         "safety_backup": str(safety_path),
     }
 

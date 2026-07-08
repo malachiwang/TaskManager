@@ -1,13 +1,23 @@
 """
 SQLite database setup.
 
-The database file lives at the project root as taskos.db.
-taskos.db is excluded from git via .gitignore.
+Default (no TASKOS_DB_PATH): the database file lives at the project root as
+taskos.db. taskos.db is excluded from git via .gitignore.
 
-In packaged (Tauri) mode, set TASKOS_DB_PATH to redirect to the
-platform app-data directory, e.g.:
-    ~/Library/Application Support/TaskManagementOS/taskos.db
-Dev default is unchanged when TASKOS_DB_PATH is not set.
+TASKOS_DB_PATH overrides the location with an exact file path; the parent
+directory is created automatically on first connection.
+
+  - Packaged (Tauri) mode sets it to the platform app-data directory, e.g.
+      ~/Library/Application Support/com.taskos.desktop/taskos.db
+  - Development: if the repository lives inside a synced folder (iCloud Drive,
+    Dropbox, …), keeping the live DB there can stall SQLite WAL file locking
+    while the sync daemon coordinates the file — the backend can appear to
+    hang on all DB endpoints (P8.2 finding). Recommended dev usage:
+      mkdir -p "$HOME/.taskmanager"
+      TASKOS_DB_PATH="$HOME/.taskmanager/taskos.db" \
+        python -m uvicorn backend.main:app --reload --port 8000
+    To migrate an existing dev DB, stop the backend and copy taskos.db to the
+    new location first. Nothing is moved or deleted automatically.
 """
 import os
 import sqlite3
@@ -264,6 +274,29 @@ def init_db() -> None:
 
         CREATE INDEX IF NOT EXISTS idx_reading_entries_book
             ON reading_entries(book_id);
+    """)
+    conn.commit()
+
+    # ── Migration 9: date_cell_overrides (P9.1) — per task/date text cells ────
+    # A row here converts that exact task/date grid cell from a completion
+    # checkbox into a plain-text cell. Any existing completion row for the same
+    # task/date is preserved (hidden) while the override exists and becomes
+    # visible again if the override is removed. mode is 'text' for all rows
+    # today; the column exists so future cell modes never need a table change.
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS date_cell_overrides (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            date       TEXT    NOT NULL,
+            mode       TEXT    NOT NULL DEFAULT 'text',
+            text       TEXT    NOT NULL DEFAULT '',
+            created_at TEXT    NOT NULL,
+            updated_at TEXT    NOT NULL,
+            UNIQUE (task_id, date)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_dco_date
+            ON date_cell_overrides(date);
     """)
     conn.commit()
 

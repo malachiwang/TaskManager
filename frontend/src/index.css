@@ -698,6 +698,50 @@ thead .meta-col {
   min-height: 100%;
 }
 
+/* -------------------------------------------------------------------------
+   Date-cell text override (P9.1) — a task/date cell converted from checkbox
+   to plain text. Compact display with ellipsis; a subtle dotted underline
+   marks it apart from checkbox cells without competing with urgency/days
+   colors.
+   ---------------------------------------------------------------------- */
+
+.dc-text {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0 2px;
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-bottom: 1px dotted var(--muted-2, #999);
+}
+
+.dc-text--empty {
+  color: var(--muted-2, #999);
+}
+
+.dc-text--muted {
+  color: var(--muted-2, #999);
+  border-bottom-style: none;
+}
+
+/* Inline editor — fills the cell without changing row height. */
+.dc-text-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 1px 2px;
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 1.2;
+  border: 1px solid var(--focus-blue, var(--accent));
+  border-radius: 0;
+  background: var(--bg-panel);
+  color: var(--ink);
+  outline: none;
+}
+
 .dc-box {
   display: inline-flex;
   align-items: center;
@@ -935,6 +979,18 @@ thead .meta-col {
   align-items: center;
   gap: 5px;
   flex-shrink: 0;
+}
+
+/* Text-override EditBar controls (P9.1) */
+.edit-bar-btn--danger {
+  color: #fff;
+  background: var(--urg-crit);
+  border-color: var(--urg-crit);
+}
+
+.edit-bar-restore-warn {
+  font-size: 11px;
+  color: var(--urg-crit);
 }
 
 .edit-bar-btn {
@@ -4451,6 +4507,66 @@ select.task-modal-input {
 
 .ws-backup-primary .ws-ctrl-info {
   flex: 1;
+}
+
+/* Restore-from-backup confirm zone (P9.0) — explicit overwrite warning that
+   appears once a backup file is chosen; nothing is sent until confirmed. */
+.ws-restore-confirm {
+  margin: 10px 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--urg-crit);
+  background: color-mix(in srgb, var(--urg-crit) 7%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ws-restore-confirm-copy {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.ws-restore-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ws-restore-danger-btn {
+  padding: 5px 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: var(--urg-crit);
+  border: 1px solid var(--urg-crit);
+  cursor: pointer;
+  border-radius: 0;
+}
+
+.ws-restore-danger-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Restore outcome messages — always visible, never silent. */
+.ws-restore-msg {
+  margin: 8px 14px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ws-restore-msg--error {
+  border: 1px solid var(--urg-crit);
+  color: var(--urg-crit);
+}
+
+.ws-restore-msg--ok {
+  border: 1px solid var(--good);
+  color: var(--ink);
 }
 
 .ws-backup-btn {

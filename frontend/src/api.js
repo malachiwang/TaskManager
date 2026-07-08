@@ -156,6 +156,20 @@ export async function downloadExportBackup() {
   await downloadBlob(buildExportBackupUrl(), 'taskos-backup.json');
 }
 
+// Restore the full workspace from a JSON backup produced by the export above.
+// Replaces ALL local data (the backend writes a pre-restore safety .db first).
+export async function restoreBackup(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch(`${BASE}/restore/backup.json`, { method: 'POST', body: formData });
+  if (!res.ok) {
+    let detail = `restoreBackup failed: ${res.status}`;
+    try { const b = await res.json(); if (b.detail) detail = b.detail; } catch {}
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
 export async function downloadExportSheet(startDate, endDate) {
   await downloadBlob(buildExportSheetUrl(startDate, endDate), 'taskos-sheet.csv');
 }
@@ -185,6 +199,31 @@ export async function upsertNote(taskId, date, note) {
 export async function deleteNote(taskId, date) {
   const res = await fetch(`${BASE}/notes/${taskId}/${date}`, { method: 'DELETE' });
   if (!res.ok && res.status !== 404) throw new Error(`deleteNote failed: ${res.status}`);
+}
+
+// ---------------------------------------------------------------------------
+// Date-cell text overrides (P9.1) — convert a task/date cell to a text cell.
+// ---------------------------------------------------------------------------
+
+export async function fetchDateCellOverrides(start, end) {
+  const res = await fetch(`${BASE}/date-cell-overrides?start=${start}&end=${end}`);
+  if (!res.ok) throw new Error(`fetchDateCellOverrides failed: ${res.status}`);
+  return res.json();
+}
+
+export async function upsertDateCellOverride(taskId, date, text) {
+  const params = new URLSearchParams({ text });
+  const res = await fetch(`${BASE}/date-cell-overrides/${taskId}/${date}?${params}`, { method: 'PUT' });
+  if (!res.ok) throw new Error(`upsertDateCellOverride failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteDateCellOverride(taskId, date) {
+  const res = await fetch(`${BASE}/date-cell-overrides/${taskId}/${date}`, { method: 'DELETE' });
+  // 404 means the cell was already in checkbox mode — that is fine
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`deleteDateCellOverride failed: ${res.status}`);
+  }
 }
 
 export async function previewImport(file) {

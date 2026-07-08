@@ -8,6 +8,7 @@ Run with: pytest tests/test_api.py -v
 """
 import csv
 import io
+import json
 import sqlite3
 from datetime import date, timedelta
 
@@ -811,9 +812,9 @@ class TestExport:
         assert "cell_notes" in data
         assert "archive_snapshots" in data
 
-    def test_backup_schema_version_is_2(self, client):
+    def test_backup_schema_version_is_current(self, client):
         data = client.get("/export/backup.json").json()
-        assert data["schema_version"] == 4  # P5.0 bumped to 4 (added reading tables)
+        assert data["schema_version"] == 5  # P9.1 bumped to 5 (added date_cell_overrides)
 
     def test_backup_empty_db_returns_valid_empty_arrays(self, client):
         data = client.get("/export/backup.json").json()
@@ -1984,9 +1985,12 @@ class TestActiveFrom:
         task = create_task(client, active_from=FUTURE_DATE)
         assert task["active_from"] == FUTURE_DATE
 
-    def test_invalid_active_from_normalized_to_none_on_create(self, client):
+    def test_invalid_active_from_falls_back_to_today_on_create(self, client):
+        """Invalid active_from normalizes to None, then falls back to the
+        create-time default of today (new tasks start active today — the
+        task-start-date feature made active_from default to creation date)."""
         task = create_task(client, active_from="not-a-date")
-        assert task["active_from"] is None
+        assert task["active_from"] == TODAY
         assert task["is_scheduled"] is False
 
     def test_active_from_normalized_on_patch(self, client):
@@ -2143,7 +2147,7 @@ class TestDailySnapshots:
         create_task(client)
         self._trigger(client)
         backup = client.get("/export/backup.json").json()
-        assert backup["schema_version"] == 4
+        assert backup["schema_version"] == 5
         assert "task_daily_snapshots" in backup
         assert len(backup["task_daily_snapshots"]) >= 1
 
@@ -2835,3 +2839,188 @@ class TestPatchTaskJsonBody:
         resp = client.patch(f"/tasks/{t['id']}", params={"end_date": TODAY})
         assert resp.status_code == 200
         assert resp.json()["end_date"] == TODAY
+
+
+# ---------------------------------------------------------------------------
+# Restore from backup (P9.0) — full-workspace overwrite restore
+# ---------------------------------------------------------------------------
+
+class TestRestoreBackup:
+    """POST /restore/backup.json — the device-transfer restore path."""
+
+    def _restore(self, client, payload_bytes, filename="backup.json"):
+        return client.post(
+            "/restore/backup.json",
+            files={"file": (filename, payload_bytes, "application/json")},
+        )
+
+    def test_restore_roundtrip_replaces_workspace(self, client):
+        # Old-device state: one task with a completion.
+        t = create_task(client, name="Transferred task", priority=8)
+        client.post(f"/completions?task_id={t['id']}&completion_date={TODAY}")
+        backup = client.get("/export/backup.json").content
+
+        # New-device divergence: an extra task that must NOT survive restore.
+        create_task(client, name="Doomed local task")
+
+        resp = self._restore(client, backup)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["restored"] is True
+        assert body["tasks"] == 1
+        assert body["completions"] == 1
+
+        names = [x["name"] for x in client.get("/tasks").json()]
+        assert names == ["Transferred task"]
+        comps = client.get(f"/completions?start={TODAY}&end={TODAY}").json()
+        assert len(comps) == 1
+
+    def test_restore_includes_reading_books(self, client):
+        client.post("/reading/books", json={"title": "Moved Book", "total_pages": 100})
+        backup = client.get("/export/backup.json").content
+        resp = self._restore(client, backup)
+        assert resp.status_code == 200
+        assert resp.json()["reading_books"] == 1
+        titles = [b["title"] for b in client.get("/reading/books").json()]
+        assert titles == ["Moved Book"]
+
+    def test_restore_rejects_invalid_json(self, client):
+        resp = self._restore(client, b"not json {")
+        assert resp.status_code == 400
+
+    def test_restore_rejects_unsupported_schema_version(self, client):
+        resp = self._restore(client, json.dumps({"schema_version": 99}).encode())
+        assert resp.status_code == 400
+        # Nothing was deleted by the rejected restore.
+        create_task(client, name="Still here")
+        assert len(client.get("/tasks").json()) == 1
+
+    def test_restore_writes_safety_copy_next_to_db(self, client):
+        """The pre-restore safety .db lands beside the DB in use (honors patched path)."""
+        create_task(client, name="Before restore")
+        backup = client.get("/export/backup.json").content
+        assert self._restore(client, backup).status_code == 200
+        backups_dir = db_module.DB_PATH.parent / "backups"
+        copies = list(backups_dir.glob("pre-restore-*.db"))
+        assert len(copies) == 1
+
+
+# ---------------------------------------------------------------------------
+# Date-cell text overrides (P9.1)
+# ---------------------------------------------------------------------------
+
+class TestDateCellOverrides:
+    """CRUD + backup/restore for per task/date text-cell overrides."""
+
+    def test_upsert_creates_override(self, client):
+        t = create_task(client)
+        resp = client.put(f"/date-cell-overrides/{t['id']}/{TODAY}", params={"text": "Dentist"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["mode"] == "text"
+        assert body["text"] == "Dentist"
+
+    def test_list_returns_overrides_in_range(self, client):
+        t = create_task(client)
+        client.put(f"/date-cell-overrides/{t['id']}/{TODAY}", params={"text": "note"})
+        rows = client.get(f"/date-cell-overrides?start={TODAY}&end={TODAY}").json()
+        assert rows == [{"task_id": t["id"], "date": TODAY, "mode": "text", "text": "note"}]
+
+    def test_list_excludes_out_of_range(self, client):
+        t = create_task(client)
+        client.put(f"/date-cell-overrides/{t['id']}/{YESTERDAY}", params={"text": "x"})
+        rows = client.get(f"/date-cell-overrides?start={TODAY}&end={TODAY}").json()
+        assert rows == []
+
+    def test_upsert_updates_existing_text(self, client):
+        t = create_task(client)
+        client.put(f"/date-cell-overrides/{t['id']}/{TODAY}", params={"text": "first"})
+        client.put(f"/date-cell-overrides/{t['id']}/{TODAY}", params={"text": "second"})
+        rows = client.get(f"/date-cell-overrides?start={TODAY}&end={TODAY}").json()
+        assert len(rows) == 1
+        assert rows[0]["text"] == "second"
+
+    def test_empty_text_keeps_override_row(self, client):
+        """Unlike cell notes, empty text stays in text mode intentionally."""
+        t = create_task(client)
+        client.put(f"/date-cell-overrides/{t['id']}/{TODAY}", params={"text": "something"})
+        resp = client.put(f"/date-cell-overrides/{t['id']}/{TODAY}", params={"text": ""})
+        assert resp.status_code == 200
+        rows = client.get(f"/date-cell-overrides?start={TODAY}&end={TODAY}").json()
+        assert len(rows) == 1
+        assert rows[0]["text"] == ""
+
+    def test_delete_restores_checkbox_mode(self, client):
+        t = create_task(client)
+        client.put(f"/date-cell-overrides/{t['id']}/{TODAY}", params={"text": "temp"})
+        resp = client.delete(f"/date-cell-overrides/{t['id']}/{TODAY}")
+        assert resp.status_code == 200
+        assert resp.json()["deleted"] is True
+        assert client.get(f"/date-cell-overrides?start={TODAY}&end={TODAY}").json() == []
+
+    def test_delete_missing_override_404(self, client):
+        t = create_task(client)
+        assert client.delete(f"/date-cell-overrides/{t['id']}/{TODAY}").status_code == 404
+
+    def test_upsert_unknown_task_404(self, client):
+        assert client.put(f"/date-cell-overrides/9999/{TODAY}", params={"text": "x"}).status_code == 404
+
+    def test_upsert_invalid_date_422(self, client):
+        t = create_task(client)
+        assert client.put(f"/date-cell-overrides/{t['id']}/not-a-date", params={"text": "x"}).status_code == 422
+
+    def test_completion_preserved_while_overridden(self, client):
+        """Converting a completed cell to text hides but keeps the completion."""
+        t = create_task(client)
+        client.post(f"/completions?task_id={t['id']}&completion_date={TODAY}")
+        client.put(f"/date-cell-overrides/{t['id']}/{TODAY}", params={"text": "text cell"})
+        comps = client.get(f"/completions?start={TODAY}&end={TODAY}").json()
+        assert len(comps) == 1  # untouched
+        client.delete(f"/date-cell-overrides/{t['id']}/{TODAY}")
+        comps = client.get(f"/completions?start={TODAY}&end={TODAY}").json()
+        assert len(comps) == 1  # visible checkbox state restored from this
+
+    def test_backup_includes_date_cell_overrides(self, client):
+        t = create_task(client)
+        client.put(f"/date-cell-overrides/{t['id']}/{TODAY}", params={"text": "kept"})
+        data = client.get("/export/backup.json").json()
+        assert data["schema_version"] == 5
+        assert len(data["date_cell_overrides"]) == 1
+        assert data["date_cell_overrides"][0]["text"] == "kept"
+
+    def test_restore_roundtrip_preserves_overrides(self, client):
+        t = create_task(client)
+        client.put(f"/date-cell-overrides/{t['id']}/{TODAY}", params={"text": "survives"})
+        backup = client.get("/export/backup.json").content
+        client.delete(f"/date-cell-overrides/{t['id']}/{TODAY}")
+        resp = client.post(
+            "/restore/backup.json",
+            files={"file": ("b.json", backup, "application/json")},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["date_cell_overrides"] == 1
+        rows = client.get(f"/date-cell-overrides?start={TODAY}&end={TODAY}").json()
+        assert rows[0]["text"] == "survives"
+
+    def test_restore_v4_backup_without_overrides_section(self, client):
+        """Older backups (no date_cell_overrides key) restore as empty."""
+        t = create_task(client)
+        backup = client.get("/export/backup.json").json()
+        backup["schema_version"] = 4
+        backup.pop("date_cell_overrides")
+        resp = client.post(
+            "/restore/backup.json",
+            files={"file": ("old.json", json.dumps(backup).encode(), "application/json")},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["date_cell_overrides"] == 0
+        assert client.get(f"/date-cell-overrides?start={TODAY}&end={TODAY}").json() == []
+
+    def test_finished_task_keeps_override(self, client):
+        """Status changes never delete overrides (Part J)."""
+        t = create_task(client)
+        client.put(f"/date-cell-overrides/{t['id']}/{TODAY}", params={"text": "history"})
+        client.patch(f"/tasks/{t['id']}", params={"end_date": TODAY})
+        client.patch(f"/tasks/{t['id']}", params={"status": "hiatus"})
+        rows = client.get(f"/date-cell-overrides?start={TODAY}&end={TODAY}").json()
+        assert rows[0]["text"] == "history"
