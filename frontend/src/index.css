@@ -40,14 +40,19 @@
   --muted:        #555;      /* meta labels, secondary text                 */
   --muted-2:      #888;      /* action buttons, modal close, icon hints     */
 
-  /* Accent (selection blue) */
-  --accent:       #3a7bd5;   /* selected cell ring                          */
-  --accent-soft:  #e8f0fe;   /* selected cell fill                          */
+  /* Blue accent system — links, selected cells, focus, active navigation. */
+  --accent-blue:        #3a7bd5;
+  --accent-blue-strong: #245fa8;
+  --accent-blue-soft:   #e8f0fe;
+  --focus-blue:         var(--accent-blue);
+  --selection-blue:     var(--accent-blue);
+  --accent:             var(--accent-blue);       /* compatibility alias */
+  --accent-soft:        var(--accent-blue-soft);  /* compatibility alias */
 
   /* Urgency scale */
-  --urg-low:      #555;      /* urgency 0–2 (same value as --muted)         */
-  --urg-mid:      #b36a00;   /* urgency 3–5                                 */
-  --urg-hi:       #c84800;   /* urgency 6–7                                 */
+  --urg-low:      #2e7d32;   /* low urgency / safe                          */
+  --urg-mid:      #b36a00;   /* noticeable urgency                          */
+  --urg-hi:       #c84800;   /* high urgency                                */
   --urg-crit:     #b71c1c;   /* urgency 8–10 / error state                  */
   --crit-bg:      #fff4f4;   /* urgency-critical row background             */
 
@@ -161,7 +166,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--ink, #14140f);
+  background: #070707;
   overflow: hidden;
 }
 
@@ -176,22 +181,25 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   text-align: center;
+  padding: 24px;
 }
 
 .loading-title {
   font-weight: 700;
-  font-size: 20px;
-  letter-spacing: 0.18em;
+  font-size: 24px;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
   color: #fff;
+  text-shadow: 0 0 18px rgba(255, 255, 255, 0.08);
 }
 
 .loading-subtitle {
-  font-size: 12px;
-  letter-spacing: 0.06em;
-  color: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
 }
 
 /* App product identity zone — title + tagline stacked */
@@ -251,6 +259,15 @@ body {
   color: rgba(255, 255, 255, 0.85);
 }
 
+.tab:focus {
+  outline: none;
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--focus-blue);
+  outline-offset: 2px;
+}
+
 .tab:disabled {
   opacity: 0.3;
   cursor: not-allowed;
@@ -307,6 +324,15 @@ body {
 
 .sheet-tab:hover:not(.sheet-tab-active) {
   background: rgba(0, 0, 0, 0.05);
+}
+
+.sheet-tab:focus {
+  outline: none;
+}
+
+.sheet-tab:focus-visible {
+  outline: 2px solid var(--focus-blue);
+  outline-offset: -2px;
 }
 
 /* Active tab: paper fill connected to the sheet above (via top overlap),
@@ -784,22 +810,31 @@ thead .meta-col {
    ---------------------------------------------------------------------- */
 
 /* Urgency color ladder (P4.0B). Calm at the bottom, escalating restraint upward:
-   none/low are plain muted text, noticeable is a subtle amber (no bold), high is
-   a semibold orange, and only critical uses red + a faint tinted cell. Pressure
-   V2 already yields far fewer top-band rows, so the grid stays calm overall. */
+   none is neutral, low is safe green, noticeable is amber, high is orange, and
+   only critical uses red + a faint tinted cell. Pressure V2 already yields far
+   fewer top-band rows, so the grid stays calm overall. */
 .urg-none       { color: var(--muted-2); }
-.urg-low        { color: var(--urg-low); }
+.urg-low        { color: var(--urg-low); font-weight: 600; }
 .urg-noticeable { color: var(--urg-mid); }
 .urg-high       { color: var(--urg-hi); font-weight: 600; }
 .urg-critical   { color: var(--urg-crit); font-weight: 700; background: var(--crit-bg); }
 
 /* UI-11: Inset left bar for urgency cells — box-shadow has no layout footprint. */
+.col-urg.urg-low        { box-shadow: inset 3px 0 0 var(--urg-low); }
 .col-urg.urg-noticeable { box-shadow: inset 3px 0 0 var(--urg-mid); }
 .col-urg.urg-high       { box-shadow: inset 3px 0 0 var(--urg-hi); }
 .col-urg.urg-critical   { box-shadow: inset 3px 0 0 var(--urg-crit); }
 
-/* UI-11: Overdue days emphasis — fires when days_since >= interval_days. */
-.col-days.days-overdue  { color: var(--urg-mid); font-weight: 600; }
+/* Days since last done — raw recency, not weighted pressure. */
+.col-days.days-empty      { color: var(--muted-2); font-weight: 400; }
+.col-days.days-fresh      { color: var(--urg-low); font-weight: 600; }
+.col-days.days-recent     { color: var(--muted); font-weight: 500; }
+.col-days.days-aging      { color: var(--urg-mid); font-weight: 600; }
+.col-days.days-stale      { color: var(--urg-hi); font-weight: 600; }
+.col-days.days-very-stale { color: var(--urg-crit); font-weight: 700; }
+
+/* UI-11: Overdue marker keeps weight only; days age band controls hue. */
+.col-days.days-overdue  { font-weight: 700; }
 
 /* -------------------------------------------------------------------------
    Grid cell text hierarchy (UI-04)
@@ -1555,7 +1590,7 @@ thead .meta-col {
 .ws-stat-value.dash-stat-urg.urg-critical { color: var(--urg-crit); background: none; }
 .ws-stat-value.dash-stat-urg.urg-high     { color: var(--urg-hi);   background: none; }
 .ws-stat-value.dash-stat-urg.urg-noticeable { color: var(--urg-mid); background: none; }
-.ws-stat-value.dash-stat-urg.urg-low      { color: var(--ink);       background: none; }
+.ws-stat-value.dash-stat-urg.urg-low      { color: var(--urg-low);   background: none; }
 
 /* Dimmed stat cell — for unavailable metrics */
 .ws-stat-cell--dim .ws-stat-value {
@@ -1590,7 +1625,7 @@ thead .meta-col {
 .dash-microbar-fill--urg-critical   { background: var(--urg-crit); }
 .dash-microbar-fill--urg-high       { background: var(--urg-hi); }
 .dash-microbar-fill--urg-noticeable { background: var(--urg-mid); }
-.dash-microbar-fill--urg-low        { background: var(--muted-2); }
+.dash-microbar-fill--urg-low        { background: var(--urg-low); }
 .dash-microbar-fill--urg-none       { background: var(--hair); }
 
 /* Urgency cell: number + microbar stacked vertically, or side-by-side */
@@ -5744,6 +5779,9 @@ select.task-modal-input {
   color: var(--ink-2);
   padding: 3px 0;
 }
+.settings-switch-row--inline {
+  justify-content: flex-end;
+}
 .settings-switch-input {
   position: absolute;
   opacity: 0;
@@ -5773,7 +5811,7 @@ select.task-modal-input {
 }
 .settings-switch-input:checked + .settings-switch { background: var(--accent); }
 .settings-switch-input:checked + .settings-switch .settings-switch-thumb { transform: translateX(14px); }
-.settings-switch-input:focus-visible + .settings-switch { outline: 2px solid var(--accent); outline-offset: 1px; }
+.settings-switch-input:focus-visible + .settings-switch { outline: 2px solid var(--focus-blue); outline-offset: 1px; }
 .settings-switch-label { user-select: none; }
 
 /* ===========================================================================

@@ -38,6 +38,21 @@ export function urgencyClass(u) {
   return 'urg-' + urgencyBandKey(u);
 }
 
+export function daysBandKey(days) {
+  if (days === null || days === undefined || days === '') return 'empty';
+  const value = Number(days);
+  if (!Number.isFinite(value) || value < 0) return 'empty';
+  if (value <= 1) return 'fresh';
+  if (value <= 6) return 'recent';
+  if (value <= 13) return 'aging';
+  if (value <= 29) return 'stale';
+  return 'very-stale';
+}
+
+export function daysClass(days) {
+  return 'days-' + daysBandKey(days);
+}
+
 // Human-readable band label (Critical / High / Noticeable / Low / None).
 export function urgencyLabel(u) {
   const key = urgencyBandKey(u);

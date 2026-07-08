@@ -4,7 +4,7 @@ import DateCell from './DateCell.jsx';
 import LinkifiedText from './LinkifiedText.jsx';
 import LinkPopover from './LinkPopover.jsx';
 import { spliceMarkdownLink, hasLinks, extractLinks, normalizeSafeUrl } from '../linkUtils.js';
-import { urgencyClass, urgencyReason } from '../urgency.js';
+import { daysClass, urgencyClass, urgencyReason } from '../urgency.js';
 
 function displayStatus(task) {
   if (task.is_ended) return 'Finished';
@@ -315,6 +315,9 @@ export default function TaskRow({
     .filter(Boolean).join(' ');
 
   const noteLinks = hasLinks(task.notes) ? extractLinks(task.notes) : [];
+  const daysVisualClass = isPaused || isScheduled || isEnded
+    ? 'days-empty'
+    : daysClass(task.days_since);
 
   function handleBadgeClick(e) {
     e.stopPropagation();
@@ -372,7 +375,7 @@ export default function TaskRow({
           onCommitTextEdit={onCommitTextEdit} onCancelTextEdit={onCancelTextEdit} />
       </td>
       <td className="meta-col scroll-meta-col col-freq" style={cs('col-freq')}>{task.interval_days}</td>
-      <td className={`meta-col scroll-meta-col col-days${isOverdue ? ' days-overdue' : ''}`} style={cs('col-days')}>{isPaused || isScheduled || isEnded ? '—' : task.days_since}</td>
+      <td className={`meta-col scroll-meta-col col-days ${daysVisualClass}${isOverdue ? ' days-overdue' : ''}`} style={cs('col-days')}>{isPaused || isScheduled || isEnded ? '—' : task.days_since}</td>
       <td className="meta-col scroll-meta-col col-notes" title={task.notes} style={cs('col-notes')}>
         <div className="col-notes-inner">
           <span className="notes-text"><LinkifiedText text={task.notes || ''} /></span>

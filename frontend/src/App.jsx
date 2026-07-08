@@ -72,7 +72,7 @@ export default function App() {
         <div className="app-topbar-content">
           <div className="app-identity">
             <span className="app-title">TaskManager</span>
-            <span className="app-tagline">Pressure Tracker</span>
+            <span className="app-tagline">Local Workspace</span>
           </div>
           {/* Utility/tool views — not primary sheets. */}
           <nav className="app-utility-nav" aria-label="Tools">
