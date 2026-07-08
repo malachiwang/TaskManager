@@ -94,6 +94,9 @@ pyinstaller \
   --paths "$PROJECT_ROOT" \
   --collect-submodules backend \
   --noconfirm \
+  --add-data "$PROJECT_ROOT/PRIVACY.md:." \
+  --add-data "$PROJECT_ROOT/ACCESSIBILITY.md:." \
+  --add-data "$PROJECT_ROOT/TERMS.md:." \
   --hidden-import uvicorn.logging \
   --hidden-import uvicorn.loops \
   --hidden-import uvicorn.loops.auto \

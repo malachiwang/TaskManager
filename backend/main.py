@@ -12,6 +12,7 @@ import io
 import json
 import re
 import sqlite3
+import sys
 from pathlib import Path
 from collections import defaultdict
 from contextlib import asynccontextmanager
@@ -23,7 +24,8 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
-from backend.database import DB_PATH, get_connection, init_db
+from backend import database as db_config
+from backend.database import get_connection, init_db
 from backend.logic import (
     calculate_days_since,
     calculate_effective_last_done,
@@ -86,6 +88,9 @@ def _normalize_date_override(value: Optional[str]) -> Optional[str]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Log the resolved DB location so dev/packaged runs are unambiguous
+    # (overridable via TASKOS_DB_PATH — see backend/database.py).
+    print(f"TaskManager backend — SQLite database: {db_config.DB_PATH}", flush=True)
     init_db()
     yield
 
@@ -1483,7 +1488,9 @@ def delete_archive(archive_id: int):
 # Project docs (Privacy, Accessibility, Terms)
 # ---------------------------------------------------------------------------
 
-_DOCS_ROOT = Path(__file__).parent.parent
+# Project root in dev; PyInstaller extraction dir (sys._MEIPASS) in the packaged
+# sidecar, where build-sidecar.sh bundles the policy .md files via --add-data.
+_DOCS_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).parent.parent))
 _ALLOWED_DOCS: dict[str, str] = {
     "privacy":       "PRIVACY.md",
     "accessibility": "ACCESSIBILITY.md",
@@ -1650,7 +1657,7 @@ async def restore_backup(file: UploadFile = File(...)):
     Before overwriting anything, a safety copy of the current DB is written to
     <db-dir>/backups/pre-restore-<timestamp>.db using the SQLite backup API.
 
-    Supported schema_versions: 1, 2, 3.
+    Supported schema_versions: 1, 2, 3, 4.
     All existing rows are deleted and replaced with backup data in a single
     transaction; if the insert phase fails the transaction rolls back and the
     safety copy lets you recover manually.
@@ -1679,12 +1686,14 @@ async def restore_backup(file: UploadFile = File(...)):
     reading_books_data = payload.get("reading_books", [])
     reading_entries_data = payload.get("reading_entries", [])
 
-    # Safety backup before any writes.
-    backup_dir = DB_PATH.parent / "backups"
+    # Safety backup before any writes. Resolved via the database module so the
+    # copy always sits next to the DB actually in use (TASKOS_DB_PATH included).
+    db_path = db_config.DB_PATH
+    backup_dir = db_path.parent / "backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
     safety_path = backup_dir / f"pre-restore-{datetime.now().strftime('%Y%m%d-%H%M%S')}.db"
-    if DB_PATH.exists():
-        src = sqlite3.connect(str(DB_PATH))
+    if db_path.exists():
+        src = sqlite3.connect(str(db_path))
         dst = sqlite3.connect(str(safety_path))
         src.backup(dst)
         dst.close()

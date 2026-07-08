@@ -156,6 +156,20 @@ export async function downloadExportBackup() {
   await downloadBlob(buildExportBackupUrl(), 'taskos-backup.json');
 }
 
+// Restore the full workspace from a JSON backup produced by the export above.
+// Replaces ALL local data (the backend writes a pre-restore safety .db first).
+export async function restoreBackup(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch(`${BASE}/restore/backup.json`, { method: 'POST', body: formData });
+  if (!res.ok) {
+    let detail = `restoreBackup failed: ${res.status}`;
+    try { const b = await res.json(); if (b.detail) detail = b.detail; } catch {}
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
 export async function downloadExportSheet(startDate, endDate) {
   await downloadBlob(buildExportSheetUrl(startDate, endDate), 'taskos-sheet.csv');
 }

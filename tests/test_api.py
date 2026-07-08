@@ -8,6 +8,7 @@ Run with: pytest tests/test_api.py -v
 """
 import csv
 import io
+import json
 import sqlite3
 from datetime import date, timedelta
 
@@ -2835,3 +2836,67 @@ class TestPatchTaskJsonBody:
         resp = client.patch(f"/tasks/{t['id']}", params={"end_date": TODAY})
         assert resp.status_code == 200
         assert resp.json()["end_date"] == TODAY
+
+
+# ---------------------------------------------------------------------------
+# Restore from backup (P9.0) — full-workspace overwrite restore
+# ---------------------------------------------------------------------------
+
+class TestRestoreBackup:
+    """POST /restore/backup.json — the device-transfer restore path."""
+
+    def _restore(self, client, payload_bytes, filename="backup.json"):
+        return client.post(
+            "/restore/backup.json",
+            files={"file": (filename, payload_bytes, "application/json")},
+        )
+
+    def test_restore_roundtrip_replaces_workspace(self, client):
+        # Old-device state: one task with a completion.
+        t = create_task(client, name="Transferred task", priority=8)
+        client.post(f"/completions?task_id={t['id']}&completion_date={TODAY}")
+        backup = client.get("/export/backup.json").content
+
+        # New-device divergence: an extra task that must NOT survive restore.
+        create_task(client, name="Doomed local task")
+
+        resp = self._restore(client, backup)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["restored"] is True
+        assert body["tasks"] == 1
+        assert body["completions"] == 1
+
+        names = [x["name"] for x in client.get("/tasks").json()]
+        assert names == ["Transferred task"]
+        comps = client.get(f"/completions?start={TODAY}&end={TODAY}").json()
+        assert len(comps) == 1
+
+    def test_restore_includes_reading_books(self, client):
+        client.post("/reading/books", json={"title": "Moved Book", "total_pages": 100})
+        backup = client.get("/export/backup.json").content
+        resp = self._restore(client, backup)
+        assert resp.status_code == 200
+        assert resp.json()["reading_books"] == 1
+        titles = [b["title"] for b in client.get("/reading/books").json()]
+        assert titles == ["Moved Book"]
+
+    def test_restore_rejects_invalid_json(self, client):
+        resp = self._restore(client, b"not json {")
+        assert resp.status_code == 400
+
+    def test_restore_rejects_unsupported_schema_version(self, client):
+        resp = self._restore(client, json.dumps({"schema_version": 99}).encode())
+        assert resp.status_code == 400
+        # Nothing was deleted by the rejected restore.
+        create_task(client, name="Still here")
+        assert len(client.get("/tasks").json()) == 1
+
+    def test_restore_writes_safety_copy_next_to_db(self, client):
+        """The pre-restore safety .db lands beside the DB in use (honors patched path)."""
+        create_task(client, name="Before restore")
+        backup = client.get("/export/backup.json").content
+        assert self._restore(client, backup).status_code == 200
+        backups_dir = db_module.DB_PATH.parent / "backups"
+        copies = list(backups_dir.glob("pre-restore-*.db"))
+        assert len(copies) == 1

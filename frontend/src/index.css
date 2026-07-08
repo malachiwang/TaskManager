@@ -4453,6 +4453,66 @@ select.task-modal-input {
   flex: 1;
 }
 
+/* Restore-from-backup confirm zone (P9.0) — explicit overwrite warning that
+   appears once a backup file is chosen; nothing is sent until confirmed. */
+.ws-restore-confirm {
+  margin: 10px 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--urg-crit);
+  background: color-mix(in srgb, var(--urg-crit) 7%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ws-restore-confirm-copy {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.ws-restore-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ws-restore-danger-btn {
+  padding: 5px 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: var(--urg-crit);
+  border: 1px solid var(--urg-crit);
+  cursor: pointer;
+  border-radius: 0;
+}
+
+.ws-restore-danger-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Restore outcome messages — always visible, never silent. */
+.ws-restore-msg {
+  margin: 8px 14px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ws-restore-msg--error {
+  border: 1px solid var(--urg-crit);
+  color: var(--urg-crit);
+}
+
+.ws-restore-msg--ok {
+  border: 1px solid var(--good);
+  color: var(--ink);
+}
+
 .ws-backup-btn {
   flex-shrink: 0;
   white-space: nowrap;

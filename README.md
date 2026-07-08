@@ -78,6 +78,23 @@ Run the backend from the repository root:
 python -m uvicorn backend.main:app --reload --port 8000
 ```
 
+### Recommended: keep the dev database outside synced folders
+
+By default the dev database is `taskos.db` at the repository root. If your
+repository lives inside a synced folder (iCloud Drive, Dropbox, …), the sync
+daemon can stall SQLite's file locking and make the backend appear to hang.
+Point the backend at a plain local path instead:
+
+```bash
+mkdir -p "$HOME/.taskmanager"
+TASKOS_DB_PATH="$HOME/.taskmanager/taskos.db" \
+  python -m uvicorn backend.main:app --reload --port 8000
+```
+
+To migrate an existing dev database, stop the backend first, then copy
+`taskos.db` to the new location. Nothing is moved or deleted automatically;
+the backend prints the database path it is using at startup.
+
 Run the frontend:
 
 ```bash
@@ -94,11 +111,38 @@ npm run build
 
 The Vite dev server proxies `/api/*` to `http://localhost:8000`.
 
-## Backup And Restore Caveat
+## Backup, Restore, And Moving To Another Device
 
 Use Settings -> Data & Backup before bulk edits, imports, or risky cleanup.
 Backups are snapshots of local data, not a cloud safety net. Verify important
 exports before deleting or replacing your working database.
+
+To move your workspace to another device: export a backup JSON on the old
+device, then restore it in Settings -> Data & Backup on the new device. The
+full walkthrough — including exactly what transfers and what stays local — is
+in [docs/TRANSFER.md](docs/TRANSFER.md).
+
+**Restore overwrites the current workspace** on the restoring device. A safety
+copy of the current database is written automatically before any restore, and
+UI preferences (column widths, dashboard toggles, theme, shortcuts) are
+local-only and never included in backups.
+
+## Packaged Desktop App
+
+The app can be packaged as a native desktop app (Tauri shell + bundled Python
+backend sidecar). In the packaged app the database lives in the platform
+app-data directory (e.g. `~/Library/Application Support/com.taskos.desktop/`
+on macOS) — outside any synced folder and separate from the dev database.
+
+Packaging build (see `scripts/build-sidecar.sh`):
+
+```bash
+./scripts/build-sidecar.sh                # bundle the backend sidecar
+npm --prefix frontend run tauri:build    # build the desktop app
+```
+
+Packaged releases still need end-to-end release validation before public
+distribution.
 
 ## Current Limitations
 

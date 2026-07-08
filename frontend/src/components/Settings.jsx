@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect } from 'react';
-import { downloadExportBackup, fetchDoc } from '../api.js';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { downloadExportBackup, restoreBackup, fetchDoc } from '../api.js';
 import {
   KEYBINDS, KB_GROUP_ORDER, FIXED_SHORTCUTS,
   loadKbOverrides, writeKbOverrides, buildResolvedFromOverrides,
@@ -66,6 +66,44 @@ export default function Settings() {
   const [quickJumpEnabled, setQuickJumpEnabled] = useState(() => loadSettings().quickJumpEnabled  ?? true);
   const [savedMsg, setSavedMsg]               = useState(false);
   const [colResetMsg, setColResetMsg]         = useState(false);
+
+  // Restore-from-backup flow (P9.0). A selected file arms an explicit
+  // confirmation step — nothing is sent to the backend until the user
+  // confirms the overwrite warning.
+  const restoreInputRef = useRef(null);
+  const [restoreFile, setRestoreFile]     = useState(null);
+  const [restoreBusy, setRestoreBusy]     = useState(false);
+  const [restoreResult, setRestoreResult] = useState(null);
+  const [restoreError, setRestoreError]   = useState('');
+
+  function handleRestoreFilePicked(e) {
+    const file = e.target.files?.[0] ?? null;
+    setRestoreFile(file);
+    setRestoreResult(null);
+    setRestoreError('');
+    // Allow re-picking the same file later.
+    e.target.value = '';
+  }
+
+  function cancelRestore() {
+    setRestoreFile(null);
+    setRestoreError('');
+  }
+
+  async function confirmRestore() {
+    if (!restoreFile || restoreBusy) return;
+    setRestoreBusy(true);
+    setRestoreError('');
+    try {
+      const result = await restoreBackup(restoreFile);
+      setRestoreResult(result);
+      setRestoreFile(null);
+    } catch (err) {
+      setRestoreError(err?.message || 'Restore failed.');
+    } finally {
+      setRestoreBusy(false);
+    }
+  }
 
   // Dashboard display/recommendation preferences (localStorage-only, P6.0A-fix6).
   const [dashPrefs, setDashPrefs] = useState(loadDashPrefs);
@@ -477,8 +515,10 @@ export default function Settings() {
               <div className="ws-ctrl-info">
                 <span className="ws-ctrl-label">Export full backup</span>
                 <span className="ws-ctrl-desc">
-                  JSON with all tasks, completions, and archive snapshots. Use before CSV imports
-                  or bulk edits you may want to reverse.
+                  One JSON file with all tasks, completions, statuses, notes, cell notes,
+                  reading books and checkpoints, and archive snapshots. Use it before bulk
+                  edits or imports — and to move your workspace to another device. Store the
+                  file somewhere safe; it is your data.
                 </span>
               </div>
               <button className="button-secondary ws-backup-btn" onClick={() => downloadExportBackup()}>
@@ -486,12 +526,78 @@ export default function Settings() {
               </button>
             </div>
 
+            {/* Restore from backup (P9.0) — explicit confirm before overwrite */}
+            <div className="ws-ctrl-row">
+              <div className="ws-ctrl-info">
+                <span className="ws-ctrl-label">Restore from backup</span>
+                <span className="ws-ctrl-desc">
+                  Load a backup JSON exported above — for device transfer, restore it on the
+                  new device. <strong>Restoring replaces all current tasks, completions,
+                  reading data, notes, and archives</strong> with the backup&rsquo;s contents.
+                  A safety copy of the current database is saved automatically first.
+                </span>
+              </div>
+              <div className="ws-ctrl-action">
+                <input
+                  ref={restoreInputRef}
+                  type="file"
+                  accept=".json,application/json"
+                  style={{ display: 'none' }}
+                  onChange={handleRestoreFilePicked}
+                />
+                <button
+                  className="button-secondary"
+                  onClick={() => restoreInputRef.current?.click()}
+                  disabled={restoreBusy}
+                >
+                  Choose backup file…
+                </button>
+              </div>
+            </div>
+
+            {restoreFile && (
+              <div className="ws-restore-confirm" role="alertdialog" aria-label="Confirm restore">
+                <div className="ws-restore-confirm-copy">
+                  Restore <strong>{restoreFile.name}</strong>? This <strong>overwrites your
+                  current workspace</strong> — every task, completion, reading book, note, and
+                  archive is replaced by the backup&rsquo;s contents. A pre-restore safety copy
+                  of the current database is written first. Keep the backup file until you have
+                  verified the result.
+                </div>
+                <div className="ws-restore-confirm-actions">
+                  <button className="button-secondary" onClick={cancelRestore} disabled={restoreBusy}>
+                    Cancel
+                  </button>
+                  <button className="ws-restore-danger-btn" onClick={confirmRestore} disabled={restoreBusy}>
+                    {restoreBusy ? 'Restoring…' : 'Restore & overwrite'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {restoreError && (
+              <div className="ws-restore-msg ws-restore-msg--error" role="alert">
+                Restore failed: {restoreError} Your current data was not replaced.
+              </div>
+            )}
+            {restoreResult && (
+              <div className="ws-restore-msg ws-restore-msg--ok" role="status">
+                Restore complete — {restoreResult.tasks} tasks, {restoreResult.completions} completions,{' '}
+                {restoreResult.reading_books} reading books, {restoreResult.archive_snapshots} archives
+                restored. Switch to the Tasks sheet to load the restored data.
+              </div>
+            )}
+
             <div className="ws-ctrl-row">
               <div className="ws-ctrl-info">
                 <span className="ws-ctrl-label">Storage location</span>
                 <span className="ws-ctrl-desc">
-                  All task data lives in <code>taskos.db</code> — a local SQLite file in the project
-                  root. Gitignored, never committed. UI preferences are stored in browser localStorage.
+                  All task data lives in <code>taskos.db</code> — a local SQLite file (project
+                  root in development, app-data directory in the packaged app; overridable with
+                  the <code>TASKOS_DB_PATH</code> environment variable). Gitignored, never
+                  committed. UI preferences (theme, column widths, dashboard toggles, shortcuts)
+                  stay in this browser&rsquo;s localStorage and are <em>not</em> included in
+                  backups — they do not transfer between devices.
                 </span>
               </div>
               <div className="ws-ctrl-action">
