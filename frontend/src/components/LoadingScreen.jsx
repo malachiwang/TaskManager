@@ -5,14 +5,14 @@ import TopBarNetwork from './TopBarNetwork.jsx';
 // centered app name. It is intentionally minimal (no long intro animation) and
 // only appears while the app is confirming the backend is reachable. It respects
 // reduced-motion via TopBarNetwork (which renders a static field in that case).
-export default function LoadingScreen({ subtitle = 'Loading workspace…' }) {
+export default function LoadingScreen({ subtitle = 'Loading local workspace' }) {
   return (
     <div className="loading-screen" role="status" aria-live="polite">
       <div className="loading-network">
         <TopBarNetwork />
       </div>
       <div className="loading-content">
-        <div className="loading-title">TaskManager</div>
+        <div className="loading-title" aria-label="TaskManager">TASKMANAGER</div>
         <div className="loading-subtitle">{subtitle}</div>
       </div>
     </div>

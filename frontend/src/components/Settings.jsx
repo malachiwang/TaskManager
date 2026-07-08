@@ -369,13 +369,15 @@ export default function Settings() {
                 </span>
               </div>
               <div className="ws-ctrl-action">
-                <label className="settings-checkbox-label">
+                <label className="settings-switch-row settings-switch-row--inline">
                   <input
                     type="checkbox"
+                    className="settings-switch-input"
                     checked={quickJumpEnabled}
                     onChange={handleQuickJumpToggle}
                   />
-                  <span>{quickJumpEnabled ? 'Enabled' : 'Disabled'}</span>
+                  <span className="settings-switch"><span className="settings-switch-thumb" /></span>
+                  <span className="settings-switch-label">{quickJumpEnabled ? 'Enabled' : 'Disabled'}</span>
                 </label>
               </div>
             </div>
@@ -386,7 +388,7 @@ export default function Settings() {
                   Drag column edges to resize. Widths are saved in browser storage per device.
                   {colResetMsg && (
                     <span className="settings-saved" style={{ display: 'block', marginTop: '4px' }}>
-                      Widths cleared. Switch to the Grid tab to see the updated layout.
+                      Widths cleared. Switch to the Tasks sheet to see the updated layout.
                     </span>
                   )}
                 </span>

@@ -1,277 +1,123 @@
-# TaskManagementOS
+# TaskManager
 
-A local-first, spreadsheet-like task-pressure tracking system.
+TaskManager is a local-first spreadsheet-style task, habit, reading, pressure,
+dashboard, and reports tracker.
 
-## What it is
+It is built for people who want a dense working grid instead of a card board:
+recurring tasks, date-cell completion tracking, urgency scoring, reading
+progress, retrospective reports, and local backup/restore in one desktop/web-dev
+workspace.
 
-A personal operating system for task pressure and neglect prevention.
-Replaces a fragile Google Sheets checkbox workflow with a persistent backend
-that automatically computes last-done, days-since, urgency, and history.
+## What It Is For
 
-## What it is not
+- Tracking repeated tasks and habits in a spreadsheet-like grid
+- Seeing what has gone stale without manually scanning every row
+- Reviewing completion history and pressure changes over time
+- Keeping reading progress and checkpoints beside task work
+- Working locally without accounts, sync, or hosted storage
 
-- Not a generic todo app
-- Not a SaaS product
-- Not an AI agent
-- Not a calendar or notification system
+## Core Features
 
----
+- Spreadsheet task grid with editable task, subtask, section, category, notes,
+  priority, interval, urgency, and days-since fields
+- Date-cell completion tracking with guarded keyboard behavior
+- Pressure and urgency scoring for stale or high-priority work
+- Reading sheet for books, current pages, and checkpoints
+- Dashboard for present-tense action planning: what to do now
+- Reports for past-tense period review
+- Archive snapshots for preserved historical views
+- Safe links and Insert Link support for task text fields
+- Local JSON backup, export, and restore tools
 
-## Project policies
+## Screenshots
 
-TaskManager is local-first: all task data lives in a local SQLite file and never
-leaves your machine unless you export it yourself. These lightweight, plain-language
-documents describe how that works and what to expect:
+Screenshots and GIFs are planned. Suggested public captures:
 
-- [Privacy](PRIVACY.md) — what is stored locally, and what is not collected
-- [Accessibility](ACCESSIBILITY.md) — current support, known gaps, ongoing effort
-- [Terms / Disclaimer](TERMS.md) — provided as-is, backups are your responsibility
+- Task grid with urgency and days color bands
+- Dashboard action cockpit
+- Reading sheet
+- Monthly report
+- Settings Data & Backup panel
 
-These are also viewable in the app under **Settings → About & Policies**.
+## Local-First Model
 
-**Backup caveat:** exports and backup files are written to local paths you choose.
-Once they leave the app, protecting them is up to you. Use
-**Settings → Data & Backup** to create a JSON backup before bulk changes.
+TaskManager stores app data in a local SQLite database. In development, the
+default database is `taskos.db` at the repository root. Data does not leave your
+machine unless you export, back up, sync the folder yourself, or package it into
+another workflow.
 
----
+Backups are local JSON files. Once an export leaves the app, protecting that
+file is your responsibility.
 
-## Development quick start
+## Development Setup
 
-Once dependencies are installed (see setup below):
-
-```bash
-./start.sh
-```
-
-- Requires `.venv` already created and Python dependencies installed
-- Requires frontend npm dependencies installed (`cd frontend && npm install`)
-- Starts backend on http://localhost:8000
-- Starts frontend on http://localhost:5173
-- Stop with Ctrl+C — backend process is cleaned up automatically
-
----
-
-## Desktop app packaging (Tauri)
-
-The app can be packaged as a native desktop app via Tauri. The FastAPI backend
-is bundled as a PyInstaller sidecar that Tauri launches automatically.
-
-### Prerequisites (one-time)
-
-```bash
-# Rust toolchain
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# Xcode command line tools (macOS)
-xcode-select --install
-
-# Python deps (includes pyinstaller)
-pip install -r requirements.txt
-
-# Node deps
-npm --prefix frontend install
-```
-
-### Packaging build sequence
-
-```bash
-# 1. Build the Python sidecar binary
-./scripts/build-sidecar.sh
-
-# 2. Build and package the Tauri app (frontend + Rust shell)
-npm --prefix frontend run tauri:build
-```
-
-The `.app` bundle is written to `src-tauri/target/release/bundle/macos/`.
-
-### Dev workflow with Tauri window (optional)
-
-Run the normal dev stack in one terminal, then open a Tauri window against it:
-
-```bash
-# Terminal 1
-./start.sh
-
-# Terminal 2
-npm --prefix frontend run tauri:dev
-```
-
-`tauri:dev` connects to the Vite dev server on port 5173. No sidecar is used in
-dev mode — the backend running via `start.sh` on port 8000 serves all requests.
-
-### Database locations
-
-| Mode | SQLite path |
-|------|-------------|
-| Dev (`./start.sh`) | `<repo-root>/taskos.db` |
-| Packaged `.app` | `~/Library/Application Support/com.taskos.desktop/taskos.db` |
-
-The packaged app never reads or writes the dev `taskos.db`. Both are gitignored.
-
-### Notes
-
-- `GET /health` — returns `{"status": "ok"}`, used for sidecar readiness polling
-- `TASKOS_DB_PATH` env var overrides the SQLite path (set by Tauri at launch)
-- `TASKOS_PORT` env var overrides the sidecar port (default: 8765)
-- `VITE_API_BASE` is set to `http://127.0.0.1:8765/api` during `tauri:build`
-- Sidecar binaries and Rust build outputs are gitignored — do not commit them
-
----
-
-## Local Setup
-
-### Requirements
+Requirements:
 
 - Python 3.11+
-- pip or a virtualenv manager
+- Node 18+
+- npm
 
-### Install dependencies
+Install backend dependencies:
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Run the backend
-
-```bash
-uvicorn backend.main:app --reload
-```
-
-API available at: http://localhost:8000
-Interactive docs: http://localhost:8000/docs
-
-### Seed fake data
-
-```bash
-python -m backend.seed
-```
-
-This inserts 5 fake tasks and sample completions into `taskos.db`.
-The database file is excluded from git via `.gitignore`.
-
-### Run tests
-
-```bash
-pytest tests/ -v
-```
-
----
-
-## Frontend Setup
-
-### Requirements
-
-- Node 18+
-
-### Install frontend dependencies
+Install frontend dependencies:
 
 ```bash
 cd frontend
 npm install
 ```
 
-### Run the frontend (dev mode)
+Run the backend from the repository root:
 
-Start the backend first, then in a separate terminal:
+```bash
+python -m uvicorn backend.main:app --reload --port 8000
+```
+
+Run the frontend:
 
 ```bash
 cd frontend
 npm run dev
 ```
 
-Frontend available at: http://localhost:5173
-
-The Vite dev server proxies `/api/*` to `http://localhost:8000` automatically.
-No CORS configuration needed.
-
-### Build for production
+Build the frontend:
 
 ```bash
 cd frontend
 npm run build
 ```
 
----
+The Vite dev server proxies `/api/*` to `http://localhost:8000`.
 
-## Project Structure
+## Backup And Restore Caveat
 
-```
-TaskManagementOS/
-├── backend/
-│   ├── __init__.py
-│   ├── database.py     # SQLite setup, table creation, migrations
-│   ├── logic.py        # Pure urgency/date functions (no DB access)
-│   ├── main.py         # FastAPI app and routes
-│   ├── server.py       # Sidecar entrypoint (packaged mode, not dev)
-│   └── seed.py         # Fake seed data for development
-├── frontend/
-│   ├── src/
-│   ├── package.json
-│   └── vite.config.js
-├── scripts/
-│   └── build-sidecar.sh  # PyInstaller sidecar build + copy to src-tauri/binaries/
-├── src-tauri/            # Tauri desktop shell (Rust) — see packaging docs
-├── tests/
-│   ├── __init__.py
-│   └── test_api.py
-├── docs/
-│   ├── PRD.md
-│   └── MVP_SCOPE.md
-├── .gitignore
-├── CLAUDE.md
-├── README.md
-├── requirements.txt
-└── start.sh
-```
+Use Settings -> Data & Backup before bulk edits, imports, or risky cleanup.
+Backups are snapshots of local data, not a cloud safety net. Verify important
+exports before deleting or replacing your working database.
 
-`taskos.db` is created automatically on first run and is gitignored.
+## Current Limitations
 
----
+- Local-first only: no accounts, hosted sync, or multi-user collaboration
+- No cloud notifications or calendar integration
+- Packaged desktop releases still need release validation
+- The grid is intentionally dense and desktop-oriented
+- Link editing stores plain text display-link syntax, not rich text
 
-## Core Concepts
+## Roadmap
 
-**Urgency formula** — asymptotic, approaches 10, never explodes:
+- Public screenshots and short workflow demos
+- Packaged app release validation
+- More import/export guardrails
+- Continued accessibility and keyboard polish
+- Focused DateCell improvements in a separate persistence-safe ticket
 
-```
-base   = f(priority)
-floor  = base / 2
-growth = 1 - exp(-2 * days_since / interval_days)
-urgency = 10 * (floor + (1 - floor) * growth)
-```
+## Policies
 
-**Effective last done** — always well-defined:
-
-```
-max(manual_override, latest_completion, created_at)
-```
-
-**Paused tasks** — visible but excluded from urgency and dashboard recommendations.
-
-**Never-done tasks** — use `created_at` as baseline; urgency still computes normally.
-
----
-
-## API Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/tasks` | List all tasks with urgency |
-| GET | `/tasks/{id}` | Single task |
-| POST | `/tasks` | Create task |
-| PATCH | `/tasks/{id}` | Update paused state, notes, priority, etc. |
-| GET | `/completions?start=&end=` | List completions in date range |
-| POST | `/completions` | Increment completion count for task/date |
-| DELETE | `/completions/{task_id}/{date}` | Clear a completion cell |
-| GET | `/dashboard` | Top urgent tasks, category summary, dormant tasks |
-
----
-
-## Never commit
-
-- `taskos.db` or any `*.db` / `*.sqlite` file
-- `.env` files or API keys
-- `venv/` or `.venv/`
-- `node_modules/`
-- Real personal data
+- [Privacy](PRIVACY.md)
+- [Accessibility](ACCESSIBILITY.md)
+- [Terms / Disclaimer](TERMS.md)
