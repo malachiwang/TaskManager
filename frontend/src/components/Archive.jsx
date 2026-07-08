@@ -626,7 +626,7 @@ export default function Archive() {
 
         {archives.length === 0 ? (
           <div className="ws-empty">
-            No archives yet. Use <strong>Archive Current Sheet</strong> in the Grid tab.
+            No archives yet. Use <strong>Archive Current Sheet</strong> on the Tasks sheet.
           </div>
         ) : (
           <ul className="ws-snap-list">
