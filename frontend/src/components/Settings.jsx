@@ -635,17 +635,17 @@ D = days_since   I = interval_days`}</pre>
             </div>
           </div>
 
-          {/* 07 About */}
+          {/* 08 About & Policies */}
           <div className="ws-frame">
             <div className="ws-frame-header">
               <span className="ws-frame-kicker">08</span>
-              <span>About</span>
+              <span>About &amp; Policies</span>
             </div>
             <div className="ws-frame-body settings-prose">
               <p>
-                <strong>TaskManager</strong> is a spreadsheet-style task pressure tracker.
-                FastAPI backend, SQLite storage, React/Vite frontend. Built as a personal
-                productivity instrument.
+                <strong>TaskManager</strong> is a local-first task, reading, and pressure
+                tracker. FastAPI backend, SQLite storage, React/Vite frontend. Built as a
+                personal productivity instrument.
               </p>
               <p style={{ marginTop: '8px' }}>
                 All data is stored in <code>taskos.db</code> at the project root. Gitignored,
@@ -656,9 +656,9 @@ D = days_since   I = interval_days`}</pre>
                 multi-user support. Current limitations are known and intentional.
               </p>
               <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <DocSection name="privacy"       label="Privacy" />
-                <DocSection name="accessibility" label="Accessibility" />
-                <DocSection name="terms"         label="Terms" />
+                <DocSection name="privacy"       label="Privacy Policy" />
+                <DocSection name="accessibility" label="Accessibility Statement" />
+                <DocSection name="terms"         label="Terms / Disclaimer" />
               </div>
             </div>
           </div>

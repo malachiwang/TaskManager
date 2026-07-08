@@ -15,6 +15,7 @@ TaskManager is a local-first desktop and browser application. All data stays on 
 - No authentication or user accounts.
 - No cloud sync of any kind.
 - No cookies beyond what your browser stores locally.
+- Your data is never sold, shared, or used for advertising.
 
 ## Network activity
 
@@ -22,7 +23,11 @@ All network traffic is localhost only. The backend API runs on `localhost:8000` 
 
 ## Backups
 
-Backup files (`.db` and `.json` exports) are written to your local disk at paths you choose. They are never uploaded anywhere.
+Backup files (`.db` and `.json` exports) are written to your local disk at paths you choose. They are never uploaded anywhere. Because you can export and move these files yourself, protecting them once they leave the app is your responsibility.
+
+## Future changes
+
+TaskManager currently has no cloud sync and no accounts. If optional sync, accounts, or any other feature that transmits data off your device is ever added, this policy will be updated to describe it before that feature ships.
 
 ## Third-party services
 

@@ -9,6 +9,7 @@ TaskManager is a personal productivity tool. The following notes describe the cu
 - **Screen reader labels**: Interactive controls include `aria-label`, `aria-haspopup`, and `aria-expanded` attributes where applicable.
 - **Color is not the sole indicator**: Urgency levels use both color and font-weight. Completion state is shown with a distinct box shape in addition to color.
 - **Contrast**: The default color scheme targets sufficient contrast for body text and key data.
+- **Reduced motion**: The animated node-and-edge network in the top bar and on the loading screen respects the `prefers-reduced-motion` system setting. When reduced motion is requested, the animation is rendered as a single static frame with no movement or cursor interaction. The network is decorative and marked `aria-hidden`.
 
 ## Known limitations
 
@@ -16,7 +17,13 @@ TaskManager is a personal productivity tool. The following notes describe the cu
 - Date cells do not have individual `aria-label` descriptions. Screen readers will announce the column header (date) and row data, but not a composed description.
 - The Paper Workstation theme uses a warm palette that may have slightly lower contrast on certain displays. Sheets Classic is the higher-contrast alternative.
 - Mobile and touch input are not supported. The app is designed for pointer + keyboard on a desktop or laptop.
-- No high-contrast or reduced-motion modes are implemented.
+- No dedicated high-contrast mode is implemented (Sheets Classic is the higher-contrast of the two themes).
+- The decorative top-bar network is a `<canvas>` element. It is `aria-hidden` and non-interactive, but it has not been reviewed against a full range of assistive technologies.
+- Focus management, color/contrast, and screen-reader labelling still need a thorough end-to-end review.
+
+## Ongoing effort
+
+Accessibility here is a good-faith, ongoing effort on a pre-public, local-first project. Nothing on this page is a claim of WCAG conformance or a completed accessibility certification.
 
 ## Reporting issues
 

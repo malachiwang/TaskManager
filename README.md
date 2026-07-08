@@ -17,6 +17,24 @@ that automatically computes last-done, days-since, urgency, and history.
 
 ---
 
+## Project policies
+
+TaskManager is local-first: all task data lives in a local SQLite file and never
+leaves your machine unless you export it yourself. These lightweight, plain-language
+documents describe how that works and what to expect:
+
+- [Privacy](PRIVACY.md) — what is stored locally, and what is not collected
+- [Accessibility](ACCESSIBILITY.md) — current support, known gaps, ongoing effort
+- [Terms / Disclaimer](TERMS.md) — provided as-is, backups are your responsibility
+
+These are also viewable in the app under **Settings → About & Policies**.
+
+**Backup caveat:** exports and backup files are written to local paths you choose.
+Once they leave the app, protecting them is up to you. Use
+**Settings → Data & Backup** to create a JSON backup before bulk changes.
+
+---
+
 ## Development quick start
 
 Once dependencies are installed (see setup below):
