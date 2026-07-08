@@ -69,14 +69,27 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
   const [linkText, setLinkText] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
   const [linkSelection, setLinkSelection] = useState({ key: 'notes', value: '', start: 0, end: 0 });
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   function set(key, val) {
     setForm((prev) => ({ ...prev, [key]: val }));
   }
 
-  function handleSubmit(e) {
+  // Await the save so a failure is shown to the user instead of the button
+  // appearing to "do nothing". On success onSave closes the modal (unmounting
+  // this component); on failure the modal stays open with the error and edits.
+  async function handleSubmit(e) {
     e.preventDefault();
-    onSave(form);
+    if (saving) return;
+    setSaveError('');
+    setSaving(true);
+    try {
+      await onSave(form);
+    } catch (err) {
+      setSaving(false);
+      setSaveError(err?.message || 'Save failed. Please try again.');
+    }
   }
 
   function fieldRef(key) {
@@ -512,11 +525,14 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
                   </span>
                 )}
                 <div className="task-modal-actions">
-                  <button type="button" className="task-modal-cancel" onClick={onClose}>
+                  {saveError && (
+                    <span className="task-modal-save-error" role="alert">{saveError}</span>
+                  )}
+                  <button type="button" className="task-modal-cancel" onClick={onClose} disabled={saving}>
                     Cancel
                   </button>
-                  <button type="submit" className="task-modal-save">
-                    {isEdit ? 'Save Changes' : 'Add Task'}
+                  <button type="submit" className="task-modal-save" disabled={saving}>
+                    {saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Add Task')}
                   </button>
                 </div>
               </>

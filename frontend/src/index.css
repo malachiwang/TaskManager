@@ -4185,6 +4185,22 @@ select.task-modal-input {
   border-color: var(--ink-2);
 }
 
+/* Disabled state for Save/Cancel while a save is in flight. */
+.task-modal-save:disabled,
+.task-modal-cancel:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Inline save-failure message — surfaces a failed save instead of the button
+   silently doing nothing. */
+.task-modal-save-error {
+  margin-right: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--urg-crit);
+}
+
 /* Delete Task trigger — low-prominence, far-left in footer */
 .task-modal-delete-btn {
   padding: 5px 12px;
