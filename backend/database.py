@@ -277,4 +277,27 @@ def init_db() -> None:
     """)
     conn.commit()
 
+    # ── Migration 9: date_cell_overrides (P9.1) — per task/date text cells ────
+    # A row here converts that exact task/date grid cell from a completion
+    # checkbox into a plain-text cell. Any existing completion row for the same
+    # task/date is preserved (hidden) while the override exists and becomes
+    # visible again if the override is removed. mode is 'text' for all rows
+    # today; the column exists so future cell modes never need a table change.
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS date_cell_overrides (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            date       TEXT    NOT NULL,
+            mode       TEXT    NOT NULL DEFAULT 'text',
+            text       TEXT    NOT NULL DEFAULT '',
+            created_at TEXT    NOT NULL,
+            updated_at TEXT    NOT NULL,
+            UNIQUE (task_id, date)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_dco_date
+            ON date_cell_overrides(date);
+    """)
+    conn.commit()
+
     conn.close()

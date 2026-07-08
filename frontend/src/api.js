@@ -201,6 +201,31 @@ export async function deleteNote(taskId, date) {
   if (!res.ok && res.status !== 404) throw new Error(`deleteNote failed: ${res.status}`);
 }
 
+// ---------------------------------------------------------------------------
+// Date-cell text overrides (P9.1) — convert a task/date cell to a text cell.
+// ---------------------------------------------------------------------------
+
+export async function fetchDateCellOverrides(start, end) {
+  const res = await fetch(`${BASE}/date-cell-overrides?start=${start}&end=${end}`);
+  if (!res.ok) throw new Error(`fetchDateCellOverrides failed: ${res.status}`);
+  return res.json();
+}
+
+export async function upsertDateCellOverride(taskId, date, text) {
+  const params = new URLSearchParams({ text });
+  const res = await fetch(`${BASE}/date-cell-overrides/${taskId}/${date}?${params}`, { method: 'PUT' });
+  if (!res.ok) throw new Error(`upsertDateCellOverride failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteDateCellOverride(taskId, date) {
+  const res = await fetch(`${BASE}/date-cell-overrides/${taskId}/${date}`, { method: 'DELETE' });
+  // 404 means the cell was already in checkbox mode — that is fine
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`deleteDateCellOverride failed: ${res.status}`);
+  }
+}
+
 export async function previewImport(file) {
   const formData = new FormData();
   formData.append('file', file);

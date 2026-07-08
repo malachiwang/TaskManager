@@ -104,7 +104,7 @@ class TestReadingBackup:
     def test_export_includes_reading(self, client):
         _book(client, title="Exported", total_pages=100, current_page=25)
         payload = client.get("/export/backup.json").json()
-        assert payload["schema_version"] == 4
+        assert payload["schema_version"] == 5
         assert any(bk["title"] == "Exported" for bk in payload["reading_books"])
         assert len(payload["reading_entries"]) >= 1
 

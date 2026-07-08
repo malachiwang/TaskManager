@@ -21,6 +21,8 @@ workspace.
 - Spreadsheet task grid with editable task, subtask, section, category, notes,
   priority, interval, urgency, and days-since fields
 - Date-cell completion tracking with guarded keyboard behavior
+- Per-cell text overrides: convert any specific date cell from a checkbox into
+  a small text cell (and back) without affecting the rest of the grid
 - Pressure and urgency scoring for stale or high-priority work
 - Reading sheet for books, current pages, and checkpoints
 - Dashboard for present-tense action planning: what to do now
@@ -151,6 +153,8 @@ distribution.
 - Packaged desktop releases still need release validation
 - The grid is intentionally dense and desktop-oriented
 - Link editing stores plain text display-link syntax, not rich text
+- CSV export/import is task-list oriented; date-cell text overrides transfer
+  via JSON backup only
 
 ## Roadmap
 
@@ -158,7 +162,6 @@ distribution.
 - Packaged app release validation
 - More import/export guardrails
 - Continued accessibility and keyboard polish
-- Focused DateCell improvements in a separate persistence-safe ticket
 
 ## Policies
 

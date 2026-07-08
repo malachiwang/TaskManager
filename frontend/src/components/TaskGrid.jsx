@@ -13,6 +13,9 @@ import {
   fetchNotes,
   upsertNote,
   reorderTasks,
+  fetchDateCellOverrides,
+  upsertDateCellOverride,
+  deleteDateCellOverride,
 } from '../api.js';
 import TaskRow from './TaskRow.jsx';
 import TaskModal from './TaskModal.jsx';
@@ -250,6 +253,12 @@ export default function TaskGrid() {
   // Cell notes — P5. Parallel map to completions: `${taskId}:${date}` → string.
   const [notes, setNotes] = useState({});
 
+  // Date-cell text overrides (P9.1) — map `${taskId}:${date}` → text. A key's
+  // presence means that cell is in text mode (empty string is a valid, empty
+  // text cell). editingOverrideCell mirrors editingTextCell for meta cells.
+  const [cellOverrides, setCellOverrides] = useState({});
+  const [editingOverrideCell, setEditingOverrideCell] = useState(null);
+
   // Column widths — stored as user overrides; missing keys fall back to DEFAULT_WIDTHS.
   const [colWidths, setColWidths] = useState(() => {
     try {
@@ -351,8 +360,11 @@ export default function TaskGrid() {
   const loadData = useCallback(() => {
     const start = dates[0];
     const end = dates[dates.length - 1];
-    return Promise.all([fetchTasks(), fetchCompletions(start, end), fetchNotes(start, end)])
-      .then(([taskList, compList, noteList]) => {
+    return Promise.all([
+      fetchTasks(), fetchCompletions(start, end), fetchNotes(start, end),
+      fetchDateCellOverrides(start, end),
+    ])
+      .then(([taskList, compList, noteList, overrideList]) => {
         setTasks(taskList);
         const map = {};
         for (const c of compList) {
@@ -364,6 +376,11 @@ export default function TaskGrid() {
           noteMap[`${n.task_id}:${n.note_date}`] = n.note;
         }
         setNotes(noteMap);
+        const overrideMap = {};
+        for (const o of overrideList) {
+          overrideMap[`${o.task_id}:${o.date}`] = o.text;
+        }
+        setCellOverrides(overrideMap);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -679,6 +696,62 @@ export default function TaskGrid() {
     }
   }, [refreshTasks]);
 
+  // ---------------------------------------------------------------------------
+  // Date-cell text override handlers (P9.1)
+  //
+  // Converting to text mode creates an (initially empty) override row and opens
+  // the inline editor. Any completion record for the cell is left untouched —
+  // hidden while the override exists, visible again after restore. Restoring
+  // checkbox mode deletes only the override row.
+  // ---------------------------------------------------------------------------
+
+  const handleConvertToText = useCallback(async (taskId, date) => {
+    try {
+      await upsertDateCellOverride(taskId, date, '');
+      setCellOverrides((prev) => ({ ...prev, [`${taskId}:${date}`]: '' }));
+      setEditingOverrideCell({ taskId, date });
+      setArmedCell(null);
+    } catch (e) {
+      console.error('convert to text cell failed:', e);
+    }
+  }, []);
+
+  const handleCommitOverrideText = useCallback(async (taskId, date, text) => {
+    setEditingOverrideCell(null);
+    const key = `${taskId}:${date}`;
+    try {
+      await upsertDateCellOverride(taskId, date, text);
+      setCellOverrides((prev) => ({ ...prev, [key]: text }));
+    } catch (e) {
+      console.error('save text cell failed:', e);
+    }
+  }, []);
+
+  const handleCancelOverrideEdit = useCallback(() => {
+    setEditingOverrideCell(null);
+  }, []);
+
+  const handleStartOverrideEdit = useCallback((taskId, date) => {
+    setEditingOverrideCell({ taskId, date });
+    setSelectedCell({ taskId, date });
+    setSelectedMetaCell(null);
+    setArmedCell(null);
+  }, []);
+
+  const handleRestoreCheckbox = useCallback(async (taskId, date) => {
+    try {
+      await deleteDateCellOverride(taskId, date);
+      setEditingOverrideCell(null);
+      setCellOverrides((prev) => {
+        const next = { ...prev };
+        delete next[`${taskId}:${date}`];
+        return next;
+      });
+    } catch (e) {
+      console.error('restore checkbox failed:', e);
+    }
+  }, []);
+
   // Archive is named by selected month (e.g. "2026-05") so it is stable
   // regardless of what day the button is clicked.
   async function handleArchive() {
@@ -730,6 +803,8 @@ export default function TaskGrid() {
   const tasksRef           = useRef([]);
   const datesRef           = useRef([]);
   const completionsRef     = useRef({});
+  const cellOverridesRef   = useRef({});
+  const editingOverrideCellRef = useRef(null);
   const modalOpenRef       = useRef(false);
   const handlersRef        = useRef({});
   const helpOpenRef        = useRef(false);
@@ -761,12 +836,14 @@ export default function TaskGrid() {
   tasksRef.current            = flatGroupedTasks;
   datesRef.current            = dates;
   completionsRef.current      = completions;
+  cellOverridesRef.current    = cellOverrides;
+  editingOverrideCellRef.current = editingOverrideCell;
   modalOpenRef.current        = modalOpen;
   helpOpenRef.current         = helpOpen;
   jumpModeRef.current           = jumpMode;
   quickJumpEnabledRef.current   = quickJumpEnabled;
   keybindsRef.current           = resolvedKb;
-  handlersRef.current           = { handleIncrement, handleClear, handleSetCount, openAdd, openEdit, setSelectedCell, closeModal, setHelpOpen, setSelectedMetaCell, setEditingTextCell, setArmedCell, setJumpMode };
+  handlersRef.current           = { handleIncrement, handleClear, handleSetCount, openAdd, openEdit, setSelectedCell, closeModal, setHelpOpen, setSelectedMetaCell, setEditingTextCell, setArmedCell, setJumpMode, setEditingOverrideCell };
 
   // Clear selectedCell when the selected task is no longer in the flat grouped list.
   // Covers: soft-delete, filter change hiding the row, search hiding the row.
@@ -922,6 +999,32 @@ export default function TaskGrid() {
       }
 
       if (!sel) return;
+
+      // Text-override cells (P9.1): Enter opens the inline text editor;
+      // Delete/Backspace and Shift+Enter are no-ops (no silent text loss —
+      // clearing/restoring is an explicit EditBar action). Arrow navigation
+      // falls through to the shared handlers below unchanged.
+      if (cellOverridesRef.current[`${sel.taskId}:${sel.date}`] !== undefined) {
+        const { setEditingOverrideCell } = handlersRef.current;
+        if ((e.key === 'Delete' || e.key === 'Backspace') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          e.preventDefault();
+          return;
+        }
+        if (matchKeybind(e, kb.DECREMENT)) {
+          e.preventDefault();
+          return;
+        }
+        if (matchKeybind(e, kb.INCREMENT)) {
+          e.preventDefault();
+          const task = tasks.find((t) => t.id === sel.taskId);
+          const disabled = !task || task.is_paused === 1
+            || sel.date > toLocalDate(new Date())
+            || (task.active_from && sel.date < task.active_from)
+            || (task.end_date && sel.date > task.end_date);
+          if (!disabled) setEditingOverrideCell({ taskId: sel.taskId, date: sel.date });
+          return;
+        }
+      }
 
       // Delete / Backspace — guarded two-step keyboard clear for DateCell completions.
       // First press arms the cell (shows amber indicator + hint); second press confirms.
@@ -1363,10 +1466,14 @@ export default function TaskGrid() {
             notes={notes}
             todayStr={todayStr}
             armedCell={armedCell}
+            cellOverrides={cellOverrides}
             onIncrement={handleIncrement}
             onClear={handleClear}
             onSetCount={handleSetCount}
             onSaveNote={handleSaveNote}
+            onConvertToText={handleConvertToText}
+            onRestoreCheckbox={handleRestoreCheckbox}
+            onEditOverride={handleStartOverrideEdit}
           />
         </div>
       </div>
@@ -1454,6 +1561,8 @@ export default function TaskGrid() {
                     todayStr={todayStr}
                     completions={completions}
                     notes={notes}
+                    cellOverrides={cellOverrides}
+                    editingOverrideCell={editingOverrideCell}
                     selectedCell={selectedCell}
                     colLayout={colLayout}
                     selectedMetaCell={selectedMetaCell}
@@ -1471,6 +1580,9 @@ export default function TaskGrid() {
                     onStartTextEdit={handleStartTextEdit}
                     onCommitTextEdit={handleCommitTextEdit}
                     onCancelTextEdit={handleCancelTextEdit}
+                    onStartOverrideEdit={handleStartOverrideEdit}
+                    onCommitOverrideText={handleCommitOverrideText}
+                    onCancelOverrideEdit={handleCancelOverrideEdit}
                   />
                 ))}
               </Fragment>

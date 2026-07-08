@@ -16,7 +16,7 @@ function stopLinkUiPropagation(e) {
   e.stopPropagation();
 }
 
-export default function EditBar({ selectedCell, tasks, completions, notes, todayStr, armedCell, onIncrement, onClear, onSetCount, onSaveNote }) {
+export default function EditBar({ selectedCell, tasks, completions, notes, todayStr, armedCell, cellOverrides, onIncrement, onClear, onSetCount, onSaveNote, onConvertToText, onRestoreCheckbox, onEditOverride }) {
   const [setMode, setSetMode] = useState(false);
   const [inputVal, setInputVal] = useState('');
   const [noteVal, setNoteVal] = useState('');
@@ -24,6 +24,8 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
   const [linkText, setLinkText] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
   const [linkSelection, setLinkSelection] = useState({ value: '', start: 0, end: 0 });
+  // Two-step confirm for restoring checkbox mode over non-empty text (P9.1).
+  const [confirmRestore, setConfirmRestore] = useState(false);
   const noteInputRef = useRef(null);
   const linkUrlRef = useRef(null);
   const noteOrigRef = useRef('');
@@ -38,6 +40,7 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
     setNoteVal(val);
     noteOrigRef.current = val;
     setLinkPanelOpen(false);
+    setConfirmRestore(false);
   }, [selectedCell]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!selectedCell) {
@@ -57,6 +60,19 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
   const isAfterEndDate = !!(task?.end_date && date > task.end_date);
   const isDisabled = isFuture || isPaused || isBeforeActiveFrom || isAfterEndDate;
   const isArmed = !!(armedCell && armedCell.taskId === taskId && armedCell.date === date);
+  // Text-override state for the selected cell (P9.1). undefined = checkbox mode.
+  const overrideText = cellOverrides ? cellOverrides[`${taskId}:${date}`] : undefined;
+  const isTextOverride = overrideText !== undefined;
+
+  function handleRestoreClick() {
+    // Non-empty text requires a second confirming click; empty restores directly.
+    if (overrideText && !confirmRestore) {
+      setConfirmRestore(true);
+      return;
+    }
+    setConfirmRestore(false);
+    onRestoreCheckbox(taskId, date);
+  }
 
   function handleNoteBlur() {
     if (skipSaveRef.current) { skipSaveRef.current = false; return; }
@@ -148,7 +164,9 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
         <span className="edit-bar-sep">·</span>
         <span className="edit-bar-date">{dateLabel(date)}</span>
         <span className="edit-bar-sep">·</span>
-        {isDisabled ? (
+        {isTextOverride ? (
+          <span className="edit-bar-count">text cell</span>
+        ) : isDisabled ? (
           <span className="edit-bar-disabled">
             {isFuture ? 'future date' : isAfterEndDate ? 'after task end date' : isBeforeActiveFrom ? 'before active date' : 'on hiatus'}
           </span>
@@ -161,7 +179,31 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
           Del again to clear · Esc to cancel
         </div>
       )}
-      {!isDisabled && (
+      {isTextOverride ? (
+        /* Text-override cell (P9.1): edit/restore controls replace the
+           completion actions. Restoring over non-empty text needs a second
+           confirming click so text is never lost by accident. */
+        <div className="edit-bar-actions">
+          {!isDisabled && (
+            <button className="edit-bar-btn primary" onClick={() => onEditOverride(taskId, date)}>
+              Edit text
+            </button>
+          )}
+          {confirmRestore ? (
+            <>
+              <span className="edit-bar-restore-warn">Deletes this cell&rsquo;s text</span>
+              <button className="edit-bar-btn edit-bar-btn--danger" onClick={handleRestoreClick}>
+                Confirm restore
+              </button>
+              <button className="edit-bar-btn" onClick={() => setConfirmRestore(false)}>✕</button>
+            </>
+          ) : (
+            <button className="edit-bar-btn" onClick={handleRestoreClick}>
+              Restore checkbox
+            </button>
+          )}
+        </div>
+      ) : !isDisabled && (
         <div className="edit-bar-actions">
           <button className="edit-bar-btn primary" onClick={() => onIncrement(taskId, date)}>+1</button>
           <button
@@ -186,6 +228,11 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
           ) : (
             <button className="edit-bar-btn" onClick={() => { setSetMode(true); setInputVal(String(count)); }}>Set…</button>
           )}
+          <button
+            className="edit-bar-btn"
+            title="Convert this date cell to a text cell (checkbox is hidden, not deleted)"
+            onClick={() => onConvertToText(taskId, date)}
+          >Text…</button>
         </div>
       )}
       <div className="edit-bar-note-row">

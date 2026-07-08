@@ -280,9 +280,11 @@ function InlineTextCell({
 export default function TaskRow({
   task, dates, todayStr, completions, notes, selectedCell, colLayout,
   selectedMetaCell, editingTextCell, armedCell,
+  cellOverrides, editingOverrideCell,
   reorderEnabled, isDragOver, isDragSource, onHandlePointerDown,
   onIncrement, onClear, onEdit, onSelect,
   onSelectMeta, onStartTextEdit, onCommitTextEdit, onCancelTextEdit,
+  onStartOverrideEdit, onCommitOverrideText, onCancelOverrideEdit,
 }) {
   const [anchorRect, setAnchorRect] = useState(null); // non-null = popover open
   const badgeRef = useRef(null);
@@ -420,9 +422,14 @@ export default function TaskRow({
             isArmed={armedCell?.taskId === task.id && armedCell?.date === date}
             hasNote={hasNote}
             noteText={noteText}
+            overrideText={cellOverrides ? cellOverrides[noteKey] : undefined}
+            isEditingOverride={editingOverrideCell?.taskId === task.id && editingOverrideCell?.date === date}
             onIncrement={onIncrement}
             onClear={onClear}
             onSelect={onSelect}
+            onStartOverrideEdit={onStartOverrideEdit}
+            onCommitOverrideText={onCommitOverrideText}
+            onCancelOverrideEdit={onCancelOverrideEdit}
           />
         );
       })}

@@ -29,9 +29,13 @@ Keep the backup file until you have verified the result.
   section/category, subtask, notes, active-from / end / manual-last-done dates
 - All completion history (per-date counts)
 - Per-cell date notes
+- Date-cell text overrides (cells converted from checkbox to text)
 - Reading books and their page-checkpoint history
 - Archive snapshots
 - Links written in task/subtask/notes text (they are part of the text fields)
+
+Note: the CSV sheet export remains task-list/completion oriented — date-cell
+text overrides are included in JSON backups only.
 
 ## What does not transfer
 
