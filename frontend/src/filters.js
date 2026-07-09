@@ -31,6 +31,24 @@ export const FILTER_LABELS = {
   [FILTERS.ENDED]:      'Finished',
 };
 
+// P10.0 filter-bar split: the primary status scope is a single-select
+// segmented control; the remaining filters are secondary on/off toggles that
+// AND on top of the primary scope. Filter *semantics* (taskPassesFilter) are
+// unchanged — only how they combine in the UI.
+export const PRIMARY_FILTERS = [
+  FILTERS.ALL,
+  FILTERS.ACTIVE,
+  FILTERS.HIATUS,
+  FILTERS.ENDED,
+];
+
+export const SECONDARY_FILTERS = [
+  FILTERS.URGENT,
+  FILTERS.DORMANT,
+  FILTERS.NEVER_DONE,
+  FILTERS.SCHEDULED,
+];
+
 // Returns true if the task passes the given filter.
 export function taskPassesFilter(task, filter) {
   switch (filter) {

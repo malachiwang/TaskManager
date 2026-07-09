@@ -16,7 +16,7 @@ function stopLinkUiPropagation(e) {
   e.stopPropagation();
 }
 
-export default function EditBar({ selectedCell, tasks, completions, notes, todayStr, armedCell, cellOverrides, onIncrement, onClear, onSetCount, onSaveNote, onConvertToText, onRestoreCheckbox, onEditOverride }) {
+export default function EditBar({ selectedCell, tasks, completions, notes, todayStr, cellOverrides, rangeSelection, feedback, onIncrement, onClear, onSetCount, onSaveNote, onConvertToText, onRestoreCheckbox, onEditOverride, onRangeDelete, onRangeRestore }) {
   const [setMode, setSetMode] = useState(false);
   const [inputVal, setInputVal] = useState('');
   const [noteVal, setNoteVal] = useState('');
@@ -26,10 +26,14 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
   const [linkSelection, setLinkSelection] = useState({ value: '', start: 0, end: 0 });
   // Two-step confirm for restoring checkbox mode over non-empty text (P9.1).
   const [confirmRestore, setConfirmRestore] = useState(false);
+  // Two-step confirm for range restore when text would be removed (P10.0).
+  const [confirmRangeRestore, setConfirmRangeRestore] = useState(false);
   const noteInputRef = useRef(null);
   const linkUrlRef = useRef(null);
   const noteOrigRef = useRef('');
   const skipSaveRef = useRef(false);
+
+  const isRange = !!rangeSelection && rangeSelection.count > 1;
 
   // Reset set-count input and note whenever selection changes.
   useEffect(() => {
@@ -43,10 +47,76 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
     setConfirmRestore(false);
   }, [selectedCell]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Reset range-restore confirmation whenever the range changes shape.
+  useEffect(() => {
+    setConfirmRangeRestore(false);
+  }, [rangeSelection]);
+
+  const feedbackLine = feedback ? (
+    <div className="edit-bar-feedback" role="status">{feedback}</div>
+  ) : null;
+
+  if (isRange) {
+    const { count, checkboxCount, overrideCount, overrideWithText, lockedCount, cells } = rangeSelection;
+    return (
+      <div className="edit-bar edit-bar--active">
+        <div className="edit-bar-info">
+          <span className="edit-bar-task">{count} cells selected</span>
+          <span className="edit-bar-sep">·</span>
+          <span className="edit-bar-count">
+            {checkboxCount} checkbox{checkboxCount !== 1 ? 'es' : ''} · {overrideCount} text
+            {lockedCount > 0 ? ` · ${lockedCount} locked` : ''}
+          </span>
+        </div>
+        <div className="edit-bar-actions">
+          <button
+            className="edit-bar-btn"
+            title="Convert selected checkboxes to blank text cells and blank selected text cells. Completion history is kept."
+            onClick={() => onRangeDelete(cells)}
+            disabled={checkboxCount === 0 && overrideWithText === 0}
+          >
+            Delete → blank text cells
+          </button>
+          {overrideCount > 0 && (
+            confirmRangeRestore ? (
+              <>
+                <span className="edit-bar-restore-warn">
+                  Restore checkboxes for {overrideCount} cell{overrideCount !== 1 ? 's' : ''}?
+                  This removes text from {overrideWithText} cell{overrideWithText !== 1 ? 's' : ''} and
+                  reveals the underlying checkbox states.
+                </span>
+                <button
+                  className="edit-bar-btn edit-bar-btn--danger"
+                  onClick={() => { setConfirmRangeRestore(false); onRangeRestore(cells); }}
+                >
+                  Confirm restore
+                </button>
+                <button className="edit-bar-btn" onClick={() => setConfirmRangeRestore(false)}>✕</button>
+              </>
+            ) : (
+              <button
+                className="edit-bar-btn"
+                onClick={() => {
+                  if (overrideWithText > 0) setConfirmRangeRestore(true);
+                  else onRangeRestore(cells);
+                }}
+              >
+                Restore checkboxes
+              </button>
+            )
+          )}
+          <span className="edit-bar-hint">Del converts · Esc collapses range</span>
+        </div>
+        {feedbackLine}
+      </div>
+    );
+  }
+
   if (!selectedCell) {
     return (
       <div className="edit-bar">
         <span className="edit-bar-empty">Click a date cell to select it</span>
+        {feedbackLine}
       </div>
     );
   }
@@ -59,7 +129,6 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
   const isBeforeActiveFrom = !!(task?.active_from && date < task.active_from);
   const isAfterEndDate = !!(task?.end_date && date > task.end_date);
   const isDisabled = isFuture || isPaused || isBeforeActiveFrom || isAfterEndDate;
-  const isArmed = !!(armedCell && armedCell.taskId === taskId && armedCell.date === date);
   // Text-override state for the selected cell (P9.1). undefined = checkbox mode.
   const overrideText = cellOverrides ? cellOverrides[`${taskId}:${date}`] : undefined;
   const isTextOverride = overrideText !== undefined;
@@ -174,11 +243,6 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
           <span className="edit-bar-count">count: {count}</span>
         )}
       </div>
-      {isArmed && (
-        <div className="edit-bar-armed-hint">
-          Del again to clear · Esc to cancel
-        </div>
-      )}
       {isTextOverride ? (
         /* Text-override cell (P9.1): edit/restore controls replace the
            completion actions. Restoring over non-empty text needs a second
@@ -325,6 +389,7 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
           <LinkifiedText text={noteVal} />
         </div>
       )}
+      {feedbackLine}
     </div>
   );
 }

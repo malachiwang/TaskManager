@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { urgencyLabel, urgencyReason } from '../urgency.js';
 import { extractLinks, normalizeSafeUrl, spliceMarkdownLink } from '../linkUtils.js';
+import { handleSafeLinkClick } from '../openExternalLink.js';
 import LinkifiedText from './LinkifiedText.jsx';
 
 const STATUS_OPTIONS = ['active', 'hiatus'];
@@ -471,6 +472,7 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
                         target="_blank"
                         rel="noopener noreferrer"
                         title={link.href}
+                        onClick={(e) => handleSafeLinkClick(e, link.href)}
                       >
                         {link.label}
                       </a>

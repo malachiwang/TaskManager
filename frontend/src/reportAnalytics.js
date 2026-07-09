@@ -27,6 +27,60 @@ export function monthLabel(year, month) {
   return `${fmt(first)} – ${fmt(last)}, ${year}`;
 }
 
+// ── Report periods (P10.0) — Week / Month / Quarter / Year ───────────────────
+// All analytics below are already start/end driven, so richer periods only
+// need range computation. `anchor` is any Date inside the desired period.
+
+export const PERIOD_MODES = ['week', 'month', 'quarter', 'year'];
+
+function iso(d) {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+export function periodRange(mode, anchor) {
+  const y = anchor.getFullYear();
+  const m = anchor.getMonth(); // 0-indexed
+  if (mode === 'week') {
+    // Monday-start week containing the anchor.
+    const day = (anchor.getDay() + 6) % 7; // Mon=0 … Sun=6
+    const first = new Date(y, m, anchor.getDate() - day);
+    const last = new Date(first.getFullYear(), first.getMonth(), first.getDate() + 6);
+    return { start: iso(first), end: iso(last) };
+  }
+  if (mode === 'quarter') {
+    const qStartMonth = Math.floor(m / 3) * 3;
+    return { start: iso(new Date(y, qStartMonth, 1)), end: iso(new Date(y, qStartMonth + 3, 0)) };
+  }
+  if (mode === 'year') {
+    return { start: `${y}-01-01`, end: `${y}-12-31` };
+  }
+  return { start: iso(new Date(y, m, 1)), end: iso(new Date(y, m + 1, 0)) }; // month
+}
+
+// Returns a new anchor date shifted by `delta` periods (±1 from the nav arrows).
+export function shiftPeriodAnchor(mode, anchor, delta) {
+  const d = new Date(anchor);
+  if (mode === 'week') d.setDate(d.getDate() + delta * 7);
+  else if (mode === 'quarter') d.setMonth(d.getMonth() + delta * 3, 1);
+  else if (mode === 'year') d.setFullYear(d.getFullYear() + delta, d.getMonth(), 1);
+  else d.setMonth(d.getMonth() + delta, 1);
+  return d;
+}
+
+export function periodLabel(mode, anchor) {
+  const { start, end } = periodRange(mode, anchor);
+  if (mode === 'year') return String(anchor.getFullYear());
+  if (mode === 'quarter') {
+    const q = Math.floor(anchor.getMonth() / 3) + 1;
+    return `Q${q} ${anchor.getFullYear()}`;
+  }
+  const fmt = (isoDate) => {
+    const [yy, mm, dd] = isoDate.split('-').map(Number);
+    return new Date(yy, mm - 1, dd).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+  return `${fmt(start)} – ${fmt(end)}, ${anchor.getFullYear()}`;
+}
+
 export function enumerateDays(start, end) {
   const out = [];
   const s = new Date(start + 'T00:00:00');

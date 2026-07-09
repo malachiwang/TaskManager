@@ -302,7 +302,8 @@ export const KEYBIND_HELP = [
     items: [
       { action: 'INCREMENT', desc: 'Increment completion for selected date cell' },
       { action: 'DECREMENT', desc: 'Decrement completion for selected date cell' },
-      { keys: 'Del / ⌫',    desc: 'Arm clear (1st press) · confirm clear (2nd press)' },
+      { keys: 'Del / ⌫',    desc: 'Convert selected cell(s) to blank text cells — completion history is kept; Restore checkbox brings it back' },
+      { keys: 'Type text',   desc: 'Start text entry in the selected date cell (spreadsheet-style; Esc cancels). N / E work when no date cell is selected.' },
       { action: 'EDIT_TASK', desc: 'Open task details (scheduling, status, priority, notes)' },
       { action: 'NEW_TASK',  desc: 'Add a new task' },
     ],
@@ -310,7 +311,7 @@ export const KEYBIND_HELP = [
   {
     group: 'View',
     items: [
-      { action: 'CLEAR_SELECTION', desc: 'Cancel armed clear / close modal / clear selection' },
+      { action: 'CLEAR_SELECTION', desc: 'Close modal / collapse range / clear selection' },
       { action: 'TOGGLE_HELP',     desc: 'Show or hide keyboard shortcuts' },
     ],
   },
@@ -319,7 +320,10 @@ export const KEYBIND_HELP = [
     items: [
       { keys: 'Click cell',   desc: 'Select date cell (no mutation)' },
       { keys: 'Click ☐ / ✓', desc: 'Increment completion count' },
-      { keys: '⇧Click ✓',    desc: 'Clear completion count' },
+      { keys: '⇧Click',      desc: 'Extend range selection from the anchor cell' },
+      { keys: '⇧Arrows',     desc: 'Extend range selection with the keyboard' },
+      { keys: 'Drag cells',   desc: 'Select a rectangular date-cell range' },
+      { keys: '⌥Click',      desc: 'Select a date cell without toggling it' },
       { keys: 'Click text',   desc: 'Select text cell (task / subtask / category)' },
       { keys: 'Dbl-click',    desc: 'Enter inline edit mode for text cell' },
     ],

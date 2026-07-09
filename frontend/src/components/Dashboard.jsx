@@ -468,7 +468,7 @@ function nowLabel() {
 // Dashboard
 // ---------------------------------------------------------------------------
 
-export default function Dashboard() {
+export default function Dashboard({ onOpenReports }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [tasks, setTasks] = useState(null);
@@ -598,7 +598,16 @@ export default function Dashboard() {
         <div className="ws-dash-header-left">
           <div className="ws-dash-title">Dashboard</div>
           <div className="ws-dash-sub">
-            action command center · active non-hiatus tasks{tasksReady ? ` · ${inScope} in scope` : ''}
+            today&rsquo;s command center · current pressure, quick wins, and tasks that need attention
+            {tasksReady ? ` · ${inScope} in scope` : ''}
+            {onOpenReports && (
+              <>
+                {' · '}
+                <button type="button" className="ws-dash-crosslink" onClick={onOpenReports}>
+                  for patterns over time, open Reports →
+                </button>
+              </>
+            )}
           </div>
         </div>
         <div className="ws-dash-now">{nowLabel()}</div>

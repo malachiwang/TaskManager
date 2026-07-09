@@ -7,6 +7,10 @@ import {
   bindingLabel, bindingSignature, normalizeBinding,
 } from '../keybinds.js';
 import {
+  loadAppearance, saveAppearance,
+  APPEARANCE_MODES, ACCENT_THEMES, MOTION_LEVELS,
+} from '../appearance.js';
+import {
   loadPreferences as loadDashPrefs,
   toggleSection as dashToggleSection,
   toggleCard as dashToggleCard,
@@ -60,6 +64,8 @@ function DocSection({ name, label }) {
 
 export default function Settings() {
   const [theme, setTheme]                     = useState(() => localStorage.getItem('taskos-theme') || 'sheets');
+  // Appearance mode / accent / motion (P10.0) — applied live, saved locally.
+  const [appearance, setAppearance]           = useState(loadAppearance);
   const [defaultSection, setDefaultSection]   = useState(() => loadSettings().defaultSection      ?? 'General');
   const [defaultPriority, setDefaultPriority] = useState(() => loadSettings().defaultPriority     ?? 5);
   const [defaultInterval, setDefaultInterval] = useState(() => loadSettings().defaultIntervalDays ?? 7);
@@ -254,6 +260,14 @@ export default function Settings() {
     localStorage.setItem('taskos-theme', value);
   }
 
+  function updateAppearance(patch) {
+    setAppearance((prev) => {
+      const next = { ...prev, ...patch };
+      saveAppearance(next);
+      return next;
+    });
+  }
+
   function handleResetColumns() {
     localStorage.removeItem(LS_COL_WIDTHS_KEY);
     setColResetMsg(true);
@@ -320,6 +334,79 @@ export default function Settings() {
                   <option value="sheets">Sheets Classic</option>
                   <option value="paper">Paper Workstation</option>
                 </select>
+              </div>
+            </div>
+            <div className="ws-ctrl-row">
+              <div className="ws-ctrl-info">
+                <span className="ws-ctrl-label">Appearance</span>
+                <span className="ws-ctrl-desc">
+                  System follows your OS light/dark preference. Urgency colors keep
+                  their meaning in every mode.
+                </span>
+              </div>
+              <div className="ws-ctrl-action">
+                <div className="settings-seg" role="group" aria-label="Appearance mode">
+                  {APPEARANCE_MODES.map((m) => (
+                    <button
+                      key={m.value}
+                      type="button"
+                      className={`settings-seg-btn${appearance.mode === m.value ? ' settings-seg-btn--active' : ''}`}
+                      aria-pressed={appearance.mode === m.value}
+                      onClick={() => updateAppearance({ mode: m.value })}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="ws-ctrl-row">
+              <div className="ws-ctrl-info">
+                <span className="ws-ctrl-label">Accent theme</span>
+                <span className="ws-ctrl-desc">
+                  Colors links, selection outlines, focus rings, chips, and active
+                  accents. Blue is the default.
+                </span>
+              </div>
+              <div className="ws-ctrl-action">
+                <div className="settings-swatches" role="group" aria-label="Accent theme">
+                  {ACCENT_THEMES.map((a) => (
+                    <button
+                      key={a.value}
+                      type="button"
+                      className={`settings-swatch${appearance.accent === a.value ? ' settings-swatch--active' : ''}`}
+                      style={{ '--swatch': a.swatch }}
+                      title={a.label}
+                      aria-label={`${a.label} accent${appearance.accent === a.value ? ' (active)' : ''}`}
+                      aria-pressed={appearance.accent === a.value}
+                      onClick={() => updateAppearance({ accent: a.value })}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="ws-ctrl-row">
+              <div className="ws-ctrl-info">
+                <span className="ws-ctrl-label">Background motion</span>
+                <span className="ws-ctrl-desc">
+                  Drift of the node-edge network in the header and loading screen.
+                  Off draws a static frame. Reduced-motion OS settings always win.
+                </span>
+              </div>
+              <div className="ws-ctrl-action">
+                <div className="settings-seg" role="group" aria-label="Background motion">
+                  {MOTION_LEVELS.map((l) => (
+                    <button
+                      key={l.value}
+                      type="button"
+                      className={`settings-seg-btn${appearance.motion === l.value ? ' settings-seg-btn--active' : ''}`}
+                      aria-pressed={appearance.motion === l.value}
+                      onClick={() => updateAppearance({ motion: l.value })}
+                    >
+                      {l.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>

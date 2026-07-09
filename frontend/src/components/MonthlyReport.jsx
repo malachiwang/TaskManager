@@ -2,10 +2,13 @@ import { useState, useEffect, useMemo } from 'react';
 import { fetchTasks, fetchCompletions, fetchSnapshotPressure, fetchReadingBooks } from '../api.js';
 import { urgencyClass, urgencyLabel } from '../urgency.js';
 import {
-  monthRange, monthLabel, completionSummary, consistency, finishedInPeriod,
+  completionSummary, consistency, finishedInPeriod,
   carriedForward, neglectedAllPeriod, sectionBreakdown, sectionPressureChange,
   cleanupReport, readingSummary,
+  PERIOD_MODES, periodRange, periodLabel, shiftPeriodAnchor,
 } from '../reportAnalytics.js';
+
+const PERIOD_MODE_LABELS = { week: 'Week', month: 'Month', quarter: 'Quarter', year: 'Year' };
 
 // Compact CSS/SVG day-bar chart for the period.
 function PeriodBars({ perDay }) {
@@ -29,9 +32,10 @@ function fmtDate(iso) {
   return `${m}/${d}`;
 }
 
-export default function MonthlyReport() {
+export default function MonthlyReport({ onOpenDashboard }) {
   const now = new Date();
-  const [view, setView] = useState({ year: now.getFullYear(), month: now.getMonth() + 1 });
+  // Period = mode (week/month/quarter/year) + an anchor date inside it (P10.0).
+  const [period, setPeriod] = useState({ mode: 'month', anchor: now });
   const [tasks, setTasks] = useState(null);
   const [tasksError, setTasksError] = useState(null);
   const [completions, setCompletions] = useState(null);
@@ -39,7 +43,10 @@ export default function MonthlyReport() {
   const [snapshot, setSnapshot] = useState(null);
   const [books, setBooks] = useState(null);
 
-  const { start, end } = useMemo(() => monthRange(view.year, view.month), [view]);
+  const { start, end } = useMemo(
+    () => periodRange(period.mode, period.anchor),
+    [period],
+  );
 
   // Current-state fetches (once).
   useEffect(() => {
@@ -76,31 +83,52 @@ export default function MonthlyReport() {
 
   const uncatHeavy = tasks && cleanup && cleanup.active > 0 && cleanup.uncategorizedPct >= 40;
 
-  function shiftMonth(delta) {
-    setView(({ year, month }) => {
-      const m = month + delta;
-      if (m < 1) return { year: year - 1, month: 12 };
-      if (m > 12) return { year: year + 1, month: 1 };
-      return { year, month: m };
-    });
+  function shiftPeriod(delta) {
+    setPeriod(({ mode, anchor }) => ({ mode, anchor: shiftPeriodAnchor(mode, anchor, delta) }));
   }
-  function thisMonth() { setView({ year: now.getFullYear(), month: now.getMonth() + 1 }); }
+  function currentPeriod() { setPeriod(({ mode }) => ({ mode, anchor: new Date() })); }
+  function setMode(mode) { setPeriod(({ anchor }) => ({ mode, anchor })); }
 
   const maxSectionComp = Math.max(...breakdown.map((s) => s.completions), 1);
+  const label = periodLabel(period.mode, period.anchor);
 
   return (
     <div className="ws-dashboard report-view">
       {/* Header + period selector */}
       <div className="ws-dash-header">
         <div className="ws-dash-header-left">
-          <div className="ws-dash-title">Report</div>
-          <div className="ws-dash-sub">retrospective · what happened this period</div>
+          <div className="ws-dash-title">Reports</div>
+          <div className="ws-dash-sub">
+            what happened over time · historical trends, completion patterns, pressure changes, reading progress
+            {onOpenDashboard && (
+              <>
+                {' · '}
+                <button type="button" className="ws-dash-crosslink" onClick={onOpenDashboard}>
+                  for what to do next, open Dashboard →
+                </button>
+              </>
+            )}
+          </div>
         </div>
         <div className="report-period">
-          <button className="report-nav" onClick={() => shiftMonth(-1)}>‹</button>
-          <button className="report-nav report-nav--today" onClick={thisMonth}>This month</button>
-          <span className="report-period-label">{monthLabel(view.year, view.month)}</span>
-          <button className="report-nav" onClick={() => shiftMonth(1)}>›</button>
+          <div className="report-period-modes" role="group" aria-label="Report period">
+            {PERIOD_MODES.map((m) => (
+              <button
+                key={m}
+                className={`report-mode-btn${period.mode === m ? ' report-mode-btn--active' : ''}`}
+                aria-pressed={period.mode === m}
+                onClick={() => setMode(m)}
+              >
+                {PERIOD_MODE_LABELS[m]}
+              </button>
+            ))}
+          </div>
+          <button className="report-nav" onClick={() => shiftPeriod(-1)}>‹</button>
+          <button className="report-nav report-nav--today" onClick={currentPeriod}>
+            Current {PERIOD_MODE_LABELS[period.mode].toLowerCase()}
+          </button>
+          <span className="report-period-label">{label}</span>
+          <button className="report-nav" onClick={() => shiftPeriod(1)}>›</button>
         </div>
       </div>
 
@@ -119,7 +147,7 @@ export default function MonthlyReport() {
 
         {/* Completed this period */}
         <div className="ws-frame ws-frame--full">
-          <div className="ws-frame-header"><span>Completed This Period</span><span className="ws-frame-header-sub">completion checkbox activity in {monthLabel(view.year, view.month)}</span></div>
+          <div className="ws-frame-header"><span>Completed This Period</span><span className="ws-frame-header-sub">completion checkbox activity in {label}</span></div>
           <div className="ws-frame-body">
             {compError ? <div className="ws-empty">Could not load completions.</div>
               : !activity ? <div className="ws-empty">Loading…</div>

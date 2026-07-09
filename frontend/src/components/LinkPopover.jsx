@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { handleSafeLinkClick } from '../openExternalLink.js';
 
 export default function LinkPopover({ links, anchorRect, onClose }) {
   const panelRef = useRef(null);
@@ -49,7 +50,7 @@ export default function LinkPopover({ links, anchorRect, onClose }) {
               target="_blank"
               rel="noopener noreferrer"
               title={link.href}
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e) => handleSafeLinkClick(e, link.href)}
             >
               {link.label}
             </a>

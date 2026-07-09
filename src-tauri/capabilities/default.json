@@ -7,6 +7,14 @@
     "core:default",
     "shell:allow-execute",
     "shell:allow-spawn",
-    "shell:allow-kill"
+    "shell:allow-kill",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "http://**" },
+        { "url": "https://**" },
+        { "url": "mailto:*" }
+      ]
+    }
   ]
 }

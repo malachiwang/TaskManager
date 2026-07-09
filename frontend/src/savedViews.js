@@ -68,12 +68,15 @@ export function buildDefaultName(filter, groupMode) {
   return `${f} · ${g}`;
 }
 
-export function makeSavedView({ name, filter, groupMode, searchQuery }) {
+export function makeSavedView({ name, filter, secondary, groupMode, searchQuery }) {
   const now = new Date().toISOString();
   return {
     id:          Date.now().toString(),
     name:        name.trim().slice(0, 40),
     filter,
+    // Secondary filter toggles (P10.0). Optional — older views without this
+    // key still validate and apply with no toggles.
+    secondary:   Array.isArray(secondary) ? [...secondary] : [],
     groupMode,
     searchQuery: searchQuery || '',
     createdAt:   now,

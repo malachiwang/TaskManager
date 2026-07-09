@@ -4,6 +4,7 @@
 // else, including unsafe protocols, stays plain text.
 
 import { tokenizeLinkText } from '../linkUtils.js';
+import { handleSafeLinkClick } from '../openExternalLink.js';
 
 export default function LinkifiedText({ text, className }) {
   if (!text) return null;
@@ -17,7 +18,7 @@ export default function LinkifiedText({ text, className }) {
         className="note-link"
         target="_blank"
         rel="noopener noreferrer"
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => handleSafeLinkClick(e, token.href)}
       >
         {token.text}
       </a>

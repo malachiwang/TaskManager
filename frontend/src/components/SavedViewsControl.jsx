@@ -9,11 +9,15 @@ import { GROUP_MODE_LABELS } from '../grouping.js';
 function viewSummary(view) {
   const f = FILTER_LABELS[view.filter]        || view.filter;
   const g = GROUP_MODE_LABELS[view.groupMode] || view.groupMode;
-  return view.searchQuery ? `${f} · ${g} · "${view.searchQuery}"` : `${f} · ${g}`;
+  const sec = Array.isArray(view.secondary) && view.secondary.length > 0
+    ? ' +' + view.secondary.map((s) => FILTER_LABELS[s] || s).join(' +')
+    : '';
+  return view.searchQuery ? `${f}${sec} · ${g} · "${view.searchQuery}"` : `${f}${sec} · ${g}`;
 }
 
 export default function SavedViewsControl({
   activeFilter,
+  secondaryFilters,
   groupMode,
   searchQuery,
   onApplyView,
@@ -64,6 +68,7 @@ export default function SavedViewsControl({
     const view = makeSavedView({
       name: trimmed,
       filter: activeFilter,
+      secondary: secondaryFilters,
       groupMode,
       searchQuery,
     });
@@ -142,6 +147,9 @@ export default function SavedViewsControl({
             {saveError && <div className="ws-views-error">{saveError}</div>}
             <div className="ws-views-meta">
               {FILTER_LABELS[activeFilter] || activeFilter}
+              {secondaryFilters && secondaryFilters.length > 0
+                ? ' +' + secondaryFilters.map((s) => FILTER_LABELS[s] || s).join(' +')
+                : ''}
               {' · '}
               {GROUP_MODE_LABELS[groupMode] || groupMode}
               {searchQuery ? ` · "${searchQuery}"` : ''}

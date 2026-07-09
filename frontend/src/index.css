@@ -99,6 +99,130 @@ html[data-theme="paper"] {
   --row-hover-bg: #ece9e0;         /* warm row hover                     */
 }
 
+/* -------------------------------------------------------------------------
+   Accent themes (P10.0)
+   Token-only overrides of the blue accent system. The --accent /
+   --accent-soft / --focus-blue / --selection-blue aliases in :root all
+   resolve through --accent-blue*, so overriding those three tokens restyles
+   links, selected cells/ranges, focus rings, chips, and active nav accents.
+   Urgency/completion colors are untouched — semantic meaning stays stable.
+   Blue = :root defaults (no override block needed).
+   ---------------------------------------------------------------------- */
+
+html[data-accent="graphite"] {
+  --accent-blue:        #5f6368;
+  --accent-blue-strong: #3c4043;
+  --accent-blue-soft:   #e9eaec;
+}
+
+html[data-accent="green"] {
+  --accent-blue:        #1e8e3e;
+  --accent-blue-strong: #146129;
+  --accent-blue-soft:   #e6f4ea;
+}
+
+html[data-accent="purple"] {
+  --accent-blue:        #7c4dff;
+  --accent-blue-strong: #5e35b1;
+  --accent-blue-soft:   #f1eafe;
+}
+
+html[data-accent="rose"] {
+  --accent-blue:        #c2185b;
+  --accent-blue-strong: #8e0e3d;
+  --accent-blue-soft:   #fde9f0;
+}
+
+html[data-accent="amber"] {
+  --accent-blue:        #b26a00;
+  --accent-blue-strong: #8a5200;
+  --accent-blue-soft:   #faf0da;
+}
+
+/* -------------------------------------------------------------------------
+   Dark appearance (P10.0)
+   Applied via data-appearance="dark" (chosen directly or resolved from the
+   OS preference in System mode). Declared after the theme/accent blocks so
+   it wins the cascade at equal specificity. Ink tokens flip to light for
+   text; the handful of components that use ink tokens as dark FILLS get
+   targeted corrections below so headers stay near-black and primary
+   controls read as light-on-dark inversions.
+   Urgency foreground colors are brightened slightly for contrast on dark
+   surfaces but keep their green/amber/orange/red semantics.
+   ---------------------------------------------------------------------- */
+
+html[data-appearance="dark"] {
+  /* Surfaces */
+  --bg-app:       #151515;
+  --bg-panel:     #1d1d1d;
+  --bg-surface:   #181818;
+  --bg-hover:     #2c2c2c;
+  --header-bg:    #232323;
+  --paused-bg:    #191919;
+  --row-hover-bg: #242424;
+  --today-bg:     #16232f;
+  --weekend-bg:   #1a1a18;
+  --grid-border:  #363636;
+  --rule:         #363636;
+  --rule-2:       #3a3a3a;
+  --hair:         #4a4a4a;
+  --paper:        #151515;
+  --panel:        #1d1d1d;
+  --panel-2:      #181818;
+
+  /* Ink → light text */
+  --ink:          #ededed;
+  --ink-2:        #e2e2e2;
+  --ink-3:        #b0b0b0;
+  --muted:        #a3a3a3;
+  --muted-2:      #7c7c7c;
+
+  /* Accent soft fills — derive a dark tint from whatever accent is active */
+  --accent-blue-soft: color-mix(in srgb, var(--accent-blue) 26%, #141414);
+
+  /* Urgency — brightened for dark surfaces, same semantic hues */
+  --urg-low:  #58b25e;
+  --urg-mid:  #d99a3d;
+  --urg-hi:   #e57a4a;
+  --urg-crit: #e05d5d;
+  --crit-bg:  #2a1717;
+  --good:     #58b25e;
+
+  --caution-bg:     #2b2410;
+  --caution-border: #8a6d1f;
+  --caution-text:   #d9b95c;
+}
+
+/* Ink-as-fill corrections — keep the black header/shelf identity, and give
+   primary controls dark text on their (now light) ink fills. */
+html[data-appearance="dark"] .app-header,
+html[data-appearance="dark"] .ws-grid-shelf,
+html[data-appearance="dark"] .modal-header,
+html[data-appearance="dark"] .task-modal-header,
+html[data-appearance="dark"] .ws-page-header,
+html[data-appearance="dark"] .ws-frame-header,
+html[data-appearance="dark"] .ws-inspector-badge {
+  background: #0c0c0c;
+}
+
+html[data-appearance="dark"] .edit-bar-btn.primary,
+html[data-appearance="dark"] .btn-add-task,
+html[data-appearance="dark"] .task-modal-save,
+html[data-appearance="dark"] .ws-views-save-btn,
+html[data-appearance="dark"] .task-modal-seg-btn--active,
+html[data-appearance="dark"] .ws-filter-pill--active,
+html[data-appearance="dark"] .ws-filter-seg-btn--active,
+html[data-appearance="dark"] .ws-filter-seg-btn--active:hover,
+html[data-appearance="dark"] .dc-box--filled {
+  color: #141414;
+}
+
+/* Frame headers use light text on the near-black strip above. */
+html[data-appearance="dark"] .ws-frame-header,
+html[data-appearance="dark"] .ws-page-header {
+  color: #e8e8e8;
+}
+
 body {
   font-family: var(--font-ui);
   font-size: 13px;
@@ -782,19 +906,19 @@ thead .meta-col {
   cursor: default;
 }
 
-/* Selected cell (EditBar selection) — must come after other .date-cell.* rules */
+/* Range-selected cell (P10.0) — soft fill, no per-cell outline; the anchor
+   cell keeps the stronger .selected outline. Must come before .selected. */
+.date-cell.in-range {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* Selected cell / range anchor (EditBar selection) — must come after other
+   .date-cell.* rules */
 .date-cell.selected {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
   background: var(--accent-soft);
-}
-
-/* P2.0D — armed cell: awaiting second Delete/Backspace to confirm clear.
-   Must come after .date-cell.selected so the amber outline overrides blue. */
-.date-cell.armed {
-  outline: 2px solid var(--urg-mid);
-  outline-offset: -2px;
-  background: var(--caution-bg);
 }
 
 /* P2.0B — selected text (meta) cell — mirrors .date-cell.selected */
@@ -965,12 +1089,21 @@ thead .meta-col {
   flex-shrink: 0;
 }
 
-/* P2.0D — armed-cell hint shown in inspector strip */
-.edit-bar-armed-hint {
+/* P10.0 — transient range-operation feedback ("Converted 12 cells…") */
+.edit-bar-feedback {
   font-size: 11px;
-  color: var(--urg-mid);
-  font-weight: 600;
-  flex-shrink: 0;
+  color: var(--muted);
+  flex-shrink: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* P10.0 — muted inline hint at the end of the range action row */
+.edit-bar-hint {
+  font-size: 10px;
+  color: var(--muted-2);
   white-space: nowrap;
 }
 
@@ -4769,6 +4902,153 @@ select.task-modal-input {
   color: #fff;
 }
 
+/* ── Primary status segmented control (P10.0) — one bordered group, no
+   per-button borders, so the bar reads as a single calm control. ── */
+.ws-filter-seg {
+  display: inline-flex;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--bg-panel);
+}
+
+.ws-filter-seg-btn {
+  padding: 3px 10px;
+  border: none;
+  border-right: 1px solid var(--rule);
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ws-filter-seg-btn:last-child {
+  border-right: none;
+}
+
+.ws-filter-seg-btn:hover {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+
+.ws-filter-seg-btn--active,
+.ws-filter-seg-btn--active:hover {
+  background: var(--ink-2);
+  color: #fff;
+}
+
+/* ── Secondary filter menu + chips (P10.0) ── */
+.ws-filter-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.ws-filter-menu-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ws-filter-menu-btn:hover,
+.ws-filter-menu-btn--open {
+  background: var(--bg-hover);
+  color: var(--ink);
+  border-color: var(--ink-3);
+}
+
+.ws-filter-menu-btn--active {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+.ws-filter-menu-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  padding: 6px;
+  gap: 2px;
+  background: var(--bg-panel);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+
+.ws-filter-menu-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  font-size: 11px;
+  color: var(--ink-2);
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+.ws-filter-menu-option:hover {
+  background: var(--bg-hover);
+}
+
+.ws-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--accent-soft);
+  font-size: 11px;
+  color: var(--ink);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ws-filter-chip-x {
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0 3px;
+  border-radius: 50%;
+}
+
+.ws-filter-chip-x:hover {
+  color: var(--ink);
+  background: var(--bg-hover);
+}
+
+.ws-filter-clear {
+  border: none;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--accent);
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 2px 4px;
+  flex-shrink: 0;
+}
+
+.ws-filter-clear:hover {
+  text-decoration: underline;
+}
+
 .ws-filter-input {
   flex: 1;
   max-width: 220px;
@@ -5934,13 +6214,91 @@ select.task-modal-input {
 .settings-switch-input:focus-visible + .settings-switch { outline: 2px solid var(--focus-blue); outline-offset: 1px; }
 .settings-switch-label { user-select: none; }
 
+/* Appearance controls (P10.0) — small segmented buttons + accent swatches. */
+.settings-seg {
+  display: inline-flex;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--bg-panel);
+}
+.settings-seg-btn {
+  padding: 3px 12px;
+  border: none;
+  border-right: 1px solid var(--rule);
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.settings-seg-btn:last-child { border-right: none; }
+.settings-seg-btn:hover { background: var(--bg-hover); color: var(--ink); }
+.settings-seg-btn--active,
+.settings-seg-btn--active:hover { background: var(--ink-2); color: var(--bg-panel); }
+
+.settings-swatches {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+.settings-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--rule);
+  background: var(--swatch);
+  cursor: pointer;
+  padding: 0;
+}
+.settings-swatch:hover { border-color: var(--ink-3); }
+.settings-swatch--active {
+  border-color: var(--ink);
+  outline: 2px solid var(--swatch);
+  outline-offset: 1px;
+}
+
 /* ===========================================================================
    Monthly / Period Report (P6.0B)
    =========================================================================== */
 .report-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
 
+/* Dashboard ↔ Reports cross-link in page subtitles (P10.0). */
+.ws-dash-crosslink {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+}
+.ws-dash-crosslink:hover { text-decoration: underline; }
+
 /* Period selector in the header. */
-.report-period { display: flex; align-items: center; gap: 8px; }
+.report-period { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* Week/Month/Quarter/Year mode buttons (P10.0). */
+.report-period-modes {
+  display: inline-flex;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--bg-panel);
+}
+.report-mode-btn {
+  padding: 3px 10px;
+  border: none;
+  border-right: 1px solid var(--rule);
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.report-mode-btn:last-child { border-right: none; }
+.report-mode-btn:hover { background: var(--bg-hover); color: var(--ink); }
+.report-mode-btn--active,
+.report-mode-btn--active:hover { background: var(--ink-2); color: var(--bg-panel); }
 .report-nav {
   font-family: inherit; font-size: 13px; padding: 3px 10px; cursor: pointer;
   border: 1px solid var(--grid-border); border-radius: 3px;

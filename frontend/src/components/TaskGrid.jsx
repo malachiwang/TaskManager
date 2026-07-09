@@ -16,12 +16,15 @@ import {
   fetchDateCellOverrides,
   upsertDateCellOverride,
   deleteDateCellOverride,
+  batchUpsertDateCellOverrides,
+  batchDeleteDateCellOverrides,
 } from '../api.js';
 import TaskRow from './TaskRow.jsx';
 import TaskModal from './TaskModal.jsx';
 import EditBar from './EditBar.jsx';
 import KeyboardHelp from './KeyboardHelp.jsx';
-import { FILTERS, FILTER_LABELS, taskPassesFilter } from '../filters.js';
+import { FILTERS, FILTER_LABELS, PRIMARY_FILTERS, SECONDARY_FILTERS, taskPassesFilter } from '../filters.js';
+import FilterMenu from './FilterMenu.jsx';
 import { GROUP_MODES, groupTasks } from '../grouping.js';
 import { matchKeybind, resolveKeybinds } from '../keybinds.js';
 import SavedViewsControl from './SavedViewsControl.jsx';
@@ -223,11 +226,25 @@ export default function TaskGrid() {
   const [selectedCell, setSelectedCell] = useState(null);
   const [selectedMetaCell, setSelectedMetaCell] = useState(null);
   const [editingTextCell, setEditingTextCell] = useState(null);
-  const [armedCell, setArmedCell] = useState(null); // P2.0D: armed for two-step keyboard clear
+  // Range selection (P10.0) — selectedCell is the anchor; rangeEnd the focus
+  // corner. Non-null rangeEnd means a rectangular DateCell range is selected.
+  const [rangeEnd, setRangeEnd] = useState(null);
+  // Transient feedback for range operations ("Converted 12 cells…").
+  const [cellFeedback, setCellFeedback] = useState(null);
+  const feedbackTimerRef = useRef(null);
 
-  // Filtering / search state — Phase 1.
+  // Filtering / search state — Phase 1, split in P10.0.
+  // activeFilter is the primary status scope (All/Active/Hiatus/Finished);
+  // secondaryFilters are on/off toggles (Urgent/Dormant/…) ANDed on top.
   const [activeFilter, setActiveFilter] = useState(FILTERS.ALL);
+  const [secondaryFilters, setSecondaryFilters] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+
+  function toggleSecondaryFilter(f) {
+    setSecondaryFilters((prev) =>
+      prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f],
+    );
+  }
 
   // Grouping mode — Phase 3. Persisted to localStorage.
   const [groupMode, setGroupMode] = useState(
@@ -315,6 +332,10 @@ export default function TaskGrid() {
     if (activeFilter !== FILTERS.ALL) {
       result = result.filter((t) => taskPassesFilter(t, activeFilter));
     }
+    // Secondary toggles — AND semantics: a task must pass every active toggle.
+    for (const f of secondaryFilters) {
+      result = result.filter((t) => taskPassesFilter(t, f));
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       result = result.filter(
@@ -326,7 +347,7 @@ export default function TaskGrid() {
       );
     }
     return result;
-  }, [tasks, activeFilter, searchQuery, viewMonth.year, viewMonth.month]);
+  }, [tasks, activeFilter, secondaryFilters, searchQuery, viewMonth.year, viewMonth.month]);
 
   // Group filtered tasks by the current groupMode.
   // groupTasks() suppresses empty groups automatically and computes metadata.
@@ -352,6 +373,61 @@ export default function TaskGrid() {
     }
     return m;
   }, [groupedTasks]);
+
+  // ---------------------------------------------------------------------------
+  // Range selection (P10.0) — rectangle between selectedCell (anchor) and
+  // rangeEnd, in visual render order. Precomputes per-cell eligibility so the
+  // delete/restore actions and the EditBar summary agree exactly.
+  // ---------------------------------------------------------------------------
+
+  const rangeSelection = useMemo(() => {
+    if (!selectedCell || !rangeEnd) return null;
+    const rowA = flatGroupedTasks.findIndex((t) => t.id === selectedCell.taskId);
+    const rowB = flatGroupedTasks.findIndex((t) => t.id === rangeEnd.taskId);
+    const dA = dates.indexOf(selectedCell.date);
+    const dB = dates.indexOf(rangeEnd.date);
+    if (rowA < 0 || rowB < 0 || dA < 0 || dB < 0) return null;
+    const rows = flatGroupedTasks.slice(Math.min(rowA, rowB), Math.max(rowA, rowB) + 1);
+    const dateSlice = dates.slice(Math.min(dA, dB), Math.max(dA, dB) + 1);
+    const cells = [];
+    let checkboxCount = 0;
+    let overrideCount = 0;
+    let overrideWithText = 0;
+    let lockedCount = 0;
+    for (const t of rows) {
+      for (const date of dateSlice) {
+        const disabled = date > todayStr
+          || t.is_paused === 1
+          || (t.active_from && date < t.active_from)
+          || (t.end_date && date > t.end_date);
+        const ov = cellOverrides[`${t.id}:${date}`];
+        const isOverride = ov !== undefined;
+        cells.push({ taskId: t.id, date, disabled, isOverride, hasText: !!ov });
+        if (disabled) lockedCount += 1;
+        else if (isOverride) {
+          overrideCount += 1;
+          if (ov) overrideWithText += 1;
+        } else checkboxCount += 1;
+      }
+    }
+    return {
+      cells,
+      count: cells.length,
+      checkboxCount,
+      overrideCount,
+      overrideWithText,
+      lockedCount,
+      taskIdSet: new Set(rows.map((t) => t.id)),
+      minDate: dateSlice[0],
+      maxDate: dateSlice[dateSlice.length - 1],
+    };
+  }, [selectedCell, rangeEnd, flatGroupedTasks, dates, cellOverrides, todayStr]);
+
+  const showFeedback = useCallback((msg) => {
+    if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
+    setCellFeedback(msg);
+    feedbackTimerRef.current = setTimeout(() => setCellFeedback(null), 5000);
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Data fetching — reruns when month changes (dates reference changes)
@@ -473,13 +549,26 @@ export default function TaskGrid() {
   const handleSelect = useCallback((taskId, date) => {
     setSelectedCell({ taskId, date });
     setSelectedMetaCell(null);
-    setArmedCell(null);
+    setRangeEnd(null);
   }, []);
+
+  // Shift+click (or drag) — extend the range from the current anchor. With no
+  // anchor yet, the shift-click simply selects (and never toggles).
+  // Reads the anchor through selectedCellRef (synced every render below) so
+  // the state updaters stay pure.
+  const handleExtendRange = useCallback((taskId, date) => {
+    setSelectedMetaCell(null);
+    if (selectedCellRef.current) {
+      setRangeEnd({ taskId, date });
+    } else {
+      setSelectedCell({ taskId, date });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSelectMeta = useCallback((taskId, col) => {
     setSelectedMetaCell({ taskId, col });
     setSelectedCell(null);
-    setArmedCell(null);
+    setRangeEnd(null);
   }, []);
 
   const handleStartTextEdit = useCallback((taskId, col) => {
@@ -658,6 +747,70 @@ export default function TaskGrid() {
     window.addEventListener('blur', cleanup);
   }
 
+  // ---------------------------------------------------------------------------
+  // DateCell drag-select (P10.0) — press on a date cell and drag across others
+  // to select a rectangular range. The gesture only "activates" once the
+  // pointer reaches a different cell, so a plain click (and dc-box toggle)
+  // behaves exactly as before. Once active, the click that follows pointerup
+  // is swallowed by handleGridClickCapture so no cell toggles or reselects.
+  // ---------------------------------------------------------------------------
+
+  const suppressNextClickRef = useRef(false);
+
+  function dateCellAt(clientX, clientY) {
+    for (const el of document.elementsFromPoint(clientX, clientY)) {
+      const td = el.closest?.('td.date-cell');
+      if (td && td.dataset.dcDate) {
+        return { taskId: parseInt(td.dataset.dcTask, 10), date: td.dataset.dcDate };
+      }
+    }
+    return null;
+  }
+
+  function handleGridPointerDown(e) {
+    if (e.button !== 0 || e.shiftKey || e.metaKey || e.ctrlKey) return;
+    const td = e.target.closest?.('td.date-cell');
+    if (!td || !td.dataset.dcDate) return;
+    if (e.target.closest('input')) return; // inline text editor — never drag
+    const start = { taskId: parseInt(td.dataset.dcTask, 10), date: td.dataset.dcDate };
+    if (Number.isNaN(start.taskId)) return;
+    let active = false;
+
+    function onMove(ev) {
+      const cur = dateCellAt(ev.clientX, ev.clientY);
+      if (!cur) return;
+      if (!active) {
+        if (cur.taskId === start.taskId && cur.date === start.date) return;
+        // Threshold crossed — this gesture is a range drag, not a click.
+        active = true;
+        setSelectedCell(start);
+        setSelectedMetaCell(null);
+      }
+      setRangeEnd((prev) =>
+        prev && prev.taskId === cur.taskId && prev.date === cur.date ? prev : cur,
+      );
+    }
+
+    function onUp() {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      if (active) suppressNextClickRef.current = true;
+    }
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  }
+
+  function handleGridClickCapture(e) {
+    if (suppressNextClickRef.current) {
+      suppressNextClickRef.current = false;
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }
+
   const handleSaveNote = useCallback(async (taskId, date, noteText) => {
     try {
       const result = await upsertNote(taskId, date, noteText);
@@ -710,11 +863,73 @@ export default function TaskGrid() {
       await upsertDateCellOverride(taskId, date, '');
       setCellOverrides((prev) => ({ ...prev, [`${taskId}:${date}`]: '' }));
       setEditingOverrideCell({ taskId, date });
-      setArmedCell(null);
     } catch (e) {
       console.error('convert to text cell failed:', e);
     }
   }, []);
+
+  // Delete/Backspace on selected cell(s): visually remove checkboxes by
+  // converting every eligible cell to a BLANK text override, and blank the
+  // text of override cells. Completion rows are never touched — restoring
+  // the checkbox reveals the prior count. Locked (future/pre-active/
+  // after-end/hiatus) cells are skipped and reported.
+  const handleDeleteCells = useCallback(async (cells) => {
+    const eligible = cells.filter((c) => !c.disabled);
+    const skipped = cells.length - eligible.length;
+    // Only cells that actually change: checkbox cells gain a blank override;
+    // override cells with text get blanked. Already-blank overrides are no-ops.
+    const items = eligible
+      .filter((c) => !c.isOverride || c.hasText)
+      .map((c) => ({ task_id: c.taskId, date: c.date, text: '' }));
+    if (items.length === 0) {
+      if (skipped > 0) showFeedback(`Nothing to convert — skipped ${skipped} locked cell${skipped !== 1 ? 's' : ''}.`);
+      return;
+    }
+    try {
+      await batchUpsertDateCellOverrides(items);
+      setCellOverrides((prev) => {
+        const next = { ...prev };
+        for (const it of items) next[`${it.task_id}:${it.date}`] = '';
+        return next;
+      });
+      showFeedback(
+        `Converted ${items.length} cell${items.length !== 1 ? 's' : ''} to blank text`
+        + (skipped > 0 ? ` · skipped ${skipped} locked cell${skipped !== 1 ? 's' : ''}` : '')
+        + '. Completion history is preserved.',
+      );
+    } catch (e) {
+      console.error('range convert to text failed:', e);
+      showFeedback('Could not convert cells — no changes were made.');
+    }
+  }, [showFeedback]);
+
+  // Restore checkboxes for every eligible override cell in the selection.
+  // Confirmation for non-empty text is handled by the EditBar before calling.
+  const handleRestoreCells = useCallback(async (cells) => {
+    const eligible = cells.filter((c) => !c.disabled && c.isOverride);
+    const skipped = cells.filter((c) => c.isOverride && c.disabled).length;
+    if (eligible.length === 0) {
+      if (skipped > 0) showFeedback(`Nothing restored — skipped ${skipped} locked cell${skipped !== 1 ? 's' : ''}.`);
+      return;
+    }
+    try {
+      await batchDeleteDateCellOverrides(eligible.map((c) => ({ task_id: c.taskId, date: c.date })));
+      setEditingOverrideCell(null);
+      setCellOverrides((prev) => {
+        const next = { ...prev };
+        for (const c of eligible) delete next[`${c.taskId}:${c.date}`];
+        return next;
+      });
+      showFeedback(
+        `Restored ${eligible.length} checkbox${eligible.length !== 1 ? 'es' : ''}`
+        + (skipped > 0 ? ` · skipped ${skipped} locked cell${skipped !== 1 ? 's' : ''}` : '')
+        + '.',
+      );
+    } catch (e) {
+      console.error('range restore failed:', e);
+      showFeedback('Could not restore checkboxes — no changes were made.');
+    }
+  }, [showFeedback]);
 
   const handleCommitOverrideText = useCallback(async (taskId, date, text) => {
     setEditingOverrideCell(null);
@@ -735,7 +950,17 @@ export default function TaskGrid() {
     setEditingOverrideCell({ taskId, date });
     setSelectedCell({ taskId, date });
     setSelectedMetaCell(null);
-    setArmedCell(null);
+    setRangeEnd(null);
+  }, []);
+
+  // Typing into a selected cell (spreadsheet-style): open the inline editor
+  // seeded with the typed character. No override is created until the edit
+  // commits — Escape leaves a checkbox cell exactly as it was.
+  const handleStartSeededEdit = useCallback((taskId, date, seed) => {
+    setEditingOverrideCell({ taskId, date, seed });
+    setSelectedCell({ taskId, date });
+    setSelectedMetaCell(null);
+    setRangeEnd(null);
   }, []);
 
   const handleRestoreCheckbox = useCallback(async (taskId, date) => {
@@ -772,7 +997,7 @@ export default function TaskGrid() {
       month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 },
     );
     setSelectedCell(null);
-    setArmedCell(null);
+    setRangeEnd(null);
   }
 
   function goToNextMonth() {
@@ -780,14 +1005,14 @@ export default function TaskGrid() {
       month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 },
     );
     setSelectedCell(null);
-    setArmedCell(null);
+    setRangeEnd(null);
   }
 
   function goToCurrentMonth() {
     const now = new Date();
     setViewMonth({ year: now.getFullYear(), month: now.getMonth() + 1 });
     setSelectedCell(null);
-    setArmedCell(null);
+    setRangeEnd(null);
   }
 
   // ---------------------------------------------------------------------------
@@ -799,7 +1024,8 @@ export default function TaskGrid() {
   const selectedCellRef     = useRef(null);
   const selectedMetaCellRef = useRef(null);
   const editingTextCellRef  = useRef(null);
-  const armedCellRef        = useRef(null);
+  const rangeSelectionRef   = useRef(null);
+  const rangeEndRef         = useRef(null);
   const tasksRef           = useRef([]);
   const datesRef           = useRef([]);
   const completionsRef     = useRef({});
@@ -832,7 +1058,8 @@ export default function TaskGrid() {
   selectedCellRef.current     = selectedCell;
   selectedMetaCellRef.current = selectedMetaCell;
   editingTextCellRef.current  = editingTextCell;
-  armedCellRef.current        = armedCell;
+  rangeSelectionRef.current   = rangeSelection;
+  rangeEndRef.current         = rangeEnd;
   tasksRef.current            = flatGroupedTasks;
   datesRef.current            = dates;
   completionsRef.current      = completions;
@@ -843,28 +1070,28 @@ export default function TaskGrid() {
   jumpModeRef.current           = jumpMode;
   quickJumpEnabledRef.current   = quickJumpEnabled;
   keybindsRef.current           = resolvedKb;
-  handlersRef.current           = { handleIncrement, handleClear, handleSetCount, openAdd, openEdit, setSelectedCell, closeModal, setHelpOpen, setSelectedMetaCell, setEditingTextCell, setArmedCell, setJumpMode, setEditingOverrideCell };
+  handlersRef.current           = { handleIncrement, handleClear, handleSetCount, openAdd, openEdit, setSelectedCell, closeModal, setHelpOpen, setSelectedMetaCell, setEditingTextCell, setRangeEnd, setJumpMode, setEditingOverrideCell, handleDeleteCells, handleStartSeededEdit };
 
   // Clear selectedCell when the selected task is no longer in the flat grouped list.
   // Covers: soft-delete, filter change hiding the row, search hiding the row.
   useEffect(() => {
     if (selectedCellRef.current && !flatGroupedTasks.find((t) => t.id === selectedCellRef.current.taskId)) {
       setSelectedCell(null);
-      setArmedCell(null);
+      setRangeEnd(null);
     }
   }, [flatGroupedTasks]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Also clear selectedCell immediately when the active filter changes,
-  // since the new filter may show a completely different task set.
+  // Also clear selectedCell immediately when the active filters change,
+  // since the new filters may show a completely different task set.
   useEffect(() => {
     setSelectedCell(null);
-    setArmedCell(null);
-  }, [activeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+    setRangeEnd(null);
+  }, [activeFilter, secondaryFilters]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Clear selectedCell when groupMode changes — render order may change completely.
   useEffect(() => {
     setSelectedCell(null);
-    setArmedCell(null);
+    setRangeEnd(null);
   }, [groupMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close help panel when user clicks outside both the panel and the trigger button.
@@ -901,15 +1128,29 @@ export default function TaskGrid() {
       const {
         handleIncrement, handleClear, handleSetCount,
         openAdd, openEdit, setSelectedCell, closeModal, setHelpOpen,
-        setSelectedMetaCell, setEditingTextCell, setArmedCell,
+        setSelectedMetaCell, setEditingTextCell, setRangeEnd,
+        handleDeleteCells, handleStartSeededEdit,
       } = handlersRef.current;
       const kb    = keybindsRef.current;
       const sel   = selectedCellRef.current;
       const tasks = tasksRef.current;
       const dates = datesRef.current;
 
-      // Escape — three-level priority. Modal close is pre-guard (works while typing
-      // inside a modal input). Help-close and selection-clear respect the typing guard.
+      // Eligibility metadata for one cell — mirrors the rangeSelection memo so
+      // single-cell Delete and range Delete share the exact same guards.
+      function cellMeta(taskId, date) {
+        const task = tasks.find((t) => t.id === taskId);
+        const disabled = !task || task.is_paused === 1
+          || date > toLocalDate(new Date())
+          || (task.active_from && date < task.active_from)
+          || (task.end_date && date > task.end_date);
+        const ov = cellOverridesRef.current[`${taskId}:${date}`];
+        return { taskId, date, disabled, isOverride: ov !== undefined, hasText: !!ov };
+      }
+
+      // Escape — priority: modal > help > range > cell selection. Modal close
+      // is pre-guard (works while typing inside a modal input); the rest
+      // respect the typing guard.
       if (matchKeybind(e, kb.CLEAR_SELECTION)) {
         if (modalOpenRef.current) {
           closeModal();
@@ -921,8 +1162,8 @@ export default function TaskGrid() {
         if (!isTyping) {
           if (helpOpenRef.current) {
             setHelpOpen(false);
-          } else if (armedCellRef.current) {
-            setArmedCell(null); // cancel armed state; press Esc again to clear selection
+          } else if (rangeEndRef.current) {
+            setRangeEnd(null); // collapse range; press Esc again to clear selection
           } else if (sel) {
             setSelectedCell(null);
           } else if (selectedMetaCellRef.current) {
@@ -937,6 +1178,53 @@ export default function TaskGrid() {
       if (['input', 'textarea', 'select'].includes(tag)) return;
       if (document.activeElement?.isContentEditable) return;
       if (modalOpenRef.current) return;
+
+      // Shift+digit (0–9) — opens/fills the Jump panel for context-aware Quick Jump.
+      // Reserved before typing-to-edit below, so Shift+digits never type into cells.
+      // Uses event.code (layout-agnostic) because Shift+3 → '#' in event.key on US keyboards.
+      if (quickJumpEnabledRef.current && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && /^Digit[0-9]$/.test(e.code)) {
+        const digit = e.code[5]; // '0'–'9'
+        e.preventDefault();
+        numericBufferRef.current = (numericBufferRef.current ?? '') + digit;
+        setJumpMode((m) => m === null
+          ? { type: 'numeric', value: digit, error: '' }
+          : { ...m, value: m.value + digit, error: '' }
+        );
+        return;
+      }
+
+      // Shift+Arrow — extend the range from the anchor, spreadsheet-style.
+      if (sel && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey
+          && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+        e.preventDefault();
+        const focus = rangeEndRef.current ?? sel;
+        const rIdx = tasks.findIndex((t) => t.id === focus.taskId);
+        const dIdx = dates.indexOf(focus.date);
+        if (rIdx < 0 || dIdx < 0) return;
+        let nr = rIdx;
+        let nd = dIdx;
+        if (e.key === 'ArrowLeft')  nd = Math.max(0, dIdx - 1);
+        if (e.key === 'ArrowRight') nd = Math.min(dates.length - 1, dIdx + 1);
+        if (e.key === 'ArrowUp')    nr = Math.max(0, rIdx - 1);
+        if (e.key === 'ArrowDown')  nr = Math.min(tasks.length - 1, rIdx + 1);
+        setRangeEnd({ taskId: tasks[nr].id, date: dates[nd] });
+        return;
+      }
+
+      // Typing into a selected, enabled date cell (P10.0) — spreadsheet-style:
+      // any printable character starts text entry, converting a checkbox cell
+      // to a text cell (committed on Enter/blur; Escape cancels with no
+      // override created) or replacing an existing text cell's content.
+      // Checked before the letter keybinds (N/E/?) so typing wins while a date
+      // cell is selected; those shortcuts still work with no date cell selected.
+      if (sel && e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const meta = cellMeta(sel.taskId, sel.date);
+        if (!meta.disabled) {
+          e.preventDefault();
+          handleStartSeededEdit(sel.taskId, sel.date, e.key);
+          return;
+        }
+      }
 
       // N — open Add Task modal (no selection required)
       if (matchKeybind(e, kb.NEW_TASK)) {
@@ -958,23 +1246,6 @@ export default function TaskGrid() {
       // ? — toggle keyboard help panel (no selection required)
       if (matchKeybind(e, kb.TOGGLE_HELP)) {
         setHelpOpen((o) => !o);
-        return;
-      }
-
-      // Shift+digit (0–9) — opens/fills the Jump panel for context-aware Quick Jump.
-      // Uses event.code (layout-agnostic) because Shift+3 → '#' in event.key on US keyboards.
-      // Fires only when no other input is focused (panel not yet open); subsequent digits
-      // while panel is open are handled by the panel input's own onKeyDown.
-      // Shift+0 is now just a digit — no longer opens a separate prompt.
-      if (quickJumpEnabledRef.current && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && /^Digit[0-9]$/.test(e.code)) {
-        const digit = e.code[5]; // '0'–'9'
-        e.preventDefault();
-        numericBufferRef.current = (numericBufferRef.current ?? '') + digit;
-        setArmedCell(null);
-        setJumpMode((m) => m === null
-          ? { type: 'numeric', value: digit, error: '' }
-          : { ...m, value: m.value + digit, error: '' }
-        );
         return;
       }
 
@@ -1000,52 +1271,31 @@ export default function TaskGrid() {
 
       if (!sel) return;
 
+      // Delete / Backspace — convert selected cell(s) to blank text cells.
+      // Range selection converts every eligible cell; the underlying completion
+      // counts are preserved and locked cells are skipped (handleDeleteCells).
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        const range = rangeSelectionRef.current;
+        handleDeleteCells(range ? range.cells : [cellMeta(sel.taskId, sel.date)]);
+        return;
+      }
+
       // Text-override cells (P9.1): Enter opens the inline text editor;
-      // Delete/Backspace and Shift+Enter are no-ops (no silent text loss —
-      // clearing/restoring is an explicit EditBar action). Arrow navigation
-      // falls through to the shared handlers below unchanged.
+      // Shift+Enter is a no-op. Arrow navigation falls through unchanged.
       if (cellOverridesRef.current[`${sel.taskId}:${sel.date}`] !== undefined) {
         const { setEditingOverrideCell } = handlersRef.current;
-        if ((e.key === 'Delete' || e.key === 'Backspace') && !e.metaKey && !e.ctrlKey && !e.altKey) {
-          e.preventDefault();
-          return;
-        }
         if (matchKeybind(e, kb.DECREMENT)) {
           e.preventDefault();
           return;
         }
         if (matchKeybind(e, kb.INCREMENT)) {
           e.preventDefault();
-          const task = tasks.find((t) => t.id === sel.taskId);
-          const disabled = !task || task.is_paused === 1
-            || sel.date > toLocalDate(new Date())
-            || (task.active_from && sel.date < task.active_from)
-            || (task.end_date && sel.date > task.end_date);
-          if (!disabled) setEditingOverrideCell({ taskId: sel.taskId, date: sel.date });
+          if (!cellMeta(sel.taskId, sel.date).disabled) {
+            setEditingOverrideCell({ taskId: sel.taskId, date: sel.date });
+          }
           return;
         }
-      }
-
-      // Delete / Backspace — guarded two-step keyboard clear for DateCell completions.
-      // First press arms the cell (shows amber indicator + hint); second press confirms.
-      // Changing selection, navigating away, or pressing Escape cancels armed state.
-      if ((e.key === 'Delete' || e.key === 'Backspace') && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        e.preventDefault();
-        const task = tasks.find((t) => t.id === sel.taskId);
-        if (!task || task.is_paused === 1) return;
-        if (sel.date > toLocalDate(new Date())) return;
-        if (task.active_from && sel.date < task.active_from) return;
-        if (task.end_date && sel.date > task.end_date) return;
-        const count = completionsRef.current[`${sel.taskId}:${sel.date}`] || 0;
-        if (count === 0) return;
-        const armed = armedCellRef.current;
-        if (armed && armed.taskId === sel.taskId && armed.date === sel.date) {
-          setArmedCell(null);
-          handleClear(sel.taskId, sel.date);
-        } else {
-          setArmedCell({ taskId: sel.taskId, date: sel.date });
-        }
-        return;
       }
 
       const rowIdx  = tasks.findIndex((t) => t.id === sel.taskId);
@@ -1053,14 +1303,14 @@ export default function TaskGrid() {
 
       if (matchKeybind(e, kb.MOVE_LEFT)) {
         e.preventDefault();
-        setArmedCell(null);
+        setRangeEnd(null);
         const next = Math.max(0, dateIdx - 1);
         setSelectedCell({ taskId: sel.taskId, date: dates[next] });
         return;
       }
       if (matchKeybind(e, kb.MOVE_RIGHT)) {
         e.preventDefault();
-        setArmedCell(null);
+        setRangeEnd(null);
         const next = Math.min(dates.length - 1, dateIdx + 1);
         setSelectedCell({ taskId: sel.taskId, date: dates[next] });
         return;
@@ -1068,7 +1318,7 @@ export default function TaskGrid() {
       if (matchKeybind(e, kb.MOVE_UP)) {
         e.preventDefault();
         if (rowIdx < 0) return;
-        setArmedCell(null);
+        setRangeEnd(null);
         const next = Math.max(0, rowIdx - 1);
         setSelectedCell({ taskId: tasks[next].id, date: sel.date });
         return;
@@ -1076,7 +1326,7 @@ export default function TaskGrid() {
       if (matchKeybind(e, kb.MOVE_DOWN)) {
         e.preventDefault();
         if (rowIdx < 0) return;
-        setArmedCell(null);
+        setRangeEnd(null);
         const next = Math.min(tasks.length - 1, rowIdx + 1);
         setSelectedCell({ taskId: tasks[next].id, date: sel.date });
         return;
@@ -1112,7 +1362,7 @@ export default function TaskGrid() {
     // Context-aware: with a selected cell, jumps to date column N in that row;
     // without a selection, jumps to row N.
     function confirmRowJump(buf) {
-      const { setSelectedCell, setArmedCell, setJumpMode } = handlersRef.current;
+      const { setSelectedCell, setRangeEnd, setJumpMode } = handlersRef.current;
       const tasks = tasksRef.current;
       const dates = datesRef.current;
       const sel = selectedCellRef.current;
@@ -1124,7 +1374,7 @@ export default function TaskGrid() {
       if (sel) {
         // With selection: jump to 1-indexed date column in the current row.
         if (idx >= dates.length) return;
-        setArmedCell(null);
+        setRangeEnd(null);
         setSelectedCell({ taskId: sel.taskId, date: dates[idx] });
         const d = dates[idx];
         requestAnimationFrame(() => {
@@ -1137,7 +1387,7 @@ export default function TaskGrid() {
         const task = tasks[idx];
         const date = getDefaultKeyboardDate(dates);
         if (!date) return;
-        setArmedCell(null);
+        setRangeEnd(null);
         setSelectedCell({ taskId: task.id, date });
         const tid = task.id;
         requestAnimationFrame(() => {
@@ -1172,10 +1422,24 @@ export default function TaskGrid() {
       ? view.filter    : FILTERS.ALL;
     const validGroupMode = Object.values(GROUP_MODES).includes(view.groupMode)
       ? view.groupMode : GROUP_MODES.SECTION;
-    setActiveFilter(validFilter);
+    // Legacy views saved before the primary/secondary split may carry a
+    // secondary filter (Urgent/Dormant/…) as their primary — map it to
+    // All + that toggle so the visible task set is identical.
+    if (SECONDARY_FILTERS.includes(validFilter)) {
+      setActiveFilter(FILTERS.ALL);
+      setSecondaryFilters([validFilter]);
+    } else {
+      setActiveFilter(validFilter);
+      setSecondaryFilters(
+        Array.isArray(view.secondary)
+          ? view.secondary.filter((f) => SECONDARY_FILTERS.includes(f))
+          : [],
+      );
+    }
     setGroupMode(validGroupMode);
     setSearchQuery(view.searchQuery || '');
     setSelectedCell(null);
+    setRangeEnd(null);
   }
 
   // ---------------------------------------------------------------------------
@@ -1232,7 +1496,7 @@ export default function TaskGrid() {
       const sel = selectedCell;
       if (sel) {
         if (idx >= dates.length) return;
-        setArmedCell(null);
+        setRangeEnd(null);
         setSelectedCell({ taskId: sel.taskId, date: dates[idx] });
         const d = dates[idx];
         requestAnimationFrame(() => {
@@ -1244,7 +1508,7 @@ export default function TaskGrid() {
         const task = flatGroupedTasks[idx];
         const date = getDefaultKeyboardDate(dates);
         if (!date) return;
-        setArmedCell(null);
+        setRangeEnd(null);
         setSelectedCell({ taskId: task.id, date });
         const tid = task.id;
         requestAnimationFrame(() => {
@@ -1265,7 +1529,7 @@ export default function TaskGrid() {
       return;
     }
 
-    setArmedCell(null);
+    setRangeEnd(null);
 
     if (result.task) {
       const date = getDefaultKeyboardDate(dates);
@@ -1409,19 +1673,43 @@ export default function TaskGrid() {
         </div>
       </div>
 
-      {/* ── Filter bar — pills + search, sits between header and inspector ── */}
+      {/* ── Filter bar — status scope + secondary toggles + search (P10.0) ── */}
       <div className="ws-filter-bar">
-        <div className="ws-filter-pills">
-          {Object.values(FILTERS).map((f) => (
+        <div className="ws-filter-seg" role="group" aria-label="Task status scope">
+          {PRIMARY_FILTERS.map((f) => (
             <button
               key={f}
-              className={`ws-filter-pill${activeFilter === f ? ' ws-filter-pill--active' : ''}`}
+              className={`ws-filter-seg-btn${activeFilter === f ? ' ws-filter-seg-btn--active' : ''}`}
+              aria-pressed={activeFilter === f}
               onClick={() => setActiveFilter(f)}
             >
               {FILTER_LABELS[f]}
             </button>
           ))}
         </div>
+        <FilterMenu active={secondaryFilters} onToggle={toggleSecondaryFilter} />
+        {secondaryFilters.map((f) => (
+          <span key={f} className="ws-filter-chip">
+            {FILTER_LABELS[f]}
+            <button
+              type="button"
+              className="ws-filter-chip-x"
+              aria-label={`Remove ${FILTER_LABELS[f]} filter`}
+              onClick={() => toggleSecondaryFilter(f)}
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        {secondaryFilters.length > 0 && (
+          <button
+            type="button"
+            className="ws-filter-clear"
+            onClick={() => setSecondaryFilters([])}
+          >
+            Clear filters
+          </button>
+        )}
         <input
           className="ws-filter-input"
           type="search"
@@ -1437,6 +1725,7 @@ export default function TaskGrid() {
         <GroupSelect value={groupMode} onChange={setGroupMode} />
         <SavedViewsControl
           activeFilter={activeFilter}
+          secondaryFilters={secondaryFilters}
           groupMode={groupMode}
           searchQuery={searchQuery}
           onApplyView={handleApplyView}
@@ -1445,7 +1734,7 @@ export default function TaskGrid() {
           <button
             type="button"
             className="ws-filter-pill"
-            onClick={() => { setArmedCell(null); numericBufferRef.current = null; setJumpMode({ type: 'quick', value: '', error: '' }); }}
+            onClick={() => { setRangeEnd(null); numericBufferRef.current = null; setJumpMode({ type: 'quick', value: '', error: '' }); }}
             title="Quick jump to row, task name, or date"
           >
             Jump
@@ -1456,7 +1745,7 @@ export default function TaskGrid() {
       {/* ── Inspector strip — compositionally framed EditBar ── */}
       <div className="ws-inspector-strip">
         <div className="ws-inspector-badge">
-          {selectedCell ? '▸ cell' : '○ inspector'}
+          {rangeSelection && rangeSelection.count > 1 ? '▸ range' : selectedCell ? '▸ cell' : '○ inspector'}
         </div>
         <div className="ws-inspector-body">
           <EditBar
@@ -1465,8 +1754,9 @@ export default function TaskGrid() {
             completions={completions}
             notes={notes}
             todayStr={todayStr}
-            armedCell={armedCell}
             cellOverrides={cellOverrides}
+            rangeSelection={rangeSelection}
+            feedback={cellFeedback}
             onIncrement={handleIncrement}
             onClear={handleClear}
             onSetCount={handleSetCount}
@@ -1474,12 +1764,18 @@ export default function TaskGrid() {
             onConvertToText={handleConvertToText}
             onRestoreCheckbox={handleRestoreCheckbox}
             onEditOverride={handleStartOverrideEdit}
+            onRangeDelete={handleDeleteCells}
+            onRangeRestore={handleRestoreCells}
           />
         </div>
       </div>
 
       <div className="ws-grid-canvas">
-      <div className="grid-wrapper">
+      <div
+        className="grid-wrapper"
+        onPointerDown={handleGridPointerDown}
+        onClickCapture={handleGridClickCapture}
+      >
         <table className="task-grid">
           <thead>
             <tr>
@@ -1567,15 +1863,15 @@ export default function TaskGrid() {
                     colLayout={colLayout}
                     selectedMetaCell={selectedMetaCell}
                     editingTextCell={editingTextCell}
-                    armedCell={armedCell}
+                    rangeSelection={rangeSelection}
                     reorderEnabled={reorderEnabled}
                     isDragOver={dragOverId === task.id}
                     isDragSource={dragSrcId === task.id}
                     onHandlePointerDown={handleHandlePointerDown}
                     onIncrement={handleIncrement}
-                    onClear={handleClear}
                     onEdit={openEdit}
                     onSelect={handleSelect}
+                    onExtendRange={handleExtendRange}
                     onSelectMeta={handleSelectMeta}
                     onStartTextEdit={handleStartTextEdit}
                     onCommitTextEdit={handleCommitTextEdit}
@@ -1597,7 +1893,21 @@ export default function TaskGrid() {
           </div>
         )}
         {tasks.length > 0 && filteredTasks.length === 0 && (
-          <div className="grid-status">No tasks match the current filter.</div>
+          <div className="grid-status">
+            No tasks match the current filters.
+            {secondaryFilters.length > 0 && (
+              <>
+                {' '}
+                <button
+                  type="button"
+                  className="ws-filter-clear"
+                  onClick={() => setSecondaryFilters([])}
+                >
+                  Clear filters
+                </button>
+              </>
+            )}
+          </div>
         )}
       </div>
       </div>

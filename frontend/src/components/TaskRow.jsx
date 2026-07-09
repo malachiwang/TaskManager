@@ -279,10 +279,10 @@ function InlineTextCell({
 
 export default function TaskRow({
   task, dates, todayStr, completions, notes, selectedCell, colLayout,
-  selectedMetaCell, editingTextCell, armedCell,
+  selectedMetaCell, editingTextCell, rangeSelection,
   cellOverrides, editingOverrideCell,
   reorderEnabled, isDragOver, isDragSource, onHandlePointerDown,
-  onIncrement, onClear, onEdit, onSelect,
+  onIncrement, onEdit, onSelect, onExtendRange,
   onSelectMeta, onStartTextEdit, onCommitTextEdit, onCancelTextEdit,
   onStartOverrideEdit, onCommitOverrideText, onCancelOverrideEdit,
 }) {
@@ -407,6 +407,11 @@ export default function TaskRow({
         const noteKey = `${task.id}:${date}`;
         const hasNote = !!notes[noteKey];
         const noteText = notes[noteKey] || '';
+        const isEditingCell = editingOverrideCell?.taskId === task.id && editingOverrideCell?.date === date;
+        const isInRange = !!rangeSelection
+          && rangeSelection.taskIdSet.has(task.id)
+          && date >= rangeSelection.minDate
+          && date <= rangeSelection.maxDate;
         return (
           <DateCell
             key={date}
@@ -419,14 +424,15 @@ export default function TaskRow({
             activeFrom={task.active_from || null}
             endDate={task.end_date || null}
             isSelected={selectedCell?.taskId === task.id && selectedCell?.date === date}
-            isArmed={armedCell?.taskId === task.id && armedCell?.date === date}
+            isInRange={isInRange}
             hasNote={hasNote}
             noteText={noteText}
             overrideText={cellOverrides ? cellOverrides[noteKey] : undefined}
-            isEditingOverride={editingOverrideCell?.taskId === task.id && editingOverrideCell?.date === date}
+            isEditingOverride={isEditingCell}
+            overrideEditSeed={isEditingCell ? editingOverrideCell.seed : undefined}
             onIncrement={onIncrement}
-            onClear={onClear}
             onSelect={onSelect}
+            onExtendRange={onExtendRange}
             onStartOverrideEdit={onStartOverrideEdit}
             onCommitOverrideText={onCommitOverrideText}
             onCancelOverrideEdit={onCancelOverrideEdit}

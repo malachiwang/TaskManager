@@ -3024,3 +3024,118 @@ class TestDateCellOverrides:
         client.patch(f"/tasks/{t['id']}", params={"status": "hiatus"})
         rows = client.get(f"/date-cell-overrides?start={TODAY}&end={TODAY}").json()
         assert rows[0]["text"] == "history"
+
+
+class TestDateCellOverrideBatch:
+    """Batch create/update + batch delete for grid range operations (P10.0)."""
+
+    def test_batch_upsert_creates_blank_overrides(self, client):
+        t = create_task(client)
+        resp = client.post("/date-cell-overrides/batch", json={"items": [
+            {"task_id": t["id"], "date": TODAY, "text": ""},
+            {"task_id": t["id"], "date": YESTERDAY, "text": ""},
+        ]})
+        assert resp.status_code == 200
+        assert resp.json()["updated"] == 2
+        rows = client.get(f"/date-cell-overrides?start={YESTERDAY}&end={TODAY}").json()
+        assert len(rows) == 2
+        assert all(r["text"] == "" and r["mode"] == "text" for r in rows)
+
+    def test_batch_upsert_updates_existing_override(self, client):
+        t = create_task(client)
+        client.put(f"/date-cell-overrides/{t['id']}/{TODAY}", params={"text": "old"})
+        resp = client.post("/date-cell-overrides/batch", json={"items": [
+            {"task_id": t["id"], "date": TODAY, "text": ""},
+        ]})
+        assert resp.status_code == 200
+        rows = client.get(f"/date-cell-overrides?start={TODAY}&end={TODAY}").json()
+        assert rows == [{"task_id": t["id"], "date": TODAY, "mode": "text", "text": ""}]
+
+    def test_batch_upsert_preserves_completions(self, client):
+        t = create_task(client)
+        client.post(f"/completions?task_id={t['id']}&completion_date={TODAY}")
+        client.post(f"/completions?task_id={t['id']}&completion_date={TODAY}")
+        client.post("/date-cell-overrides/batch", json={"items": [
+            {"task_id": t["id"], "date": TODAY, "text": ""},
+        ]})
+        comps = client.get(f"/completions?start={TODAY}&end={TODAY}").json()
+        assert comps[0]["completion_count"] == 2  # hidden, never deleted
+
+    def test_batch_upsert_unknown_task_404_and_atomic(self, client):
+        t = create_task(client)
+        resp = client.post("/date-cell-overrides/batch", json={"items": [
+            {"task_id": t["id"], "date": TODAY, "text": ""},
+            {"task_id": 9999, "date": TODAY, "text": ""},
+        ]})
+        assert resp.status_code == 404
+        # All-or-nothing: the valid item must not have been written.
+        assert client.get(f"/date-cell-overrides?start={TODAY}&end={TODAY}").json() == []
+
+    def test_batch_upsert_invalid_date_422(self, client):
+        t = create_task(client)
+        resp = client.post("/date-cell-overrides/batch", json={"items": [
+            {"task_id": t["id"], "date": "not-a-date", "text": ""},
+        ]})
+        assert resp.status_code == 422
+
+    def test_batch_upsert_empty_items_noop(self, client):
+        resp = client.post("/date-cell-overrides/batch", json={"items": []})
+        assert resp.status_code == 200
+        assert resp.json()["updated"] == 0
+
+    def test_batch_delete_restores_checkboxes(self, client):
+        t = create_task(client)
+        client.put(f"/date-cell-overrides/{t['id']}/{TODAY}", params={"text": "a"})
+        client.put(f"/date-cell-overrides/{t['id']}/{YESTERDAY}", params={"text": "b"})
+        resp = client.post("/date-cell-overrides/batch-delete", json={"items": [
+            {"task_id": t["id"], "date": TODAY},
+            {"task_id": t["id"], "date": YESTERDAY},
+        ]})
+        assert resp.status_code == 200
+        assert resp.json() == {"deleted": 2, "skipped": 0}
+        assert client.get(f"/date-cell-overrides?start={YESTERDAY}&end={TODAY}").json() == []
+
+    def test_batch_delete_counts_missing_as_skipped(self, client):
+        t = create_task(client)
+        client.put(f"/date-cell-overrides/{t['id']}/{TODAY}", params={"text": "a"})
+        resp = client.post("/date-cell-overrides/batch-delete", json={"items": [
+            {"task_id": t["id"], "date": TODAY},
+            {"task_id": t["id"], "date": YESTERDAY},  # no override here
+        ]})
+        assert resp.status_code == 200
+        assert resp.json() == {"deleted": 1, "skipped": 1}
+
+    def test_batch_delete_reveals_prior_completion(self, client):
+        t = create_task(client)
+        client.post(f"/completions?task_id={t['id']}&completion_date={TODAY}")
+        client.post("/date-cell-overrides/batch", json={"items": [
+            {"task_id": t["id"], "date": TODAY, "text": ""},
+        ]})
+        client.post("/date-cell-overrides/batch-delete", json={"items": [
+            {"task_id": t["id"], "date": TODAY},
+        ]})
+        comps = client.get(f"/completions?start={TODAY}&end={TODAY}").json()
+        assert comps[0]["completion_count"] == 1
+
+    def test_batch_upsert_too_large_422(self, client):
+        t = create_task(client)
+        items = [{"task_id": t["id"], "date": TODAY, "text": ""}] * 501
+        resp = client.post("/date-cell-overrides/batch", json={"items": items})
+        assert resp.status_code == 422
+
+    def test_batch_created_overrides_survive_backup_roundtrip(self, client):
+        t = create_task(client)
+        client.post("/date-cell-overrides/batch", json={"items": [
+            {"task_id": t["id"], "date": TODAY, "text": ""},
+        ]})
+        backup = client.get("/export/backup.json").content
+        client.post("/date-cell-overrides/batch-delete", json={"items": [
+            {"task_id": t["id"], "date": TODAY},
+        ]})
+        resp = client.post(
+            "/restore/backup.json",
+            files={"file": ("b.json", backup, "application/json")},
+        )
+        assert resp.status_code == 200
+        rows = client.get(f"/date-cell-overrides?start={TODAY}&end={TODAY}").json()
+        assert rows == [{"task_id": t["id"], "date": TODAY, "mode": "text", "text": ""}]

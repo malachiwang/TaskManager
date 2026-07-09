@@ -226,6 +226,30 @@ export async function deleteDateCellOverride(taskId, date) {
   }
 }
 
+// Batch upsert text overrides for many task/date cells (range delete → text).
+// items: [{ task_id, date, text }]
+export async function batchUpsertDateCellOverrides(items) {
+  const res = await fetch(`${BASE}/date-cell-overrides/batch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items }),
+  });
+  if (!res.ok) throw new Error(`batchUpsertDateCellOverrides failed: ${res.status}`);
+  return res.json();
+}
+
+// Batch delete overrides for many task/date cells (range restore checkboxes).
+// items: [{ task_id, date }]
+export async function batchDeleteDateCellOverrides(items) {
+  const res = await fetch(`${BASE}/date-cell-overrides/batch-delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items }),
+  });
+  if (!res.ok) throw new Error(`batchDeleteDateCellOverrides failed: ${res.status}`);
+  return res.json();
+}
+
 export async function previewImport(file) {
   const formData = new FormData();
   formData.append('file', file);

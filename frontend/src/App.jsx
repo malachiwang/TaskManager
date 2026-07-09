@@ -8,6 +8,7 @@ import MonthlyReport from './components/MonthlyReport.jsx';
 import TopBarNetwork from './components/TopBarNetwork.jsx';
 import LoadingScreen from './components/LoadingScreen.jsx';
 import { fetchHealth } from './api.js';
+import { initAppearance } from './appearance.js';
 
 export default function App() {
   // Navigation is split into two concepts (P5.0-fix1):
@@ -53,6 +54,9 @@ export default function App() {
   useEffect(() => {
     const saved = localStorage.getItem('taskos-theme') || 'sheets';
     document.documentElement.dataset.theme = saved;
+    // Appearance mode / accent / motion (P10.0) — applies data attributes and
+    // follows the OS light-dark preference while mode is "system".
+    initAppearance();
   }, []);
 
   const showingTool = activeTool !== null;
@@ -89,8 +93,8 @@ export default function App() {
       <main className="app-main" data-tab={showingTool ? activeTool : activeSheet}>
         {!showingTool && activeSheet === 'tasks' && <TaskGrid />}
         {!showingTool && activeSheet === 'reading' && <ReadingSheet />}
-        {activeTool === 'dashboard' && <Dashboard />}
-        {activeTool === 'report' && <MonthlyReport />}
+        {activeTool === 'dashboard' && <Dashboard onOpenReports={() => setActiveTool('report')} />}
+        {activeTool === 'report' && <MonthlyReport onOpenDashboard={() => setActiveTool('dashboard')} />}
         {activeTool === 'archive' && <Archive />}
         {activeTool === 'settings' && <Settings />}
       </main>

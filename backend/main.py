@@ -1133,6 +1133,104 @@ def delete_date_cell_override(task_id: int, cell_date: str):
     return {"deleted": True, "task_id": task_id, "date": cell_date}
 
 
+class DateCellOverrideItem(BaseModel):
+    task_id: int
+    date: str
+    text: str = ""
+
+
+class DateCellOverrideBatchBody(BaseModel):
+    items: list[DateCellOverrideItem]
+
+
+class DateCellOverrideKey(BaseModel):
+    task_id: int
+    date: str
+
+
+class DateCellOverrideBatchDeleteBody(BaseModel):
+    items: list[DateCellOverrideKey]
+
+
+MAX_OVERRIDE_BATCH = 500
+
+
+def _validate_override_batch(conn, items):
+    """Validate all dates and task ids up front so a batch is all-or-nothing."""
+    if len(items) > MAX_OVERRIDE_BATCH:
+        raise HTTPException(status_code=422, detail=f"Batch too large (max {MAX_OVERRIDE_BATCH} cells)")
+    for item in items:
+        _validate_iso_date(item.date)
+    task_ids = {item.task_id for item in items}
+    for task_id in task_ids:
+        if not conn.execute("SELECT id FROM tasks WHERE id = ?", (task_id,)).fetchone():
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+
+@app.post("/date-cell-overrides/batch", status_code=200)
+def batch_upsert_date_cell_overrides(body: DateCellOverrideBatchBody):
+    """
+    Create or update text overrides for many task/date cells in one
+    transaction. Used by grid range operations (convert a selected range of
+    checkbox cells to blank text cells). Completion rows are never touched.
+    """
+    if not body.items:
+        return {"updated": 0}
+    conn = get_connection()
+    try:
+        _validate_override_batch(conn, body.items)
+        now = datetime.now().isoformat()
+        with conn:
+            for item in body.items:
+                existing = conn.execute(
+                    "SELECT id FROM date_cell_overrides WHERE task_id = ? AND date = ?",
+                    (item.task_id, item.date),
+                ).fetchone()
+                if existing:
+                    conn.execute(
+                        "UPDATE date_cell_overrides SET text = ?, updated_at = ? "
+                        "WHERE task_id = ? AND date = ?",
+                        (item.text, now, item.task_id, item.date),
+                    )
+                else:
+                    conn.execute(
+                        "INSERT INTO date_cell_overrides (task_id, date, mode, text, created_at, updated_at) "
+                        "VALUES (?, ?, 'text', ?, ?, ?)",
+                        (item.task_id, item.date, item.text, now, now),
+                    )
+    finally:
+        conn.close()
+    return {"updated": len(body.items)}
+
+
+@app.post("/date-cell-overrides/batch-delete", status_code=200)
+def batch_delete_date_cell_overrides(body: DateCellOverrideBatchDeleteBody):
+    """
+    Remove overrides for many task/date cells in one transaction (range
+    "restore checkboxes"). Cells without an override are counted as skipped
+    rather than failing the whole batch.
+    """
+    if not body.items:
+        return {"deleted": 0, "skipped": 0}
+    conn = get_connection()
+    try:
+        if len(body.items) > MAX_OVERRIDE_BATCH:
+            raise HTTPException(status_code=422, detail=f"Batch too large (max {MAX_OVERRIDE_BATCH} cells)")
+        for item in body.items:
+            _validate_iso_date(item.date)
+        deleted = 0
+        with conn:
+            for item in body.items:
+                cur = conn.execute(
+                    "DELETE FROM date_cell_overrides WHERE task_id = ? AND date = ?",
+                    (item.task_id, item.date),
+                )
+                deleted += cur.rowcount
+    finally:
+        conn.close()
+    return {"deleted": deleted, "skipped": len(body.items) - deleted}
+
+
 # ---------------------------------------------------------------------------
 # Dashboard
 # ---------------------------------------------------------------------------

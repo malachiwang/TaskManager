@@ -13,6 +13,10 @@ struct SidecarChild(Mutex<Option<CommandChild>>);
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        // External safe-link opening (P10.0) — the webview intercepts clicks on
+        // validated http/https/mailto links and opens them in the system
+        // browser / mail client. Scope is restricted in capabilities/default.json.
+        .plugin(tauri_plugin_opener::init())
         .manage(SidecarChild(Mutex::new(None)))
         .setup(|app| {
             // Compute the platform app-data directory for the packaged DB.

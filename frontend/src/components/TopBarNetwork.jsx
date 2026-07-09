@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { getMotionLevel } from '../appearance.js';
 
 // TopBarNetwork (P8.0B) — a subtle node-and-edge network drawn on a <canvas>
 // that fills its positioned parent. It is background-only: the canvas is
@@ -18,10 +19,16 @@ const EDGE_DIST = 118;        // px — max distance for an edge to be drawn
 const REPEL_RADIUS = 96;      // px — cursor influence radius
 const REPEL_FORCE = 0.55;     // impulse strength at the cursor
 const DAMPING = 0.94;         // velocity decay per frame → nodes settle
-const WANDER = 0.018;         // tiny random acceleration → gentle drift
-const MAX_SPEED = 1.25;       // px/frame cap so motion stays calm
 const MIN_NODES = 10;
 const MAX_NODES = 45;
+
+// Baseline drift per motion level (P10.0). "subtle" is ~20% above the old
+// 0.018 wander so the field is visibly alive; "lively" is a step further but
+// still calm — cursor repulsion is unchanged in every level.
+const MOTION_TUNING = {
+  subtle: { wander: 0.022, maxSpeed: 1.25 },
+  lively: { wander: 0.032, maxSpeed: 1.45 },
+};
 
 const NODE_RGB = '255, 255, 255';
 
@@ -45,13 +52,27 @@ export default function TopBarNetwork({ className = '' }) {
   const pointerRef = useRef({ x: 0, y: 0, active: false });
   const sizeRef = useRef({ w: 0, h: 0 });
 
+  // Background motion level ('off' | 'subtle' | 'lively') — user preference
+  // from Settings. Changes re-run the effect so the loop starts/stops live.
+  const [motionLevel, setMotionLevel] = useState(getMotionLevel);
+  useEffect(() => {
+    function onAppearanceChange() {
+      setMotionLevel(getMotionLevel());
+    }
+    window.addEventListener('taskos-appearance-change', onAppearanceChange);
+    return () => window.removeEventListener('taskos-appearance-change', onAppearanceChange);
+  }, []);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return undefined;
     const parent = canvas.parentElement;
     if (!parent) return undefined;
     const ctx = canvas.getContext('2d');
-    const reduced = prefersReducedMotion();
+    // Reduced-motion OS preference always wins; Motion "Off" draws the same
+    // static frame with no animation loop.
+    const reduced = prefersReducedMotion() || motionLevel === 'off';
+    const tuning = MOTION_TUNING[motionLevel] || MOTION_TUNING.subtle;
 
     function seedNodes(w, h) {
       const count = nodeCountFor(w);
@@ -125,8 +146,8 @@ export default function TopBarNetwork({ className = '' }) {
       const p = pointerRef.current;
       for (const n of nodes) {
         // Gentle Brownian wander.
-        n.vx += (Math.random() - 0.5) * WANDER;
-        n.vy += (Math.random() - 0.5) * WANDER;
+        n.vx += (Math.random() - 0.5) * tuning.wander;
+        n.vy += (Math.random() - 0.5) * tuning.wander;
 
         // Cursor repulsion (only while pointer is over the parent).
         if (p.active) {
@@ -146,9 +167,9 @@ export default function TopBarNetwork({ className = '' }) {
 
         // Speed cap keeps the field calm even under heavy cursor pushing.
         const sp = Math.hypot(n.vx, n.vy);
-        if (sp > MAX_SPEED) {
-          n.vx = (n.vx / sp) * MAX_SPEED;
-          n.vy = (n.vy / sp) * MAX_SPEED;
+        if (sp > tuning.maxSpeed) {
+          n.vx = (n.vx / sp) * tuning.maxSpeed;
+          n.vy = (n.vy / sp) * tuning.maxSpeed;
         }
 
         n.x += n.vx;
@@ -214,7 +235,7 @@ export default function TopBarNetwork({ className = '' }) {
       parent.removeEventListener('pointerleave', onPointerLeave);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, []);
+  }, [motionLevel]);
 
   return <canvas ref={canvasRef} className={`topbar-network-canvas ${className}`} aria-hidden="true" />;
 }

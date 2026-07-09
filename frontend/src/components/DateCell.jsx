@@ -2,10 +2,13 @@ import { useRef } from 'react';
 
 // A single date-grid cell.
 //
-// Interaction model (P2.0A):
-//   click cell body  → select/focus cell only — no data mutation
-//   click dc-box     → explicit increment (POST /completions)
-//   shift+click dc-box → clear completion count (DELETE /completions)
+// Interaction model (P2.0A, extended P10.0):
+//   click cell body    → select/focus cell only — no data mutation
+//   click dc-box       → explicit increment (POST /completions)
+//   shift+click        → extend rectangular range selection from the anchor
+//                        cell (never toggles/increments)
+//   alt/option+click   → select only, even on the dc-box action zone
+//   drag across cells  → rectangular range selection (handled by TaskGrid)
 //   future / before-active / after-end → disabled; dc-box display only
 //   paused → disabled; existing counts shown muted, no interaction
 //
@@ -16,12 +19,14 @@ import { useRef } from 'react';
 //   count 2+          → dc-box--filled (neutral ink, white number, 15×15)
 //   paused + count    → dc-box--filled dc-box--muted (muted color, no interaction)
 //
-// Text override mode (P9.1): when overrideText !== undefined this exact
+// Text override mode (P9.1/P10.0): when overrideText !== undefined this exact
 // task/date cell is a plain-text cell instead of a checkbox. Any completion
 // count is hidden (never deleted) while the override exists. Double-click (or
-// Enter via the grid handler / EditBar) opens an inline editor; Enter/blur
-// commit, Escape cancels. All checkbox behavior above is untouched for cells
-// without an override.
+// typing / Enter via the grid handler / EditBar) opens an inline editor;
+// Enter/blur commit, Escape cancels. Delete/Backspace on a selected cell
+// converts it to a blank text cell (TaskGrid owns that logic). A cell can
+// also be in edit mode before any override exists — typing into a checkbox
+// cell seeds the editor (overrideEditSeed) and only commits on Enter/blur.
 
 export default function DateCell({
   taskId,
@@ -33,14 +38,15 @@ export default function DateCell({
   activeFrom,
   endDate,
   isSelected,
-  isArmed,
+  isInRange,
   hasNote,
   noteText,
   overrideText,
   isEditingOverride,
+  overrideEditSeed,
   onIncrement,
-  onClear,
   onSelect,
+  onExtendRange,
   onStartOverrideEdit,
   onCommitOverrideText,
   onCancelOverrideEdit,
@@ -57,9 +63,13 @@ export default function DateCell({
   const [wy, wm, wd] = date.split('-').map(Number);
   const isWeekend = new Date(wy, wm - 1, wd).getDay() % 6 === 0;
 
-  // Cell body click: select only. No data mutation.
-  function handleCellClick() {
-    onSelect(taskId, date);
+  // Cell body click: select only (shift extends the range). No data mutation.
+  function handleCellClick(e) {
+    if (e.shiftKey) {
+      onExtendRange(taskId, date);
+    } else {
+      onSelect(taskId, date);
+    }
   }
 
   // Text-override cells: double-click opens the inline editor (disabled cells
@@ -92,33 +102,38 @@ export default function DateCell({
 
   // dc-box click: explicit completion action.
   // Bubbles up to <td> so the cell also becomes selected as a side effect.
+  // Shift = range selection, Alt/Option = select-without-toggle — both are
+  // handled by the bubbled cell click and must never increment.
   function handleBoxClick(e) {
-    if (isDisabled) return;
-    if (e.shiftKey) {
-      if (count > 0) onClear(taskId, date);
-    } else {
-      onIncrement(taskId, date);
-    }
+    if (isDisabled || e.shiftKey || e.altKey || e.metaKey) return;
+    onIncrement(taskId, date);
   }
 
   function renderContent() {
+    // Inline editor — active for existing text cells AND for checkbox cells
+    // being converted by typing (seeded edit; no override exists until commit).
+    if (isEditingOverride && !isDisabled) {
+      return (
+        <input
+          className="dc-text-input"
+          defaultValue={overrideEditSeed ?? overrideText ?? ''}
+          autoFocus
+          onFocus={(e) => {
+            const len = e.target.value.length;
+            e.target.setSelectionRange(len, len);
+          }}
+          onKeyDown={handleOverrideKeyDown}
+          onBlur={handleOverrideBlur}
+          onClick={(e) => e.stopPropagation()}
+          aria-label={`Text for ${date}`}
+        />
+      );
+    }
+
     // Text override mode (P9.1) — replaces the checkbox for this exact cell.
     // Overrides on disabled cells (future/pre-active/after-end/hiatus) stay
     // visible read-only; editing is only reachable on enabled cells.
     if (isTextOverride) {
-      if (isEditingOverride && !isDisabled) {
-        return (
-          <input
-            className="dc-text-input"
-            defaultValue={overrideText}
-            autoFocus
-            onKeyDown={handleOverrideKeyDown}
-            onBlur={handleOverrideBlur}
-            onClick={(e) => e.stopPropagation()}
-            aria-label={`Text for ${date}`}
-          />
-        );
-      }
       return (
         <span
           className={`dc-text${overrideText ? '' : ' dc-text--empty'}${isDisabled ? ' dc-text--muted' : ''}`}
@@ -153,14 +168,14 @@ export default function DateCell({
       );
     }
 
-    // Active filled cell — box is the increment / shift-clear action zone.
+    // Active filled cell — box is the increment action zone.
     return (
       <span
         className="dc-box dc-box--filled"
         onClick={handleBoxClick}
         role="button"
         tabIndex={-1}
-        aria-label={`${count} completion${count !== 1 ? 's' : ''}. Click to add, Shift+click to clear.`}
+        aria-label={`${count} completion${count !== 1 ? 's' : ''}. Click to add.`}
       >
         {count === 1 ? '✓' : count}
       </span>
@@ -177,7 +192,7 @@ export default function DateCell({
     isWeekend          ? 'weekend'       : '',
     count > 0 && !isTextOverride && !isPaused && !isBeforeActiveFrom && !isAfterEndDate ? 'has-count' : '',
     isSelected         ? 'selected'      : '',
-    isArmed            ? 'armed'         : '',
+    isInRange          ? 'in-range'      : '',
     hasNote            ? 'has-note'      : '',
     isTextOverride     ? 'text-override' : '',
   ]
@@ -187,6 +202,9 @@ export default function DateCell({
   return (
     <td
       className={classes}
+      data-dc-task={taskId}
+      data-dc-date={date}
+      aria-selected={isSelected || isInRange || undefined}
       onClick={handleCellClick}
       onDoubleClick={handleCellDoubleClick}
       title={
