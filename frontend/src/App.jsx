@@ -48,14 +48,11 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
-  // Apply saved theme on mount — reads before first paint would require an
-  // inline <script> in index.html; avoids a one-frame theme flash
-  // is acceptable and this keeps the implementation self-contained.
+  // Apply saved appearance on mount (P10.1: visual theme + mode + accent +
+  // motion all live in appearance.js, which also migrates the legacy
+  // taskos-theme key). A one-frame theme flash before this runs is acceptable
+  // and keeps the implementation self-contained.
   useEffect(() => {
-    const saved = localStorage.getItem('taskos-theme') || 'sheets';
-    document.documentElement.dataset.theme = saved;
-    // Appearance mode / accent / motion (P10.0) — applies data attributes and
-    // follows the OS light-dark preference while mode is "system".
     initAppearance();
   }, []);
 

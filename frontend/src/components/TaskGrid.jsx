@@ -1040,6 +1040,7 @@ export default function TaskGrid() {
   // even if React hasn't re-rendered yet. Cleared on manual panel edit or close.
   const numericBufferRef     = useRef(null);
   const jumpInputRef         = useRef(null);
+  const searchInputRef       = useRef(null);
   const quickJumpEnabledRef  = useRef(quickJumpEnabled);
   const helpBtnRef           = useRef(null);
   const helpPanelRef       = useRef(null);
@@ -1211,15 +1212,16 @@ export default function TaskGrid() {
         return;
       }
 
-      // Typing into a selected, enabled date cell (P10.0) — spreadsheet-style:
-      // any printable character starts text entry, converting a checkbox cell
-      // to a text cell (committed on Enter/blur; Escape cancels with no
-      // override created) or replacing an existing text cell's content.
-      // Checked before the letter keybinds (N/E/?) so typing wins while a date
-      // cell is selected; those shortcuts still work with no date cell selected.
+      // Typing into a selected, enabled TEXT-OVERRIDE date cell (P10.1) —
+      // spreadsheet-style: a printable character starts text entry seeded with
+      // that character, replacing the cell's existing text (committed on
+      // Enter/blur; Escape cancels). Normal checkbox cells deliberately do NOT
+      // accept typing — delete the checkbox first (Delete/Backspace creates a
+      // blank text cell), then type. This keeps single-letter app shortcuts
+      // (N/E/? etc.) working while a checkbox cell is selected.
       if (sel && e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
         const meta = cellMeta(sel.taskId, sel.date);
-        if (!meta.disabled) {
+        if (meta.isOverride && !meta.disabled) {
           e.preventDefault();
           handleStartSeededEdit(sel.taskId, sel.date, e.key);
           return;
@@ -1246,6 +1248,13 @@ export default function TaskGrid() {
       // ? — toggle keyboard help panel (no selection required)
       if (matchKeybind(e, kb.TOGGLE_HELP)) {
         setHelpOpen((o) => !o);
+        return;
+      }
+
+      // / — focus the task search box (customizable via FOCUS_SEARCH)
+      if (matchKeybind(e, kb.FOCUS_SEARCH)) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
         return;
       }
 
@@ -1711,11 +1720,13 @@ export default function TaskGrid() {
           </button>
         )}
         <input
+          ref={searchInputRef}
           className="ws-filter-input"
           type="search"
           placeholder="Search tasks…"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Escape') e.target.blur(); }}
         />
         {filteredTasks.length !== tasks.length && (
           <span className="ws-filter-count">

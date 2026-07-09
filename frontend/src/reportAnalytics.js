@@ -237,6 +237,73 @@ export function cleanupReport(tasks) {
   };
 }
 
+// ── Period-over-period comparison (P10.1) ───────────────────────────────────
+// Deterministic deltas between the current and previous period, built from
+// the same inputs the existing cards already use. Every row is
+// {label, prev, cur, delta, goodWhen} — goodWhen tells the UI which direction
+// to color as improvement ('up' = more is better, 'down' = less is better).
+export function periodComparison({ curActivity, prevActivity, curFinished, prevFinished, curNeglected, prevNeglected, curReading, prevReading }) {
+  const rows = [];
+  const push = (label, prev, cur, goodWhen) => {
+    if (prev === null || cur === null) return;
+    rows.push({ label, prev, cur, delta: cur - prev, goodWhen });
+  };
+  if (curActivity && prevActivity) {
+    push('Completions', prevActivity.total, curActivity.total, 'up');
+    push('Active days', prevActivity.activeDays, curActivity.activeDays, 'up');
+  }
+  if (curFinished && prevFinished) {
+    push('Tasks finished', prevFinished.length, curFinished.length, 'up');
+  }
+  if (curNeglected && prevNeglected) {
+    push('Neglected tasks', prevNeglected.length, curNeglected.length, 'down');
+  }
+  if (curReading && prevReading) {
+    push('Books updated', prevReading.updatedInPeriod, curReading.updatedInPeriod, 'up');
+    push('Books finished', prevReading.finishedInPeriod.length, curReading.finishedInPeriod.length, 'up');
+  }
+  // "Enough data" heuristic for the empty state: the previous period must show
+  // at least some recorded life, otherwise the deltas are just noise.
+  const prevHasData = (prevActivity?.total ?? 0) > 0
+    || (prevFinished?.length ?? 0) > 0
+    || (prevReading?.updatedInPeriod ?? 0) > 0;
+  return { rows, prevHasData };
+}
+
+// ── Staleness buckets + cleanup candidates (P10.1 behavioral insight) ────────
+// Current-state staleness ladder over active (non-hiatus/finished/scheduled)
+// tasks, using existing days_since — no new data required. Candidates are
+// tasks that likely need action other than "do it": pause, archive, or
+// reword. Deterministic and explainable per row.
+export function stalenessReport(tasks) {
+  const active = tasks.filter((t) => !(t.is_paused === 1 || t.is_ended || t.is_scheduled));
+  const bucket = (min, max = Infinity) =>
+    active.filter((t) => t.days_since != null && t.days_since >= min && t.days_since < max).length;
+  const candidates = active
+    .map((t) => {
+      const days = t.days_since ?? null;
+      const neverDone = !t.latest_completion && !t.manual_last_done_override;
+      const interval = t.interval_days || 1;
+      const overdueRatio = days != null ? days / interval : 0;
+      let reason = null;
+      if (neverDone && days != null && days >= 30) reason = `never done · created ${days}d ago`;
+      else if (days != null && days >= 90) reason = `untouched for ${days}d`;
+      else if (days != null && days >= 60 && overdueRatio >= 4) reason = `${days}d since last · ${Math.round(overdueRatio)}× its ${interval}d cadence`;
+      if (!reason) return null;
+      return { id: t.id, name: t.name, section: t.section || null, days, reason };
+    })
+    .filter(Boolean)
+    .sort((a, b) => (b.days ?? 0) - (a.days ?? 0))
+    .slice(0, 8);
+  return {
+    activeCount: active.length,
+    b30: bucket(30, 60),
+    b60: bucket(60, 90),
+    b90: bucket(90),
+    candidates,
+  };
+}
+
 // ── Optional Reading summary (books-only, no per-book entry fetches) ─────────
 export function readingSummary(books, start, end) {
   const inRange = (d) => d && d.slice(0, 10) >= start && d.slice(0, 10) <= end;

@@ -1,14 +1,14 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { downloadExportBackup, restoreBackup, fetchDoc } from '../api.js';
 import {
-  KEYBINDS, KB_GROUP_ORDER, FIXED_SHORTCUTS,
+  KEYBINDS, KB_GROUP_ORDER, FIXED_SHORTCUTS, FIXED_REASON_LABELS,
   loadKbOverrides, writeKbOverrides, buildResolvedFromOverrides,
   isReservedBinding, findBindingConflict, captureEventToBinding,
   bindingLabel, bindingSignature, normalizeBinding,
 } from '../keybinds.js';
 import {
   loadAppearance, saveAppearance,
-  APPEARANCE_MODES, ACCENT_THEMES, MOTION_LEVELS,
+  APPEARANCE_MODES, ACCENT_THEMES, MOTION_LEVELS, VISUAL_THEMES,
 } from '../appearance.js';
 import {
   loadPreferences as loadDashPrefs,
@@ -30,6 +30,21 @@ function loadSettings() {
   } catch {
     return {};
   }
+}
+
+// Collapsible reference block (P10.1 Settings IA) — documentation-style
+// content stays findable but out of the way. Settings itself shows controls;
+// explanations live behind these disclosures.
+function RefSection({ label, children }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="ws-doc-section">
+      <button type="button" className="ws-doc-toggle" onClick={() => setOpen((v) => !v)}>
+        {label} {open ? '▴' : '▾'}
+      </button>
+      {open && <div className="ws-ref-body">{children}</div>}
+    </div>
+  );
 }
 
 function DocSection({ name, label }) {
@@ -63,8 +78,8 @@ function DocSection({ name, label }) {
 }
 
 export default function Settings() {
-  const [theme, setTheme]                     = useState(() => localStorage.getItem('taskos-theme') || 'sheets');
-  // Appearance mode / accent / motion (P10.0) — applied live, saved locally.
+  // Appearance mode / visual theme / accent / motion (P10.0–P10.1) —
+  // applied live, saved in localStorage (taskos-appearance).
   const [appearance, setAppearance]           = useState(loadAppearance);
   const [defaultSection, setDefaultSection]   = useState(() => loadSettings().defaultSection      ?? 'General');
   const [defaultPriority, setDefaultPriority] = useState(() => loadSettings().defaultPriority     ?? 5);
@@ -171,13 +186,14 @@ export default function Settings() {
       }
 
       if (isReservedBinding(binding)) {
-        setRecordingError('Reserved — choose a letter, digit, or symbol');
+        setRecordingError('Reserved — modifier combos and named keys (Enter, Esc, arrows, Tab…) belong to the browser/system. Choose a plain letter, digit, or symbol.');
         return;
       }
 
       const conflict = findBindingConflict(binding, recordingAction, resolvedKb);
       if (conflict) {
-        setRecordingError(`Already used for "${KEYBINDS[conflict].description}"`);
+        const where = KEYBINDS[conflict].group;
+        setRecordingError(`Already used for "${KEYBINDS[conflict].description}" (${where}) — pick another key or reset that shortcut first`);
         return;
       }
 
@@ -253,13 +269,6 @@ export default function Settings() {
     } catch {}
   }
 
-  function handleThemeChange(e) {
-    const value = e.target.value;
-    setTheme(value);
-    document.documentElement.dataset.theme = value;
-    localStorage.setItem('taskos-theme', value);
-  }
-
   function updateAppearance(patch) {
     setAppearance((prev) => {
       const next = { ...prev, ...patch };
@@ -274,7 +283,7 @@ export default function Settings() {
     setTimeout(() => setColResetMsg(false), 4000);
   }
 
-  const themeLabel = theme === 'paper' ? 'Paper Workstation' : 'Sheets Classic';
+  const themeLabel = VISUAL_THEMES.find((t) => t.value === appearance.theme)?.label ?? 'Classic Sheet';
 
   return (
     <div className="ws-settings">
@@ -317,23 +326,34 @@ export default function Settings() {
               <span className="ws-frame-kicker">01</span>
               <span>Appearance</span>
             </div>
-            <div className="ws-ctrl-row">
+            <div className="ws-ctrl-row ws-ctrl-row--stack">
               <div className="ws-ctrl-info">
                 <span className="ws-ctrl-label">Visual theme</span>
                 <span className="ws-ctrl-desc">
-                  Paper Workstation is the primary theme. Sheets Classic is a legacy alternative.
+                  Curated surface palettes — same layout and shapes, different paper.
+                  Midnight always uses a dark base.
                 </span>
               </div>
-              <div className="ws-ctrl-action">
-                <select
-                  className="settings-input"
-                  style={{ width: '170px' }}
-                  value={theme}
-                  onChange={handleThemeChange}
-                >
-                  <option value="sheets">Sheets Classic</option>
-                  <option value="paper">Paper Workstation</option>
-                </select>
+              <div className="settings-theme-grid" role="group" aria-label="Visual theme">
+                {VISUAL_THEMES.map((t) => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    className={`settings-theme-card${appearance.theme === t.value ? ' settings-theme-card--active' : ''}`}
+                    aria-pressed={appearance.theme === t.value}
+                    onClick={() => updateAppearance({ theme: t.value })}
+                  >
+                    <span className="settings-theme-preview" aria-hidden="true">
+                      {t.swatch.map((c, i) => (
+                        <span key={i} style={{ background: c }} />
+                      ))}
+                    </span>
+                    <span className="settings-theme-name">
+                      {t.label}
+                      {t.darkBase ? ' · dark' : ''}
+                    </span>
+                  </button>
+                ))}
               </div>
             </div>
             <div className="ws-ctrl-row">
@@ -602,10 +622,8 @@ export default function Settings() {
               <div className="ws-ctrl-info">
                 <span className="ws-ctrl-label">Export full backup</span>
                 <span className="ws-ctrl-desc">
-                  One JSON file with all tasks, completions, statuses, notes, cell notes,
-                  reading books and checkpoints, and archive snapshots. Use it before bulk
-                  edits or imports — and to move your workspace to another device. Store the
-                  file somewhere safe; it is your data.
+                  One JSON file with everything: tasks, completions, notes, reading, and
+                  archives. Export before bulk changes and to move devices.
                 </span>
               </div>
               <button className="button-secondary ws-backup-btn" onClick={() => downloadExportBackup()}>
@@ -618,9 +636,7 @@ export default function Settings() {
               <div className="ws-ctrl-info">
                 <span className="ws-ctrl-label">Restore from backup</span>
                 <span className="ws-ctrl-desc">
-                  Load a backup JSON exported above — for device transfer, restore it on the
-                  new device. <strong>Restoring replaces all current tasks, completions,
-                  reading data, notes, and archives</strong> with the backup&rsquo;s contents.
+                  <strong>Replaces all current data</strong> with the backup&rsquo;s contents.
                   A safety copy of the current database is saved automatically first.
                 </span>
               </div>
@@ -677,31 +693,15 @@ export default function Settings() {
 
             <div className="ws-ctrl-row">
               <div className="ws-ctrl-info">
-                <span className="ws-ctrl-label">Storage location</span>
+                <span className="ws-ctrl-label">Storage &amp; privacy</span>
                 <span className="ws-ctrl-desc">
-                  All task data lives in <code>taskos.db</code> — a local SQLite file (project
-                  root in development, app-data directory in the packaged app; overridable with
-                  the <code>TASKOS_DB_PATH</code> environment variable). Gitignored, never
-                  committed. UI preferences (theme, column widths, dashboard toggles, shortcuts)
-                  stay in this browser&rsquo;s localStorage and are <em>not</em> included in
-                  backups — they do not transfer between devices.
+                  Everything is a local SQLite file (<code>taskos.db</code>) — no cloud, no
+                  account, no telemetry. UI preferences stay in this browser and are not part
+                  of backups. Details: Technical reference below.
                 </span>
               </div>
               <div className="ws-ctrl-action">
-                <span className="ws-state-badge ws-state-badge--on">local</span>
-              </div>
-            </div>
-
-            <div className="ws-ctrl-row">
-              <div className="ws-ctrl-info">
-                <span className="ws-ctrl-label">Privacy</span>
-                <span className="ws-ctrl-desc">
-                  No cloud sync. No authentication. No external services. No telemetry.
-                  All network traffic is localhost only.
-                </span>
-              </div>
-              <div className="ws-ctrl-action">
-                <span className="ws-state-badge ws-state-badge--on">offline</span>
+                <span className="ws-state-badge ws-state-badge--on">local · offline</span>
               </div>
             </div>
           </div>
@@ -716,13 +716,6 @@ export default function Settings() {
             {kbGroups.map(({ group, actions }) => (
               <div key={group}>
                 <div className="ws-settings-group">{group}</div>
-                {FIXED_SHORTCUTS.filter((s) => s.group === group).map((s) => (
-                  <div key={s.keys} className="ws-kbd-shortcut-row">
-                    <kbd className="ws-kbd-key">{s.keys}</kbd>
-                    <span className="ws-kbd-shortcut-desc">{s.description}</span>
-                    <span className="ws-state-badge ws-state-badge--dim">fixed</span>
-                  </div>
-                ))}
                 {actions.map(([action, binding]) => {
                   const isRecording = recordingAction === action;
                   if (!binding.customizable) {
@@ -730,7 +723,9 @@ export default function Settings() {
                       <div key={action} className="ws-kbd-shortcut-row">
                         <kbd className="ws-kbd-key">{bindingLabel(resolvedKb[action])}</kbd>
                         <span className="ws-kbd-shortcut-desc">{binding.description}</span>
-                        <span className="ws-state-badge ws-state-badge--dim">fixed</span>
+                        <span className="ws-state-badge ws-state-badge--dim">
+                          fixed · {FIXED_REASON_LABELS[binding.fixedReason] || 'fixed'}
+                        </span>
                       </div>
                     );
                   }
@@ -746,17 +741,32 @@ export default function Settings() {
                       </div>
                     );
                   }
+                  const isChanged = action in kbOverrides;
                   return (
                     <div key={action} className="ws-kbd-shortcut-row">
                       <kbd className="ws-kbd-key">{bindingLabel(resolvedKb[action])}</kbd>
-                      <span className="ws-kbd-shortcut-desc">{binding.description}</span>
+                      <span className="ws-kbd-shortcut-desc">
+                        {binding.description}
+                        {isChanged && (
+                          <span className="ws-kbd-default-hint"> · default {bindingLabel(binding)}</span>
+                        )}
+                      </span>
                       <button className="ws-kbd-action-btn" onClick={() => startRecording(action)}>Change</button>
-                      {action in kbOverrides && (
+                      {isChanged && (
                         <button className="ws-kbd-action-btn ws-kbd-action-btn--reset" onClick={() => resetOverride(action)}>Reset</button>
                       )}
                     </div>
                   );
                 })}
+                {FIXED_SHORTCUTS.filter((s) => s.group === group).map((s) => (
+                  <div key={s.keys + s.description} className="ws-kbd-shortcut-row">
+                    <kbd className="ws-kbd-key">{s.keys}</kbd>
+                    <span className="ws-kbd-shortcut-desc">{s.description}</span>
+                    <span className="ws-state-badge ws-state-badge--dim">
+                      fixed · {FIXED_REASON_LABELS[s.reason] || 'fixed'}
+                    </span>
+                  </div>
+                ))}
               </div>
             ))}
             {Object.keys(kbOverrides).length > 0 && (
@@ -768,65 +778,84 @@ export default function Settings() {
             )}
           </div>
 
-          {/* 06 System Behavior */}
+          {/* 07 Technical reference — documentation, collapsed by default
+              (P10.1 Settings IA: controls up front, explanations on demand). */}
           <div className="ws-frame">
             <div className="ws-frame-header">
               <span className="ws-frame-kicker">07</span>
-              <span>System behavior</span>
-              <span className="ws-frame-header-sub">reference</span>
+              <span>Technical reference</span>
+              <span className="ws-frame-header-sub">how the system works · expand what you need</span>
             </div>
-
-            <div className="ws-settings-group">Urgency formula</div>
-            <div className="ws-formula-block">
-              <pre className="settings-pre">{`urgency = 10 × (floor + (1 − floor) × growth)
+            <div className="ws-frame-body">
+              <RefSection label="Urgency formula">
+                <pre className="settings-pre">{`urgency = 10 × (floor + (1 − floor) × growth)
 
 base   = f(priority)        floor  = base / 2
 growth = 1 − exp(−k × D/I)  k = 2.0
 
 D = days_since   I = interval_days`}</pre>
-              <p className="ws-formula-note">
-                Asymptotic — approaches 10, never exceeds it. At D = I (due), urgency is
-                roughly halfway to 10. At D = 2I, urgency is near-peak. Hiatus tasks always score 0.
-              </p>
-            </div>
+                <p className="ws-formula-note">
+                  Asymptotic — approaches 10, never exceeds it. At D = I (due), urgency is
+                  roughly halfway to 10. At D = 2I, urgency is near-peak. Hiatus tasks always score 0.
+                </p>
+              </RefSection>
 
-            <div className="ws-settings-group">Task status</div>
-            <div className="ws-state-row">
-              <div className="ws-ctrl-info">
-                <span className="ws-ctrl-label">Active</span>
-                <span className="ws-ctrl-desc">Accumulates urgency. Appears in all pressure calculations. Default for all new tasks.</span>
-              </div>
-              <span className="ws-state-badge ws-state-badge--on">tracking</span>
-            </div>
-            <div className="ws-state-row">
-              <div className="ws-ctrl-info">
-                <span className="ws-ctrl-label">Hiatus</span>
-                <span className="ws-ctrl-desc">Suspended. Scores 0 urgency. Hidden from dashboard pressure and priority queue. Fully recoverable — set back to Active to resume.</span>
-              </div>
-              <span className="ws-state-badge ws-state-badge--off">suspended</span>
-            </div>
+              <RefSection label="Task status &amp; lifecycle">
+                <div className="ws-state-row">
+                  <div className="ws-ctrl-info">
+                    <span className="ws-ctrl-label">Active</span>
+                    <span className="ws-ctrl-desc">Accumulates urgency. Appears in all pressure calculations. Default for all new tasks.</span>
+                  </div>
+                  <span className="ws-state-badge ws-state-badge--on">tracking</span>
+                </div>
+                <div className="ws-state-row">
+                  <div className="ws-ctrl-info">
+                    <span className="ws-ctrl-label">Hiatus</span>
+                    <span className="ws-ctrl-desc">Suspended. Scores 0 urgency. Hidden from dashboard pressure and priority queue. Fully recoverable — set back to Active to resume.</span>
+                  </div>
+                  <span className="ws-state-badge ws-state-badge--off">suspended</span>
+                </div>
+                <div className="ws-state-row">
+                  <div className="ws-ctrl-info">
+                    <span className="ws-ctrl-label">Active from</span>
+                    <span className="ws-ctrl-desc">Optional display-only date. Stored and visible in the grid. Does not affect urgency calculations.</span>
+                  </div>
+                  <span className="ws-state-badge">display only</span>
+                </div>
+                <div className="ws-state-row">
+                  <div className="ws-ctrl-info">
+                    <span className="ws-ctrl-label">Delete task</span>
+                    <span className="ws-ctrl-desc">Sets <code>is_active = 0</code>. Disappears from grid and dashboard. Completion history and archive snapshots are fully preserved. Recoverable via backup.</span>
+                  </div>
+                  <span className="ws-state-badge">soft delete</span>
+                </div>
+                <div className="ws-state-row">
+                  <div className="ws-ctrl-info">
+                    <span className="ws-ctrl-label">Archive snapshots</span>
+                    <span className="ws-ctrl-desc">Frozen JSON copy of all active tasks for a date range. Independent of live tasks — renaming or deleting current tasks has no effect on snapshots.</span>
+                  </div>
+                  <span className="ws-state-badge">immutable</span>
+                </div>
+              </RefSection>
 
-            <div className="ws-settings-group">Other fields</div>
-            <div className="ws-state-row">
-              <div className="ws-ctrl-info">
-                <span className="ws-ctrl-label">Active from</span>
-                <span className="ws-ctrl-desc">Optional display-only date. Stored and visible in the grid. Does not affect urgency calculations.</span>
-              </div>
-              <span className="ws-state-badge">display only</span>
-            </div>
-            <div className="ws-state-row">
-              <div className="ws-ctrl-info">
-                <span className="ws-ctrl-label">Delete task</span>
-                <span className="ws-ctrl-desc">Sets <code>is_active = 0</code>. Disappears from grid and dashboard. Completion history and archive snapshots are fully preserved. Recoverable via backup.</span>
-              </div>
-              <span className="ws-state-badge">soft delete</span>
-            </div>
-            <div className="ws-state-row">
-              <div className="ws-ctrl-info">
-                <span className="ws-ctrl-label">Archive snapshots</span>
-                <span className="ws-ctrl-desc">Frozen JSON copy of all active tasks for a date range. Independent of live tasks — renaming or deleting current tasks has no effect on snapshots.</span>
-              </div>
-              <span className="ws-state-badge">immutable</span>
+              <RefSection label="Storage &amp; privacy details">
+                <p className="settings-prose">
+                  All task data lives in <code>taskos.db</code> — a local SQLite file (project
+                  root in development, app-data directory in the packaged app; overridable with
+                  the <code>TASKOS_DB_PATH</code> environment variable). Gitignored, never
+                  committed, never leaves your machine.
+                </p>
+                <p className="settings-prose" style={{ marginTop: '8px' }}>
+                  UI preferences (theme, appearance, column widths, dashboard toggles, keyboard
+                  shortcuts) stay in this browser&rsquo;s localStorage and are <em>not</em>
+                  included in JSON backups — they do not transfer between devices.
+                </p>
+                <p className="settings-prose" style={{ marginTop: '8px' }}>
+                  No cloud sync. No authentication. No external services. No telemetry.
+                  All network traffic is localhost only. See <code>docs/INSTALL.md</code> in the
+                  repository for setup and device-transfer instructions.
+                </p>
+              </RefSection>
             </div>
           </div>
 

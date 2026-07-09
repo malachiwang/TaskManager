@@ -100,6 +100,59 @@ html[data-theme="paper"] {
 }
 
 /* -------------------------------------------------------------------------
+   Curated visual themes (P10.1)
+   Token-only surface palettes — same layout, same shapes, same urgency
+   colors. Classic Sheet = :root defaults; Soft Paper = the paper block
+   above. Midnight lives after the dark-appearance block (it is a dark-base
+   theme and must win that cascade).
+   ---------------------------------------------------------------------- */
+
+/* Graphite — neutral grayscale, restrained. */
+html[data-theme="graphite"] {
+  --bg-app:       #f2f2f3;
+  --bg-panel:     #fbfbfc;
+  --bg-surface:   #ededee;
+  --bg-hover:     #e2e2e4;
+  --header-bg:    #e9e9ea;
+  --grid-border:  #d9d9dc;
+  --rule:         #d9d9dc;
+  --paused-bg:    #f5f5f6;
+  --row-hover-bg: #f3f3f4;
+  --weekend-bg:   #efeff0;
+  --today-bg:     #eaedf1;
+}
+
+/* Ocean — cool blue-gray surfaces. */
+html[data-theme="ocean"] {
+  --bg-app:       #edf2f6;
+  --bg-panel:     #f9fbfd;
+  --bg-surface:   #e7eef3;
+  --bg-hover:     #dbe6ed;
+  --header-bg:    #e2ebf1;
+  --grid-border:  #d2dee7;
+  --rule:         #d2dee7;
+  --paused-bg:    #f2f6f9;
+  --row-hover-bg: #f0f5f8;
+  --weekend-bg:   #eaf0f4;
+  --today-bg:     #e0edf7;
+}
+
+/* Forest — muted green-gray surfaces. */
+html[data-theme="forest"] {
+  --bg-app:       #eef2ee;
+  --bg-panel:     #f8faf7;
+  --bg-surface:   #e8efe8;
+  --bg-hover:     #dce6dc;
+  --header-bg:    #e3ece3;
+  --grid-border:  #d4e0d4;
+  --rule:         #d4e0d4;
+  --paused-bg:    #f2f5f1;
+  --row-hover-bg: #f0f4ef;
+  --weekend-bg:   #ebf0ea;
+  --today-bg:     #e4efe9;
+}
+
+/* -------------------------------------------------------------------------
    Accent themes (P10.0)
    Token-only overrides of the blue accent system. The --accent /
    --accent-soft / --focus-blue / --selection-blue aliases in :root all
@@ -221,6 +274,61 @@ html[data-appearance="dark"] .dc-box--filled {
 html[data-appearance="dark"] .ws-frame-header,
 html[data-appearance="dark"] .ws-page-header {
   color: #e8e8e8;
+}
+
+/* -------------------------------------------------------------------------
+   Dark-base / dark-tinted visual themes (P10.1)
+   Midnight always runs on the dark appearance (appearance.js forces it), so
+   its block sits after the dark-appearance tokens to win that cascade.
+   Ocean/Forest get subtle tinted dark variants via the double-attribute
+   selector (higher specificity than the single-attribute dark block);
+   Graphite and Soft Paper intentionally collapse to the standard dark look.
+   ---------------------------------------------------------------------- */
+
+/* Midnight — deep charcoal with a faint cool cast. */
+html[data-theme="midnight"] {
+  --bg-app:       #101014;
+  --bg-panel:     #17171d;
+  --bg-surface:   #121218;
+  --bg-hover:     #26262e;
+  --header-bg:    #1d1d25;
+  --paused-bg:    #141419;
+  --row-hover-bg: #1e1e26;
+  --today-bg:     #131c2b;
+  --weekend-bg:   #14141a;
+  --grid-border:  #2e2e38;
+  --rule:         #2e2e38;
+  --rule-2:       #32323c;
+}
+
+/* Ocean, dark appearance — blue-cast charcoal. */
+html[data-appearance="dark"][data-theme="ocean"] {
+  --bg-app:       #12171c;
+  --bg-panel:     #181f26;
+  --bg-surface:   #141a20;
+  --bg-hover:     #263039;
+  --header-bg:    #1d262e;
+  --paused-bg:    #151b21;
+  --row-hover-bg: #1e262e;
+  --today-bg:     #16232f;
+  --weekend-bg:   #141a1f;
+  --grid-border:  #2c3944;
+  --rule:         #2c3944;
+}
+
+/* Forest, dark appearance — green-cast charcoal. */
+html[data-appearance="dark"][data-theme="forest"] {
+  --bg-app:       #121712;
+  --bg-panel:     #182018;
+  --bg-surface:   #141a14;
+  --bg-hover:     #263026;
+  --header-bg:    #1d261d;
+  --paused-bg:    #151b15;
+  --row-hover-bg: #1e261e;
+  --today-bg:     #16281f;
+  --weekend-bg:   #141a14;
+  --grid-border:  #2c3a2e;
+  --rule:         #2c3a2e;
 }
 
 body {
@@ -998,9 +1106,12 @@ thead .meta-col {
 .col-urg.urg-critical   { box-shadow: inset 3px 0 0 var(--urg-crit); }
 
 /* Days since last done — raw recency, not weighted pressure. */
+/* DAYS ladder (P10.1): gray is reserved for empty/unavailable — every real
+   numeric value gets a semantic color. Medium values are yellow/noticeable
+   (previously days-recent was muted gray and read as "disabled"). */
 .col-days.days-empty      { color: var(--muted-2); font-weight: 400; }
 .col-days.days-fresh      { color: var(--urg-low); font-weight: 600; }
-.col-days.days-recent     { color: var(--muted); font-weight: 500; }
+.col-days.days-recent     { color: var(--urg-mid); font-weight: 500; }
 .col-days.days-aging      { color: var(--urg-mid); font-weight: 600; }
 .col-days.days-stale      { color: var(--urg-hi); font-weight: 600; }
 .col-days.days-very-stale { color: var(--urg-crit); font-weight: 700; }
@@ -5406,6 +5517,35 @@ select.task-modal-input {
   line-height: 1.4;
 }
 
+/* P10.1 registry markers — section notes, customizable ✎, changed-from-default */
+.ws-kbd-help-note {
+  font-size: 10px;
+  color: var(--muted-2);
+  line-height: 1.4;
+  padding: 2px 0 4px;
+}
+
+.ws-kbd-help-footnote {
+  border-top: 1px solid var(--rule);
+  margin-top: 6px;
+  padding-top: 6px;
+}
+
+.ws-kbd-help-changed {
+  color: var(--accent);
+}
+
+.ws-kbd-help-custom {
+  font-size: 10px;
+  color: var(--muted-2);
+  flex-shrink: 0;
+}
+
+.ws-kbd-default-hint {
+  color: var(--accent);
+  font-size: 10px;
+}
+
 /* Group custom dropdown — replaces native <select> */
 .ws-group-ctrl {
   position: relative;
@@ -5724,6 +5864,24 @@ select.task-modal-input {
 .reading-row:hover td { background: var(--row-hover-bg); }
 .reading-row.status-archived td,
 .reading-row.status-finished td { color: var(--muted); }
+
+/* Selected reading row (P10.1 keyboard flow) — mirrors the grid's selected
+   cell language: accent-soft fill + a left accent bar, rectangular. */
+.reading-row.rd-row-selected td { background: var(--accent-soft); }
+.reading-row.rd-row-selected td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
+
+/* Inline delete confirmation strip for keyboard-initiated book deletion. */
+.rd-delete-confirm {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  font-size: 12px;
+  color: var(--ink-2);
+  background: var(--caution-bg);
+  border-bottom: 1px solid var(--caution-border);
+  flex-shrink: 0;
+}
 
 .rd-col-title   { font-weight: 500; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
 .rd-col-author  { color: var(--muted); max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
@@ -6236,6 +6394,59 @@ select.task-modal-input {
 .settings-seg-btn:hover { background: var(--bg-hover); color: var(--ink); }
 .settings-seg-btn--active,
 .settings-seg-btn--active:hover { background: var(--ink-2); color: var(--bg-panel); }
+
+/* Collapsible technical-reference body (P10.1 Settings IA). */
+.ws-ref-body {
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-top: none;
+  background: var(--bg-panel);
+}
+.ws-ref-body .settings-prose {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+/* Visual theme picker (P10.1) — mini four-band surface previews. */
+.ws-ctrl-row--stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.settings-theme-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.settings-theme-card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--bg-panel);
+  cursor: pointer;
+  text-align: left;
+}
+.settings-theme-card:hover { border-color: var(--ink-3); }
+.settings-theme-card--active {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+}
+.settings-theme-preview {
+  display: flex;
+  height: 22px;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.settings-theme-preview > span { flex: 1; }
+.settings-theme-name {
+  font-size: 11px;
+  color: var(--ink-2);
+}
 
 .settings-swatches {
   display: inline-flex;

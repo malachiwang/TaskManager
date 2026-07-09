@@ -8,6 +8,36 @@ recurring tasks, date-cell completion tracking, urgency scoring, reading
 progress, retrospective reports, and local backup/restore in one desktop/web-dev
 workspace.
 
+## Install / Run
+
+**Easiest (macOS):** download the newest `.dmg` from GitHub Releases (when
+available), drag TaskManager.app to Applications, then **right-click → Open**
+on first launch (the app is unsigned — this is a one-time step). Full
+instructions, including the Gatekeeper explanation:
+[docs/INSTALL.md](docs/INSTALL.md).
+
+**From source (any platform, developer-style):**
+
+```bash
+git clone https://github.com/malachiwang/TaskManagementOS.git
+cd TaskManagementOS
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+npm --prefix frontend install
+
+# terminal 1 — backend (keep the DB outside synced folders)
+mkdir -p "$HOME/.taskmanager"
+TASKOS_DB_PATH="$HOME/.taskmanager/taskos.db" \
+  python -m uvicorn backend.main:app --reload --port 8000
+
+# terminal 2 — frontend
+npm --prefix frontend run dev
+```
+
+**Build your own macOS app:** `./scripts/package-macos.sh` (needs Rust) — see
+[docs/RELEASE.md](docs/RELEASE.md). Everything is local-only; no account, no
+cloud, no telemetry.
+
 ## What It Is For
 
 - Tracking repeated tasks and habits in a spreadsheet-like grid
@@ -136,15 +166,16 @@ backend sidecar). In the packaged app the database lives in the platform
 app-data directory (e.g. `~/Library/Application Support/com.taskos.desktop/`
 on macOS) — outside any synced folder and separate from the dev database.
 
-Packaging build (see `scripts/build-sidecar.sh`):
+One-command packaging build:
 
 ```bash
-./scripts/build-sidecar.sh                # bundle the backend sidecar
-npm --prefix frontend run tauri:build    # build the desktop app
+./scripts/package-macos.sh   # sidecar + frontend + Tauri bundle (.app / .dmg)
 ```
 
-Packaged releases still need end-to-end release validation before public
-distribution.
+See [docs/RELEASE.md](docs/RELEASE.md) for the full release checklist and
+[docs/INSTALL.md](docs/INSTALL.md) for what end users do with the result.
+Builds are unsigned (no paid Apple Developer signing) — first launch needs a
+one-time right-click → Open.
 
 ## Current Limitations
 

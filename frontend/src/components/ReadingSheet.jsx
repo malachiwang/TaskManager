@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   fetchReadingBooks,
   createReadingBook,
@@ -8,6 +8,8 @@ import {
   fetchReadingEntries,
 } from '../api.js';
 import ReadingBookModal from './ReadingBookModal.jsx';
+import KeyboardHelp from './KeyboardHelp.jsx';
+import { matchKeybind, resolveKeybinds } from '../keybinds.js';
 
 const STATUS_LABELS = { active: 'Active', finished: 'Finished', archived: 'Archived' };
 const FILTERS = [
@@ -47,6 +49,18 @@ export default function ReadingSheet() {
   const [draftPage, setDraftPage] = useState('');
   const [draftDate, setDraftDate] = useState(getToday());
 
+  // Power-user flow (P10.1): selected row, local search, keyboard delete
+  // confirmation, and the shared shortcut help panel.
+  const [selectedBookId, setSelectedBookId] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const searchInputRef = useRef(null);
+  const helpBtnRef = useRef(null);
+  const helpPanelRef = useRef(null);
+  const helpCloseBtnRef = useRef(null);
+  const [resolvedKb] = useState(resolveKeybinds);
+
   const load = useCallback(() => {
     setLoading(true);
     fetchReadingBooks()
@@ -65,8 +79,17 @@ export default function ReadingSheet() {
 
   useEffect(() => { load(); }, [load]);
 
-  const visible = books.filter((b) => filter === 'all' || b.status === filter);
+  const q = searchQuery.trim().toLowerCase();
+  const visible = books.filter((b) =>
+    (filter === 'all' || b.status === filter)
+    && (!q
+      || (b.title  && b.title.toLowerCase().includes(q))
+      || (b.author && b.author.toLowerCase().includes(q))
+      || (b.status && b.status.toLowerCase().includes(q))),
+  );
   const counts = books.reduce((acc, b) => { acc[b.status] = (acc[b.status] || 0) + 1; return acc; }, {});
+
+  const selectedBook = visible.find((b) => b.id === selectedBookId) || null;
 
   function replaceBook(updated) {
     setBooks((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
@@ -125,6 +148,138 @@ export default function ReadingSheet() {
     finally { closeModal(); load(); }
   }
 
+  // Keyboard Delete/Backspace flow — always confirmed via an inline strip
+  // before anything is deleted.
+  async function confirmKeyboardDelete() {
+    const id = confirmDeleteId;
+    setConfirmDeleteId(null);
+    if (id == null) return;
+    try { await deleteReadingBook(id); } catch (e) { console.error(e); }
+    setSelectedBookId((cur) => (cur === id ? null : cur));
+    load();
+  }
+
+  // Row click selects (Reading power-user flow). Clicks on inputs/buttons keep
+  // their own behavior and never re-select mid-interaction.
+  function handleRowClick(e, bookId) {
+    if (e.target.closest('input, button, select, textarea')) return;
+    setSelectedBookId(bookId);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Reading keybinds (P10.1) — active only while this page is mounted.
+  // N = new book · E = edit selected · Enter = add checkpoint for selected ·
+  // Del/⌫ = delete selected (confirmed) · / = focus search · ? = help ·
+  // Esc = close/cancel/clear. The stateRef keeps the single listener current
+  // without re-registering every render.
+  // ---------------------------------------------------------------------------
+
+  const stateRef = useRef({});
+  stateRef.current = {
+    modalOpen, helpOpen, selectedBookId, confirmDeleteId, addingFor,
+    visibleIds: visible.map((b) => b.id),
+    selectedBook,
+  };
+
+  useEffect(() => {
+    function onKeyDown(e) {
+      const s = stateRef.current;
+      const kb = resolvedKb;
+
+      // Escape — pre-guard so it also works from inside modal inputs.
+      if (e.key === 'Escape') {
+        if (s.modalOpen) { closeModal(); return; }
+        const tag = document.activeElement?.tagName?.toLowerCase();
+        const isTyping = ['input', 'textarea', 'select'].includes(tag)
+          || document.activeElement?.isContentEditable;
+        if (isTyping) return; // inputs (checkpoint/search) handle their own Esc
+        if (s.helpOpen) { setHelpOpen(false); return; }
+        if (s.confirmDeleteId != null) { setConfirmDeleteId(null); return; }
+        if (s.selectedBookId != null) { setSelectedBookId(null); return; }
+        return;
+      }
+
+      // Typing guard for everything else.
+      const tag = document.activeElement?.tagName?.toLowerCase();
+      if (['input', 'textarea', 'select'].includes(tag)) return;
+      if (document.activeElement?.isContentEditable) return;
+      if (s.modalOpen) return;
+
+      if (matchKeybind(e, kb.TOGGLE_HELP)) {
+        setHelpOpen((o) => !o);
+        return;
+      }
+      if (matchKeybind(e, kb.READING_NEW_BOOK)) {
+        e.preventDefault();
+        openAdd();
+        return;
+      }
+      if (matchKeybind(e, kb.READING_EDIT_BOOK)) {
+        if (!s.selectedBook) return;
+        e.preventDefault();
+        openEdit(s.selectedBook);
+        return;
+      }
+      if (matchKeybind(e, kb.READING_FOCUS_SEARCH)) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+
+      // Enter — open the checkpoint form for the selected book (page input
+      // autofocuses, so typing the page number flows naturally).
+      if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (s.selectedBookId == null || s.addingFor != null) return;
+        e.preventDefault();
+        startAdd(s.selectedBookId);
+        return;
+      }
+
+      // Delete/Backspace — arm the inline delete confirmation for the
+      // selected book. Nothing is deleted until the strip is confirmed.
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (s.selectedBookId == null) return;
+        e.preventDefault();
+        setConfirmDeleteId(s.selectedBookId);
+        return;
+      }
+
+      // Arrow up/down — move row selection through the visible list.
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const ids = s.visibleIds;
+        if (!ids.length) return;
+        e.preventDefault();
+        const idx = ids.indexOf(s.selectedBookId);
+        if (idx === -1) {
+          setSelectedBookId(e.key === 'ArrowDown' ? ids[0] : ids[ids.length - 1]);
+        } else {
+          const next = e.key === 'ArrowDown'
+            ? Math.min(ids.length - 1, idx + 1)
+            : Math.max(0, idx - 1);
+          setSelectedBookId(ids[next]);
+        }
+        return;
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [resolvedKb]); // eslint-disable-line react-hooks/exhaustive-deps — reads via stateRef
+
+  // Close help panel on outside click (mirrors the Task Grid behavior).
+  useEffect(() => {
+    if (!helpOpen) return;
+    function onMouseDown(e) {
+      if (
+        helpPanelRef.current?.contains(e.target) ||
+        helpBtnRef.current?.contains(e.target)
+      ) return;
+      setHelpOpen(false);
+    }
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [helpOpen]);
+
   if (loading) return <div className="grid-status">Loading…</div>;
   if (error) return (
     <div className="grid-status error">
@@ -151,6 +306,29 @@ export default function ReadingSheet() {
             <span>{counts.archived || 0} archived</span>
           </div>
         </div>
+        <div className="ws-sheet-header-right">
+          <div className="ws-kbd-help-anchor">
+            <button
+              ref={helpBtnRef}
+              type="button"
+              className="ws-kbd-help-btn"
+              aria-label="Keyboard shortcuts"
+              aria-haspopup="dialog"
+              aria-expanded={helpOpen}
+              onClick={() => setHelpOpen((o) => !o)}
+            >
+              ?
+            </button>
+            {helpOpen && (
+              <KeyboardHelp
+                panelRef={helpPanelRef}
+                closeButtonRef={helpCloseBtnRef}
+                onClose={() => setHelpOpen(false)}
+                resolvedKb={resolvedKb}
+              />
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="ws-filter-bar">
@@ -163,7 +341,40 @@ export default function ReadingSheet() {
             </button>
           ))}
         </div>
+        <input
+          ref={searchInputRef}
+          className="ws-filter-input"
+          type="search"
+          placeholder="Search books…"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Escape') e.target.blur(); }}
+          aria-label="Search books by title, author, or status"
+        />
+        {q && (
+          <span className="ws-filter-count">
+            {visible.length} of {books.length}
+          </span>
+        )}
       </div>
+
+      {confirmDeleteId != null && (() => {
+        const doomed = books.find((b) => b.id === confirmDeleteId);
+        return (
+          <div className="rd-delete-confirm" role="alertdialog" aria-label="Confirm book deletion">
+            <span>
+              Delete <strong>{doomed ? doomed.title : `book #${confirmDeleteId}`}</strong> and all
+              its checkpoints? This cannot be undone.
+            </span>
+            <button className="edit-bar-btn edit-bar-btn--danger" onClick={confirmKeyboardDelete}>
+              Delete book
+            </button>
+            <button className="edit-bar-btn" onClick={() => setConfirmDeleteId(null)}>
+              Cancel
+            </button>
+          </div>
+        );
+      })()}
 
       <div className="ws-grid-canvas">
         <div className="grid-wrapper">
@@ -187,7 +398,12 @@ export default function ReadingSheet() {
                 const stale = book.status === 'active' && book.days_since_update != null && book.days_since_update >= STALE_DAYS;
                 const entries = entriesByBook[book.id] || [];
                 return (
-                  <tr key={book.id} className={`reading-row status-${book.status}`}>
+                  <tr
+                    key={book.id}
+                    className={`reading-row status-${book.status}${selectedBookId === book.id ? ' rd-row-selected' : ''}`}
+                    onClick={(e) => handleRowClick(e, book.id)}
+                    aria-selected={selectedBookId === book.id || undefined}
+                  >
                     <td className="rd-col-title" title={book.title}>{book.title}</td>
                     <td className="rd-col-author" title={book.author}>{book.author || '—'}</td>
                     <td className="rd-col-page">
@@ -267,7 +483,9 @@ export default function ReadingSheet() {
             </div>
           )}
           {books.length > 0 && visible.length === 0 && (
-            <div className="grid-status">No {filter} books.</div>
+            <div className="grid-status">
+              {q ? `No books match "${searchQuery.trim()}".` : `No ${filter} books.`}
+            </div>
           )}
         </div>
       </div>

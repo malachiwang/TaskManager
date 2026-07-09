@@ -19,14 +19,16 @@ import { useRef } from 'react';
 //   count 2+          → dc-box--filled (neutral ink, white number, 15×15)
 //   paused + count    → dc-box--filled dc-box--muted (muted color, no interaction)
 //
-// Text override mode (P9.1/P10.0): when overrideText !== undefined this exact
-// task/date cell is a plain-text cell instead of a checkbox. Any completion
-// count is hidden (never deleted) while the override exists. Double-click (or
-// typing / Enter via the grid handler / EditBar) opens an inline editor;
-// Enter/blur commit, Escape cancels. Delete/Backspace on a selected cell
-// converts it to a blank text cell (TaskGrid owns that logic). A cell can
-// also be in edit mode before any override exists — typing into a checkbox
-// cell seeds the editor (overrideEditSeed) and only commits on Enter/blur.
+// Text override mode (P9.1/P10.0/P10.1): when overrideText !== undefined this
+// exact task/date cell is a plain-text cell instead of a checkbox. Any
+// completion count is hidden (never deleted) while the override exists.
+// Double-click (or typing / Enter via the grid handler / EditBar) opens an
+// inline editor; Enter/blur commit, Escape cancels. Delete/Backspace on a
+// selected cell converts it to a blank text cell (TaskGrid owns that logic).
+// Typing only starts editing on cells that are ALREADY text overrides —
+// checkbox cells ignore printable keys so app shortcuts keep working; the
+// user deletes the checkbox first, then types (overrideEditSeed carries the
+// first typed character into the editor).
 
 export default function DateCell({
   taskId,

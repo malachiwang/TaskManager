@@ -6,6 +6,7 @@ import {
   carriedForward, neglectedAllPeriod, sectionBreakdown, sectionPressureChange,
   cleanupReport, readingSummary,
   PERIOD_MODES, periodRange, periodLabel, shiftPeriodAnchor,
+  periodComparison, stalenessReport,
 } from '../reportAnalytics.js';
 
 const PERIOD_MODE_LABELS = { week: 'Week', month: 'Month', quarter: 'Quarter', year: 'Year' };
@@ -48,6 +49,13 @@ export default function MonthlyReport({ onOpenDashboard }) {
     [period],
   );
 
+  // Previous period of the same size — drives the "what changed" card.
+  const prevRange = useMemo(
+    () => periodRange(period.mode, shiftPeriodAnchor(period.mode, period.anchor, -1)),
+    [period],
+  );
+  const [prevCompletions, setPrevCompletions] = useState(null);
+
   // Current-state fetches (once).
   useEffect(() => {
     fetchTasks().then(setTasks).catch((e) => setTasksError(e.message));
@@ -60,6 +68,15 @@ export default function MonthlyReport({ onOpenDashboard }) {
     setCompletions(null); setCompError(null);
     fetchCompletions(start, end).then(setCompletions).catch((e) => setCompError(e.message));
   }, [start, end]);
+
+  // Previous-period completions — comparison card only; failures degrade to
+  // the card's empty state rather than an error.
+  useEffect(() => {
+    setPrevCompletions(null);
+    fetchCompletions(prevRange.start, prevRange.end)
+      .then(setPrevCompletions)
+      .catch(() => setPrevCompletions([]));
+  }, [prevRange.start, prevRange.end]);
 
   const taskMap = useMemo(() => new Map((tasks || []).map((t) => [t.id, t])), [tasks]);
   const activity = useMemo(
@@ -80,6 +97,34 @@ export default function MonthlyReport({ onOpenDashboard }) {
   const pressure = useMemo(() => sectionPressureChange(snapshot), [snapshot]);
   const cleanup = useMemo(() => (tasks ? cleanupReport(tasks) : null), [tasks]);
   const reading = useMemo(() => (books ? readingSummary(books, start, end) : null), [books, start, end]);
+
+  // Previous-period mirrors of the current-period derivations (P10.1).
+  const prevActivity = useMemo(
+    () => (prevCompletions ? completionSummary(prevCompletions, taskMap, prevRange.start, prevRange.end) : null),
+    [prevCompletions, taskMap, prevRange.start, prevRange.end],
+  );
+  const prevFinished = useMemo(
+    () => (tasks ? finishedInPeriod(tasks, prevRange.start, prevRange.end) : null),
+    [tasks, prevRange.start, prevRange.end],
+  );
+  const prevNeglected = useMemo(
+    () => (tasks && prevActivity ? neglectedAllPeriod(tasks, prevActivity.taskIdsWithCompletion, prevRange.start, prevRange.end) : null),
+    [tasks, prevActivity, prevRange.start, prevRange.end],
+  );
+  const prevReading = useMemo(
+    () => (books ? readingSummary(books, prevRange.start, prevRange.end) : null),
+    [books, prevRange.start, prevRange.end],
+  );
+  const comparison = useMemo(
+    () => periodComparison({
+      curActivity: activity, prevActivity,
+      curFinished: tasks ? finished : null, prevFinished,
+      curNeglected: tasks && activity ? neglected : null, prevNeglected,
+      curReading: reading, prevReading,
+    }),
+    [activity, prevActivity, finished, prevFinished, neglected, prevNeglected, reading, prevReading, tasks],
+  );
+  const staleness = useMemo(() => (tasks ? stalenessReport(tasks) : null), [tasks]);
 
   const uncatHeavy = tasks && cleanup && cleanup.active > 0 && cleanup.uncategorizedPct >= 40;
 
@@ -143,6 +188,80 @@ export default function MonthlyReport({ onOpenDashboard }) {
           <div className="report-tile"><div className="report-tile-value">{tasks ? finished.length : '—'}</div><div className="report-tile-label">Finished</div></div>
           <div className="report-tile"><div className="report-tile-value">{tasks ? carried.length : '—'}</div><div className="report-tile-label">Carried fwd</div></div>
           <div className="report-tile"><div className="report-tile-value">{tasks && activity ? neglected.length : '—'}</div><div className="report-tile-label">Neglected</div></div>
+        </div>
+
+        {/* Changed vs previous period (P10.1) */}
+        <div className="ws-frame ws-frame--full">
+          <div className="ws-frame-header">
+            <span>Changed Since Previous {PERIOD_MODE_LABELS[period.mode]}</span>
+            <span className="ws-frame-header-sub">{periodLabel(period.mode, shiftPeriodAnchor(period.mode, period.anchor, -1))} → {label}</span>
+          </div>
+          <div className="ws-frame-body">
+            {!prevCompletions || !activity || !tasks ? <div className="ws-empty">Loading…</div>
+              : !comparison.prevHasData ? (
+                <div className="ws-empty">
+                  Not enough data in the previous {PERIOD_MODE_LABELS[period.mode].toLowerCase()} to
+                  compare yet — deltas will appear once there is history on both sides.
+                </div>
+              ) : (
+                <table className="dash-table report-compare">
+                  <thead><tr><th>Metric</th><th className="dash-th-num">Previous</th><th className="dash-th-num">Current</th><th className="dash-th-num">Change</th></tr></thead>
+                  <tbody>
+                    {comparison.rows.map((r) => {
+                      const improved = r.goodWhen === 'up' ? r.delta > 0 : r.delta < 0;
+                      const cls = r.delta === 0 ? 'dash-muted' : improved ? 'dash-pace-up' : 'dash-pace-dn';
+                      return (
+                        <tr key={r.label}>
+                          <td>{r.label}</td>
+                          <td className="dash-num dash-muted">{r.prev}</td>
+                          <td className="dash-num">{r.cur}</td>
+                          <td className={`dash-num ${cls}`}>
+                            {r.delta === 0 ? '—' : `${r.delta > 0 ? '▲ +' : '▼ '}${r.delta}`}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+          </div>
+        </div>
+
+        {/* Staleness & cleanup candidates (P10.1 behavioral insight) */}
+        <div className="ws-frame ws-frame--full">
+          <div className="ws-frame-header">
+            <span>Staleness &amp; Cleanup Candidates</span>
+            <span className="ws-frame-header-sub">current-state · which tasks may need pause, archive, or rewording rather than doing</span>
+          </div>
+          <div className="ws-frame-body">
+            {!staleness ? <div className="ws-empty">Loading…</div> : (
+              <>
+                <div className="report-stat-row">
+                  <span><strong>{staleness.b30}</strong> untouched 30–59d</span>
+                  <span><strong>{staleness.b60}</strong> untouched 60–89d</span>
+                  <span className={staleness.b90 > 0 ? 'dashboard-warn-text' : ''}><strong>{staleness.b90}</strong> untouched 90d+</span>
+                  <span className="dash-muted">of {staleness.activeCount} active tasks</span>
+                </div>
+                {staleness.candidates.length === 0 ? (
+                  <div className="ws-empty">No cleanup candidates — nothing is deeply stale right now.</div>
+                ) : (
+                  <table className="dash-table">
+                    <thead><tr><th>Task</th><th>Section</th><th className="dash-th-num">Days</th><th>Why it surfaced</th></tr></thead>
+                    <tbody>
+                      {staleness.candidates.map((c) => (
+                        <tr key={c.id}>
+                          <td className="dash-task-name">{c.name}</td>
+                          <td className="dash-muted">{c.section || '—'}</td>
+                          <td className="dash-num">{c.days}d</td>
+                          <td className="dash-muted">{c.reason}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </>
+            )}
+          </div>
         </div>
 
         {/* Completed this period */}
