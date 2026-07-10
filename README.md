@@ -1,5 +1,50 @@
 # TaskManager
 
+## macOS grassroots install / build
+
+Copy and paste this into Terminal:
+
+```bash
+cd ~/Desktop
+
+git clone https://github.com/malachiwang/TaskManagementOS.git
+cd TaskManagementOS
+
+xcode-select --install 2>/dev/null || true
+
+if ! command -v brew >/dev/null 2>&1; then
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  eval "$(/opt/homebrew/bin/brew shellenv)" 2>/dev/null || eval "$(/usr/local/bin/brew shellenv)"
+fi
+
+brew install node python@3.11 rustup-init
+
+rustup-init -y
+source "$HOME/.cargo/env"
+
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+
+npm --prefix frontend install
+
+chmod +x ./scripts/build-sidecar.sh
+./scripts/build-sidecar.sh
+
+npm --prefix frontend run tauri:build
+
+open src-tauri/target/release/bundle
+```
+
+After the build finishes, open the generated `.app` or `.dmg` inside:
+
+```text
+src-tauri/target/release/bundle
+```
+
+---
+
 TaskManager is a local-first spreadsheet-style task, habit, reading, pressure,
 dashboard, and reports tracker.
 
