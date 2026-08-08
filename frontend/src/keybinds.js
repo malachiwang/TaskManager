@@ -463,11 +463,12 @@ export const KEYBIND_HELP = [
   },
   {
     group: 'Reading',
+    note: 'Shortcuts follow the current view: in the To Buy view, N adds a to-buy book and E/Del act on the selected wishlist row.',
     items: [
-      { action: 'READING_NEW_BOOK',     desc: 'Add a new book' },
+      { action: 'READING_NEW_BOOK',     desc: 'Add a new book (to-buy book in the To Buy view)' },
       { action: 'READING_EDIT_BOOK',    desc: 'Edit the selected book' },
       { action: 'READING_FOCUS_SEARCH', desc: 'Focus the reading search box' },
-      { keys: '↵',        desc: 'Add a page checkpoint for the selected book' },
+      { keys: '↵',        desc: 'Add a page checkpoint for the selected book (library view only)' },
       { keys: 'Del / ⌫', desc: 'Delete the selected book (asks for confirmation)' },
     ],
   },

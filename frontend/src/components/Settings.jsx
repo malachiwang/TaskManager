@@ -817,6 +817,13 @@ D = days_since   I = interval_days`}</pre>
                 </div>
                 <div className="ws-state-row">
                   <div className="ws-ctrl-info">
+                    <span className="ws-ctrl-label">Hiatus intervals</span>
+                    <span className="ws-ctrl-desc">Entering Hiatus starts a persisted interval (from today); resuming closes it as of yesterday. Dates inside any interval render as blank hiatus cells forever — completions underneath are preserved, never deleted. Mistaken intervals can be removed from Task Details.</span>
+                  </div>
+                  <span className="ws-state-badge">history</span>
+                </div>
+                <div className="ws-state-row">
+                  <div className="ws-ctrl-info">
                     <span className="ws-ctrl-label">Active from</span>
                     <span className="ws-ctrl-desc">Optional display-only date. Stored and visible in the grid. Does not affect urgency calculations.</span>
                   </div>
@@ -835,6 +842,23 @@ D = days_since   I = interval_days`}</pre>
                     <span className="ws-ctrl-desc">Frozen JSON copy of all active tasks for a date range. Independent of live tasks — renaming or deleting current tasks has no effect on snapshots.</span>
                   </div>
                   <span className="ws-state-badge">immutable</span>
+                </div>
+              </RefSection>
+
+              <RefSection label="Reading library">
+                <div className="ws-state-row">
+                  <div className="ws-ctrl-info">
+                    <span className="ws-ctrl-label">Book priority</span>
+                    <span className="ws-ctrl-desc">Every book has a 1–5 priority (1 background · 3 normal · 5 highest), shown as a calm colored badge in Reading rows. Priority never affects task urgency or pressure scoring.</span>
+                  </div>
+                  <span className="ws-state-badge">1–5 scale</span>
+                </div>
+                <div className="ws-state-row">
+                  <div className="ws-ctrl-info">
+                    <span className="ws-ctrl-label">Books to Buy</span>
+                    <span className="ws-ctrl-desc">A wishlist view inside Reading. To-buy books need only a title (author, priority, purchase link, and notes optional) and never carry page checkpoints. Marking one bought stamps the purchase date and moves it to the library as an unread book.</span>
+                  </div>
+                  <span className="ws-state-badge">wishlist</span>
                 </div>
               </RefSection>
 

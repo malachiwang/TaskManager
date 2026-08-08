@@ -16,7 +16,7 @@ function stopLinkUiPropagation(e) {
   e.stopPropagation();
 }
 
-export default function EditBar({ selectedCell, tasks, completions, notes, todayStr, cellOverrides, rangeSelection, feedback, onIncrement, onClear, onSetCount, onSaveNote, onConvertToText, onRestoreCheckbox, onEditOverride, onRangeDelete, onRangeRestore }) {
+export default function EditBar({ selectedCell, tasks, completions, notes, todayStr, cellOverrides, hiatusCells, rangeSelection, feedback, onIncrement, onClear, onSetCount, onSaveNote, onConvertToText, onRestoreCheckbox, onEditOverride, onRangeDelete, onRangeRestore }) {
   const [setMode, setSetMode] = useState(false);
   const [inputVal, setInputVal] = useState('');
   const [noteVal, setNoteVal] = useState('');
@@ -57,7 +57,7 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
   ) : null;
 
   if (isRange) {
-    const { count, checkboxCount, overrideCount, overrideWithText, lockedCount, cells } = rangeSelection;
+    const { count, checkboxCount, overrideCount, overrideWithText, lockedCount, hiatusCount, cells } = rangeSelection;
     return (
       <div className="edit-bar edit-bar--active">
         <div className="edit-bar-info">
@@ -66,6 +66,7 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
           <span className="edit-bar-count">
             {checkboxCount} checkbox{checkboxCount !== 1 ? 'es' : ''} · {overrideCount} text
             {lockedCount > 0 ? ` · ${lockedCount} locked` : ''}
+            {hiatusCount > 0 ? ` · ${hiatusCount} hiatus` : ''}
           </span>
         </div>
         <div className="edit-bar-actions">
@@ -126,9 +127,11 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
   const count = completions[`${taskId}:${date}`] || 0;
   const isFuture = date > todayStr;
   const isPaused = task ? task.is_paused === 1 : false;
+  // Hiatus-interval blank (P11.0) — read-only like other disabled cells.
+  const isHiatusBlank = !!hiatusCells && hiatusCells.has(`${taskId}:${date}`);
   const isBeforeActiveFrom = !!(task?.active_from && date < task.active_from);
   const isAfterEndDate = !!(task?.end_date && date > task.end_date);
-  const isDisabled = isFuture || isPaused || isBeforeActiveFrom || isAfterEndDate;
+  const isDisabled = isFuture || isPaused || isBeforeActiveFrom || isAfterEndDate || isHiatusBlank;
   // Text-override state for the selected cell (P9.1). undefined = checkbox mode.
   const overrideText = cellOverrides ? cellOverrides[`${taskId}:${date}`] : undefined;
   const isTextOverride = overrideText !== undefined;
@@ -233,7 +236,9 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
         <span className="edit-bar-sep">·</span>
         <span className="edit-bar-date">{dateLabel(date)}</span>
         <span className="edit-bar-sep">·</span>
-        {isTextOverride ? (
+        {isHiatusBlank ? (
+          <span className="edit-bar-disabled">hiatus period — history preserved</span>
+        ) : isTextOverride ? (
           <span className="edit-bar-count">text cell</span>
         ) : isDisabled ? (
           <span className="edit-bar-disabled">
@@ -243,7 +248,7 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
           <span className="edit-bar-count">count: {count}</span>
         )}
       </div>
-      {isTextOverride ? (
+      {isTextOverride && !isHiatusBlank ? (
         /* Text-override cell (P9.1): edit/restore controls replace the
            completion actions. Restoring over non-empty text needs a second
            confirming click so text is never lost by accident. */

@@ -30,6 +30,12 @@ import { useRef } from 'react';
 // user deletes the checkbox first, then types (overrideEditSeed carries the
 // first typed character into the editor).
 
+// Hiatus-blank mode (P11.0): when isHiatusBlank is true this date falls inside
+// a persisted hiatus interval for the task. The cell renders as a blank with a
+// subtle pause mark — no checkbox, no toggling, no typing, and Delete/range
+// operations skip it. Underlying completions and text overrides are preserved
+// in data; the hiatus blank simply wins visually (for non-future dates).
+
 export default function DateCell({
   taskId,
   date,
@@ -37,6 +43,7 @@ export default function DateCell({
   isFuture,
   isToday,
   isPaused,
+  isHiatusBlank,
   activeFrom,
   endDate,
   isSelected,
@@ -55,7 +62,7 @@ export default function DateCell({
 }) {
   const isBeforeActiveFrom = !!(activeFrom && date < activeFrom);
   const isAfterEndDate = !!(endDate && date > endDate);
-  const isDisabled = isFuture || isPaused || isBeforeActiveFrom || isAfterEndDate;
+  const isDisabled = isFuture || isPaused || isBeforeActiveFrom || isAfterEndDate || isHiatusBlank;
   const isTextOverride = overrideText !== undefined;
   // Set when Enter/Escape already handled the edit, so the input's unmount
   // blur does not double-commit (or commit a cancelled edit).
@@ -132,6 +139,13 @@ export default function DateCell({
       );
     }
 
+    // Hiatus blank (P11.0) — wins over text overrides and checkbox state for
+    // non-future dates inside a hiatus interval. Future dates keep the plain
+    // future-blank look (the guard order below leaves them untouched).
+    if (isHiatusBlank && !isFuture) {
+      return <span className="dc-hiatus" aria-hidden="true">‖</span>;
+    }
+
     // Text override mode (P9.1) — replaces the checkbox for this exact cell.
     // Overrides on disabled cells (future/pre-active/after-end/hiatus) stay
     // visible read-only; editing is only reachable on enabled cells.
@@ -188,11 +202,12 @@ export default function DateCell({
     'date-cell',
     isFuture           ? 'future'        : '',
     isPaused           ? 'paused'        : '',
+    isHiatusBlank && !isFuture ? 'hiatus-blank' : '',
     isBeforeActiveFrom ? 'before-active' : '',
     isAfterEndDate     ? 'after-end'     : '',
     isToday && !isFuture ? 'today'       : '',
     isWeekend          ? 'weekend'       : '',
-    count > 0 && !isTextOverride && !isPaused && !isBeforeActiveFrom && !isAfterEndDate ? 'has-count' : '',
+    count > 0 && !isTextOverride && !isHiatusBlank && !isPaused && !isBeforeActiveFrom && !isAfterEndDate ? 'has-count' : '',
     isSelected         ? 'selected'      : '',
     isInRange          ? 'in-range'      : '',
     hasNote            ? 'has-note'      : '',
@@ -210,19 +225,21 @@ export default function DateCell({
       onClick={handleCellClick}
       onDoubleClick={handleCellDoubleClick}
       title={
-        isTextOverride
-          ? (overrideText || 'Text cell — double-click to edit')
-          : hasNote && noteText
-            ? noteText
-            : isFuture
-              ? 'Future date — not available'
-              : isBeforeActiveFrom
-                ? 'Before active date'
-                : isAfterEndDate
-                  ? 'After task end date'
-                  : isPaused
-                    ? 'Task is on hiatus'
-                    : date
+        isHiatusBlank && !isFuture
+          ? 'Hiatus period — history preserved'
+          : isTextOverride
+            ? (overrideText || 'Text cell — double-click to edit')
+            : hasNote && noteText
+              ? noteText
+              : isFuture
+                ? 'Future date — not available'
+                : isBeforeActiveFrom
+                  ? 'Before active date'
+                  : isAfterEndDate
+                    ? 'After task end date'
+                    : isPaused
+                      ? 'Task is on hiatus'
+                      : date
       }
     >
       <span className="dc-cell-center">

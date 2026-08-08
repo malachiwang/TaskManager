@@ -300,4 +300,73 @@ def init_db() -> None:
     """)
     conn.commit()
 
+    # ── Migration 10: task_hiatus_periods (P11.0) — persisted hiatus history ──
+    # One row per hiatus interval. start_date inclusive; end_date inclusive when
+    # closed; end_date NULL = the task is currently on hiatus (open interval).
+    # DateCells inside any interval render as hiatus blanks forever, even after
+    # the task resumes. Underlying completions/overrides are never touched.
+    # ON DELETE CASCADE keeps intervals from orphaning on hard task deletes.
+    thp_existed = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='task_hiatus_periods'"
+    ).fetchone() is not None
+
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS task_hiatus_periods (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            start_date TEXT    NOT NULL,
+            end_date   TEXT             DEFAULT NULL,
+            created_at TEXT    NOT NULL,
+            updated_at TEXT    NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_thp_task
+            ON task_hiatus_periods(task_id);
+
+        CREATE INDEX IF NOT EXISTS idx_thp_start
+            ON task_hiatus_periods(start_date);
+    """)
+    conn.commit()
+
+    # One-time seed (only when the table was just created): tasks already on
+    # hiatus get an open interval starting on their paused_at date, so existing
+    # hiatus tasks render blanks immediately after upgrading. Runs once — a
+    # deliberately deleted interval is never resurrected on later startups.
+    if not thp_existed:
+        from datetime import datetime as _dt
+        now_iso = _dt.now().isoformat()
+        rows = conn.execute(
+            "SELECT id, paused_at FROM tasks WHERE status = 'hiatus' AND is_active = 1"
+        ).fetchall()
+        for r in rows:
+            start = (r["paused_at"] or now_iso)[:10]
+            try:
+                _date.fromisoformat(start)
+            except ValueError:
+                start = now_iso[:10]
+            conn.execute(
+                "INSERT INTO task_hiatus_periods (task_id, start_date, end_date, created_at, updated_at) "
+                "VALUES (?, ?, NULL, ?, ?)",
+                (r["id"], start, now_iso, now_iso),
+            )
+        conn.commit()
+
+    # ── Migration 11: reading_books priority + Books-to-Buy fields (P11.0) ───
+    # priority: 1–5 book scale (1 low/background, 3 normal, 5 highest).
+    # to_buy: 1 = wishlist entry (not yet owned); shown in the Reading
+    # "To Buy" view instead of the library. purchased_at stamps when a
+    # to-buy book is marked bought.
+    for ddl in (
+        "ALTER TABLE reading_books ADD COLUMN priority INTEGER NOT NULL DEFAULT 3",
+        "ALTER TABLE reading_books ADD COLUMN to_buy INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE reading_books ADD COLUMN purchase_url TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE reading_books ADD COLUMN purchase_notes TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE reading_books ADD COLUMN purchased_at TEXT DEFAULT NULL",
+    ):
+        try:
+            conn.execute(ddl)
+            conn.commit()
+        except Exception:
+            pass  # Column already exists.
+
     conn.close()

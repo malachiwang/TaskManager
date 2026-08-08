@@ -814,7 +814,7 @@ class TestExport:
 
     def test_backup_schema_version_is_current(self, client):
         data = client.get("/export/backup.json").json()
-        assert data["schema_version"] == 5  # P9.1 bumped to 5 (added date_cell_overrides)
+        assert data["schema_version"] == 6  # P11.0 bumped to 6 (hiatus periods + reading v2)
 
     def test_backup_empty_db_returns_valid_empty_arrays(self, client):
         data = client.get("/export/backup.json").json()
@@ -2147,7 +2147,7 @@ class TestDailySnapshots:
         create_task(client)
         self._trigger(client)
         backup = client.get("/export/backup.json").json()
-        assert backup["schema_version"] == 5
+        assert backup["schema_version"] == 6
         assert "task_daily_snapshots" in backup
         assert len(backup["task_daily_snapshots"]) >= 1
 
@@ -2984,7 +2984,7 @@ class TestDateCellOverrides:
         t = create_task(client)
         client.put(f"/date-cell-overrides/{t['id']}/{TODAY}", params={"text": "kept"})
         data = client.get("/export/backup.json").json()
-        assert data["schema_version"] == 5
+        assert data["schema_version"] == 6
         assert len(data["date_cell_overrides"]) == 1
         assert data["date_cell_overrides"][0]["text"] == "kept"
 

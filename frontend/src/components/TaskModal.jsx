@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { urgencyLabel, urgencyReason } from '../urgency.js';
 import { extractLinks, normalizeSafeUrl, spliceMarkdownLink } from '../linkUtils.js';
 import { handleSafeLinkClick } from '../openExternalLink.js';
+import { fetchHiatusPeriodsForTask, deleteHiatusPeriod } from '../api.js';
 import LinkifiedText from './LinkifiedText.jsx';
 
 const STATUS_OPTIONS = ['active', 'hiatus'];
@@ -41,10 +42,34 @@ function stopLinkUiPropagation(e) {
   e.stopPropagation();
 }
 
-export default function TaskModal({ task, onSave, onDelete, onClose }) {
+export default function TaskModal({ task, onSave, onDelete, onClose, onHiatusChanged }) {
   const isEdit = task != null;
 
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Hiatus history (P11.0) — persisted intervals for this task. Dates inside
+  // any interval render as blank cells in the grid, even after resume.
+  // Deleting an interval here is the correction path for a mistaken hiatus.
+  const [hiatusPeriods, setHiatusPeriods] = useState([]);
+  const [confirmPeriodDelete, setConfirmPeriodDelete] = useState(null);
+
+  useEffect(() => {
+    if (!isEdit) return;
+    fetchHiatusPeriodsForTask(task.id)
+      .then(setHiatusPeriods)
+      .catch(() => setHiatusPeriods([]));
+  }, [isEdit, task?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleDeletePeriod(periodId) {
+    setConfirmPeriodDelete(null);
+    try {
+      await deleteHiatusPeriod(periodId);
+      setHiatusPeriods((prev) => prev.filter((p) => p.id !== periodId));
+      onHiatusChanged?.();
+    } catch (e) {
+      console.error('delete hiatus period failed:', e);
+    }
+  }
   const nameRef = useRef(null);
   const subtaskRef = useRef(null);
   const notesRef = useRef(null);
@@ -358,7 +383,54 @@ export default function TaskModal({ task, onSave, onDelete, onClose }) {
                   </button>
                 ))}
               </div>
+              {form.status === 'hiatus' && task?.status !== 'hiatus' && (
+                <div className="task-modal-field-hint">
+                  Hiatus starts today. Dates during the hiatus render as blank cells;
+                  completion history underneath is preserved.
+                </div>
+              )}
+              {form.status === 'active' && task?.status === 'hiatus' && (
+                <div className="task-modal-field-hint">
+                  Resuming closes the hiatus as of yesterday — its dates stay blank
+                  permanently. Today onward returns to normal checkboxes.
+                </div>
+              )}
             </div>
+
+            {/* Hiatus history (P11.0) — read-only list + guarded delete */}
+            {isEdit && hiatusPeriods.length > 0 && (
+              <div className="task-modal-field task-modal-field--full">
+                <label className="task-modal-label">Hiatus history</label>
+                <div className="task-modal-hiatus-list">
+                  {hiatusPeriods.map((p) => (
+                    <div key={p.id} className="task-modal-hiatus-row">
+                      <span className="task-modal-hiatus-range">
+                        {p.end_date === null
+                          ? `On hiatus since ${p.start_date}`
+                          : `${p.start_date} → ${p.end_date}`}
+                      </span>
+                      {confirmPeriodDelete === p.id ? (
+                        <span className="task-modal-hiatus-confirm">
+                          Un-blank these dates?
+                          <button type="button" className="task-modal-confirm-delete"
+                            onClick={() => handleDeletePeriod(p.id)}>Remove</button>
+                          <button type="button" className="task-modal-cancel"
+                            onClick={() => setConfirmPeriodDelete(null)}>Cancel</button>
+                        </span>
+                      ) : (
+                        <button type="button" className="task-modal-hiatus-delete"
+                          title="Remove this hiatus interval — its dates return to normal cells; nothing else changes"
+                          onClick={() => setConfirmPeriodDelete(p.id)}>Remove</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="task-modal-field-hint">
+                  Dates inside these intervals render as blank hiatus cells.
+                  Removing an interval only un-blanks its dates — completions are untouched.
+                </div>
+              </div>
+            )}
 
             {/* Priority — number + visual meter */}
             <div className="task-modal-field task-modal-field--full">

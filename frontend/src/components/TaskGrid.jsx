@@ -18,6 +18,7 @@ import {
   deleteDateCellOverride,
   batchUpsertDateCellOverrides,
   batchDeleteDateCellOverrides,
+  fetchHiatusPeriodsInRange,
 } from '../api.js';
 import TaskRow from './TaskRow.jsx';
 import TaskModal from './TaskModal.jsx';
@@ -276,6 +277,24 @@ export default function TaskGrid() {
   const [cellOverrides, setCellOverrides] = useState({});
   const [editingOverrideCell, setEditingOverrideCell] = useState(null);
 
+  // Hiatus periods (P11.0) — persisted intervals overlapping the visible month.
+  // hiatusCells derives the per-cell lookup every guard and renderer shares:
+  // a `${taskId}:${date}` key is present iff that date falls inside an interval
+  // (start inclusive; end inclusive; open interval = no end yet).
+  const [hiatusPeriods, setHiatusPeriods] = useState([]);
+
+  const hiatusCells = useMemo(() => {
+    const set = new Set();
+    for (const p of hiatusPeriods) {
+      for (const date of dates) {
+        if (date >= p.start_date && (!p.end_date || date <= p.end_date)) {
+          set.add(`${p.task_id}:${date}`);
+        }
+      }
+    }
+    return set;
+  }, [hiatusPeriods, dates]);
+
   // Column widths — stored as user overrides; missing keys fall back to DEFAULT_WIDTHS.
   const [colWidths, setColWidths] = useState(() => {
     try {
@@ -394,16 +413,20 @@ export default function TaskGrid() {
     let overrideCount = 0;
     let overrideWithText = 0;
     let lockedCount = 0;
+    let hiatusCount = 0;
     for (const t of rows) {
       for (const date of dateSlice) {
-        const disabled = date > todayStr
+        const hiatus = hiatusCells.has(`${t.id}:${date}`);
+        const disabled = hiatus
+          || date > todayStr
           || t.is_paused === 1
           || (t.active_from && date < t.active_from)
           || (t.end_date && date > t.end_date);
         const ov = cellOverrides[`${t.id}:${date}`];
         const isOverride = ov !== undefined;
-        cells.push({ taskId: t.id, date, disabled, isOverride, hasText: !!ov });
-        if (disabled) lockedCount += 1;
+        cells.push({ taskId: t.id, date, disabled, hiatus, isOverride, hasText: !!ov });
+        if (hiatus) hiatusCount += 1;
+        else if (disabled) lockedCount += 1;
         else if (isOverride) {
           overrideCount += 1;
           if (ov) overrideWithText += 1;
@@ -417,11 +440,12 @@ export default function TaskGrid() {
       overrideCount,
       overrideWithText,
       lockedCount,
+      hiatusCount,
       taskIdSet: new Set(rows.map((t) => t.id)),
       minDate: dateSlice[0],
       maxDate: dateSlice[dateSlice.length - 1],
     };
-  }, [selectedCell, rangeEnd, flatGroupedTasks, dates, cellOverrides, todayStr]);
+  }, [selectedCell, rangeEnd, flatGroupedTasks, dates, cellOverrides, hiatusCells, todayStr]);
 
   const showFeedback = useCallback((msg) => {
     if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
@@ -438,9 +462,9 @@ export default function TaskGrid() {
     const end = dates[dates.length - 1];
     return Promise.all([
       fetchTasks(), fetchCompletions(start, end), fetchNotes(start, end),
-      fetchDateCellOverrides(start, end),
+      fetchDateCellOverrides(start, end), fetchHiatusPeriodsInRange(start, end),
     ])
-      .then(([taskList, compList, noteList, overrideList]) => {
+      .then(([taskList, compList, noteList, overrideList, hiatusList]) => {
         setTasks(taskList);
         const map = {};
         for (const c of compList) {
@@ -457,6 +481,7 @@ export default function TaskGrid() {
           overrideMap[`${o.task_id}:${o.date}`] = o.text;
         }
         setCellOverrides(overrideMap);
+        setHiatusPeriods(hiatusList);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -872,17 +897,22 @@ export default function TaskGrid() {
   // converting every eligible cell to a BLANK text override, and blank the
   // text of override cells. Completion rows are never touched — restoring
   // the checkbox reveals the prior count. Locked (future/pre-active/
-  // after-end/hiatus) cells are skipped and reported.
+  // after-end/paused) cells are skipped and reported; hiatus-interval blanks
+  // (P11.0) are skipped and reported separately.
   const handleDeleteCells = useCallback(async (cells) => {
     const eligible = cells.filter((c) => !c.disabled);
-    const skipped = cells.length - eligible.length;
+    const skippedHiatus = cells.filter((c) => c.hiatus).length;
+    const skipped = cells.length - eligible.length - skippedHiatus;
+    const skipMsg =
+      (skipped > 0 ? ` · skipped ${skipped} locked cell${skipped !== 1 ? 's' : ''}` : '')
+      + (skippedHiatus > 0 ? ` · skipped ${skippedHiatus} hiatus cell${skippedHiatus !== 1 ? 's' : ''}` : '');
     // Only cells that actually change: checkbox cells gain a blank override;
     // override cells with text get blanked. Already-blank overrides are no-ops.
     const items = eligible
       .filter((c) => !c.isOverride || c.hasText)
       .map((c) => ({ task_id: c.taskId, date: c.date, text: '' }));
     if (items.length === 0) {
-      if (skipped > 0) showFeedback(`Nothing to convert — skipped ${skipped} locked cell${skipped !== 1 ? 's' : ''}.`);
+      if (skipped > 0 || skippedHiatus > 0) showFeedback(`Nothing to convert —${skipMsg.replace(' ·', '')}.`);
       return;
     }
     try {
@@ -894,7 +924,7 @@ export default function TaskGrid() {
       });
       showFeedback(
         `Converted ${items.length} cell${items.length !== 1 ? 's' : ''} to blank text`
-        + (skipped > 0 ? ` · skipped ${skipped} locked cell${skipped !== 1 ? 's' : ''}` : '')
+        + skipMsg
         + '. Completion history is preserved.',
       );
     } catch (e) {
@@ -1030,6 +1060,7 @@ export default function TaskGrid() {
   const datesRef           = useRef([]);
   const completionsRef     = useRef({});
   const cellOverridesRef   = useRef({});
+  const hiatusCellsRef     = useRef(new Set());
   const editingOverrideCellRef = useRef(null);
   const modalOpenRef       = useRef(false);
   const handlersRef        = useRef({});
@@ -1065,6 +1096,7 @@ export default function TaskGrid() {
   datesRef.current            = dates;
   completionsRef.current      = completions;
   cellOverridesRef.current    = cellOverrides;
+  hiatusCellsRef.current      = hiatusCells;
   editingOverrideCellRef.current = editingOverrideCell;
   modalOpenRef.current        = modalOpen;
   helpOpenRef.current         = helpOpen;
@@ -1141,12 +1173,13 @@ export default function TaskGrid() {
       // single-cell Delete and range Delete share the exact same guards.
       function cellMeta(taskId, date) {
         const task = tasks.find((t) => t.id === taskId);
-        const disabled = !task || task.is_paused === 1
+        const hiatus = hiatusCellsRef.current.has(`${taskId}:${date}`);
+        const disabled = !task || hiatus || task.is_paused === 1
           || date > toLocalDate(new Date())
           || (task.active_from && date < task.active_from)
           || (task.end_date && date > task.end_date);
         const ov = cellOverridesRef.current[`${taskId}:${date}`];
-        return { taskId, date, disabled, isOverride: ov !== undefined, hasText: !!ov };
+        return { taskId, date, disabled, hiatus, isOverride: ov !== undefined, hasText: !!ov };
       }
 
       // Escape — priority: modal > help > range > cell selection. Modal close
@@ -1348,6 +1381,7 @@ export default function TaskGrid() {
         const task = tasks.find((t) => t.id === sel.taskId);
         if (!task) return;
         if (task.is_paused === 1) return;
+        if (hiatusCellsRef.current.has(`${sel.taskId}:${sel.date}`)) return; // hiatus blank (P11.0)
         if (sel.date > toLocalDate(new Date())) return; // no-op on future dates
         if (task.active_from && sel.date < task.active_from) return; // no-op before active_from
         if (task.end_date && sel.date > task.end_date) return; // no-op after end_date
@@ -1766,6 +1800,7 @@ export default function TaskGrid() {
             notes={notes}
             todayStr={todayStr}
             cellOverrides={cellOverrides}
+            hiatusCells={hiatusCells}
             rangeSelection={rangeSelection}
             feedback={cellFeedback}
             onIncrement={handleIncrement}
@@ -1869,6 +1904,7 @@ export default function TaskGrid() {
                     completions={completions}
                     notes={notes}
                     cellOverrides={cellOverrides}
+                    hiatusCells={hiatusCells}
                     editingOverrideCell={editingOverrideCell}
                     selectedCell={selectedCell}
                     colLayout={colLayout}
@@ -1951,6 +1987,7 @@ export default function TaskGrid() {
           onSave={handleSave}
           onDelete={handleDelete}
           onClose={closeModal}
+          onHiatusChanged={loadData}
         />
       )}
     </>

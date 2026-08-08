@@ -30,7 +30,9 @@ Keep the backup file until you have verified the result.
 - All completion history (per-date counts)
 - Per-cell date notes
 - Date-cell text overrides (cells converted from checkbox to text)
-- Reading books and their page-checkpoint history
+- Hiatus interval history (the date ranges that render as blank hiatus cells)
+- Reading books and their page-checkpoint history, including book priority and
+  Books-to-Buy fields (purchase link/notes, purchased date)
 - Archive snapshots
 - Links written in task/subtask/notes text (they are part of the text fields)
 

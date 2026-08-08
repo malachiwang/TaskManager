@@ -86,6 +86,59 @@ def _normalize_date_override(value: Optional[str]) -> Optional[str]:
     return None
 
 
+# ---------------------------------------------------------------------------
+# Hiatus periods (P11.0)
+#
+# Interval semantics:
+#   - start_date inclusive; end_date inclusive when closed.
+#   - end_date NULL = open interval (task is currently on hiatus).
+#   - At most one open interval per task; a task may have many closed ones.
+#   - Resuming on date R closes the open interval at R-1, so the resume date
+#     itself is a normal checkbox cell. If start_date == R (same-day hiatus +
+#     resume) the interval would be empty, so it is deleted — a same-day
+#     pause/resume leaves no hiatus history.
+#   - Entering/leaving hiatus never touches completions or cell overrides;
+#     blanking is purely a rendering layer over these persisted intervals.
+# ---------------------------------------------------------------------------
+
+def _open_hiatus_period(conn, task_id: int, start_iso: str) -> None:
+    """Create an open hiatus interval unless one is already open (idempotent)."""
+    existing = conn.execute(
+        "SELECT id FROM task_hiatus_periods WHERE task_id = ? AND end_date IS NULL",
+        (task_id,),
+    ).fetchone()
+    if existing:
+        return
+    now = datetime.now().isoformat()
+    conn.execute(
+        "INSERT INTO task_hiatus_periods (task_id, start_date, end_date, created_at, updated_at) "
+        "VALUES (?, ?, NULL, ?, ?)",
+        (task_id, start_iso, now, now),
+    )
+
+
+def _close_hiatus_period(conn, task_id: int, resume_iso: str) -> None:
+    """Close the open hiatus interval at resume-date − 1 day (inclusive end).
+
+    Same-day hiatus+resume (start_date == resume date) would produce an empty
+    interval, so the row is deleted instead. No-op if nothing is open.
+    """
+    row = conn.execute(
+        "SELECT id, start_date FROM task_hiatus_periods WHERE task_id = ? AND end_date IS NULL",
+        (task_id,),
+    ).fetchone()
+    if not row:
+        return
+    end_iso = (date.fromisoformat(resume_iso) - timedelta(days=1)).isoformat()
+    if end_iso < row["start_date"]:
+        conn.execute("DELETE FROM task_hiatus_periods WHERE id = ?", (row["id"],))
+    else:
+        conn.execute(
+            "UPDATE task_hiatus_periods SET end_date = ?, updated_at = ? WHERE id = ?",
+            (end_iso, datetime.now().isoformat(), row["id"]),
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Log the resolved DB location so dev/packaged runs are unambiguous
@@ -347,6 +400,9 @@ def create_task(
             ),
         )
         task_id = cursor.lastrowid
+        # A task created directly on hiatus starts an open interval today.
+        if norm_status == 'hiatus':
+            _open_hiatus_period(conn, task_id, today_str)
 
     row = conn.execute(
         "SELECT t.*, NULL AS latest_completion FROM tasks t WHERE t.id = ?",
@@ -491,6 +547,15 @@ def update_task(
                     "DELETE FROM completions WHERE task_id = ? AND completion_date > ?",
                     (task_id, end_date_val),
                 )
+            # Hiatus interval bookkeeping (P11.0) — only on an actual status
+            # transition, so re-saving a task without changing status never
+            # re-creates a deliberately deleted interval.
+            if "status" in updates and updates["status"] != existing["status"]:
+                today_iso = date.today().isoformat()
+                if updates["status"] == 'hiatus':
+                    _open_hiatus_period(conn, task_id, today_iso)
+                else:
+                    _close_hiatus_period(conn, task_id, today_iso)
 
     row = conn.execute(
         """
@@ -553,10 +618,183 @@ def reorder_tasks(body: ReorderBody):
 
 
 # ---------------------------------------------------------------------------
+# Task hiatus periods (P11.0) — persisted intervals behind DateCell blanking
+# ---------------------------------------------------------------------------
+
+class HiatusPeriodBody(BaseModel):
+    task_id: int
+    start_date: str
+    end_date: Optional[str] = None
+
+
+class HiatusPeriodPatch(BaseModel):
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+
+
+@app.get("/task-hiatus-periods")
+def list_task_hiatus_periods(
+    task_id: Optional[int] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+):
+    """List hiatus intervals for one task and/or overlapping a date range.
+
+    Range overlap: start_date <= end AND (end_date IS NULL OR end_date >= start)
+    — an open interval overlaps every range at or after its start.
+    """
+    if task_id is None and not (start and end):
+        raise HTTPException(status_code=422, detail="Provide task_id or start+end")
+    query = "SELECT * FROM task_hiatus_periods WHERE 1=1"
+    params: list = []
+    if task_id is not None:
+        query += " AND task_id = ?"
+        params.append(task_id)
+    if start and end:
+        _validate_iso_date(start, "start")
+        _validate_iso_date(end, "end")
+        query += " AND start_date <= ? AND (end_date IS NULL OR end_date >= ?)"
+        params.extend([end, start])
+    query += " ORDER BY task_id, start_date"
+    conn = get_connection()
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.post("/task-hiatus-periods", status_code=201)
+def create_task_hiatus_period(body: HiatusPeriodBody):
+    """Create an interval directly (normally intervals are created by status
+    transitions; this exists for corrections). Open intervals stay unique."""
+    _validate_iso_date(body.start_date, "start_date")
+    if body.end_date is not None:
+        _validate_iso_date(body.end_date, "end_date")
+        if body.end_date < body.start_date:
+            raise HTTPException(status_code=422, detail="end_date must not be before start_date")
+    conn = get_connection()
+    if not conn.execute("SELECT id FROM tasks WHERE id = ?", (body.task_id,)).fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Task not found")
+    if body.end_date is None:
+        open_row = conn.execute(
+            "SELECT id FROM task_hiatus_periods WHERE task_id = ? AND end_date IS NULL",
+            (body.task_id,),
+        ).fetchone()
+        if open_row:
+            conn.close()
+            raise HTTPException(status_code=409, detail="Task already has an open hiatus interval")
+    now = datetime.now().isoformat()
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO task_hiatus_periods (task_id, start_date, end_date, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (body.task_id, body.start_date, body.end_date, now, now),
+        )
+        period_id = cur.lastrowid
+    row = conn.execute("SELECT * FROM task_hiatus_periods WHERE id = ?", (period_id,)).fetchone()
+    conn.close()
+    return dict(row)
+
+
+@app.patch("/task-hiatus-periods/{period_id}")
+def update_task_hiatus_period(period_id: int, body: HiatusPeriodPatch):
+    """Adjust interval dates (correction flow). end_date='' clears it back to
+    open — rejected if the task already has a different open interval."""
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM task_hiatus_periods WHERE id = ?", (period_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Hiatus period not found")
+    period = dict(row)
+
+    new_start = period["start_date"]
+    new_end = period["end_date"]
+    if body.start_date is not None:
+        _validate_iso_date(body.start_date, "start_date")
+        new_start = body.start_date
+    if body.end_date is not None:
+        if body.end_date == "":
+            new_end = None
+        else:
+            _validate_iso_date(body.end_date, "end_date")
+            new_end = body.end_date
+    if new_end is not None and new_end < new_start:
+        conn.close()
+        raise HTTPException(status_code=422, detail="end_date must not be before start_date")
+    if new_end is None and period["end_date"] is not None:
+        open_row = conn.execute(
+            "SELECT id FROM task_hiatus_periods WHERE task_id = ? AND end_date IS NULL AND id != ?",
+            (period["task_id"], period_id),
+        ).fetchone()
+        if open_row:
+            conn.close()
+            raise HTTPException(status_code=409, detail="Task already has an open hiatus interval")
+
+    with conn:
+        conn.execute(
+            "UPDATE task_hiatus_periods SET start_date = ?, end_date = ?, updated_at = ? WHERE id = ?",
+            (new_start, new_end, datetime.now().isoformat(), period_id),
+        )
+    updated = conn.execute("SELECT * FROM task_hiatus_periods WHERE id = ?", (period_id,)).fetchone()
+    conn.close()
+    return dict(updated)
+
+
+@app.delete("/task-hiatus-periods/{period_id}")
+def delete_task_hiatus_period(period_id: int):
+    """Remove a mistaken interval. Never touches completions or overrides."""
+    conn = get_connection()
+    row = conn.execute("SELECT id FROM task_hiatus_periods WHERE id = ?", (period_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Hiatus period not found")
+    with conn:
+        conn.execute("DELETE FROM task_hiatus_periods WHERE id = ?", (period_id,))
+    conn.close()
+    return {"deleted": period_id}
+
+
+# ---------------------------------------------------------------------------
 # Reading Sheet (P5.0) — books + page-checkpoint history
 # ---------------------------------------------------------------------------
 
 _READING_STATUSES = frozenset({"active", "finished", "archived"})
+
+# Book priority scale (P11.0): 1 low/background · 3 normal · 5 highest.
+# Deliberately 1–5 (not the task 1–10 scale) — books need coarse bands for
+# color coding, not fine-grained pressure input. Priority never feeds urgency.
+READING_PRIORITY_MIN, READING_PRIORITY_MAX, READING_PRIORITY_DEFAULT = 1, 5, 3
+
+
+def _clamp_reading_priority(value: Optional[int]) -> int:
+    try:
+        p = int(value)
+    except (TypeError, ValueError):
+        return READING_PRIORITY_DEFAULT
+    return max(READING_PRIORITY_MIN, min(READING_PRIORITY_MAX, p))
+
+
+def _validate_purchase_url(raw: Optional[str]) -> str:
+    """Mirror the frontend safe-link rules: http/https/mailto/www only.
+
+    Empty is fine (no link). Anything else (javascript:, data:, file:,
+    relative paths, …) is rejected with 422 so unsafe values never reach the
+    database. The frontend additionally renders through normalizeSafeUrl, so
+    this is defense in depth, not the only guard.
+    """
+    if raw is None:
+        return ""
+    url = raw.strip()
+    if not url:
+        return ""
+    candidate = f"https://{url}" if url.lower().startswith("www.") else url
+    m = re.match(r"^([a-zA-Z][a-zA-Z0-9+.-]*):", candidate)
+    if not m or m.group(1).lower() not in ("http", "https", "mailto"):
+        raise HTTPException(
+            status_code=422,
+            detail="purchase_url must be an http, https, mailto, or www link",
+        )
+    return url
 
 
 class ReadingBookBody(BaseModel):
@@ -568,6 +806,11 @@ class ReadingBookBody(BaseModel):
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
     notes: Optional[str] = None
+    priority: Optional[int] = None
+    to_buy: Optional[bool] = None
+    purchase_url: Optional[str] = None
+    purchase_notes: Optional[str] = None
+    purchased_at: Optional[str] = None
 
 
 class ReadingEntryBody(BaseModel):
@@ -636,7 +879,9 @@ def list_reading_books():
 @app.post("/reading/books", status_code=201)
 def create_reading_book(body: ReadingBookBody):
     """Create a book. Title is required. current_page is clamped to
-    [0, total_pages]; if > 0 an initial checkpoint entry seeds the history."""
+    [0, total_pages]; if > 0 an initial checkpoint entry seeds the history.
+    to_buy=true creates a wishlist entry — no checkpoint is seeded and no
+    started_at is stamped (the book has not been started)."""
     title = (body.title or "").strip()
     if not title:
         raise HTTPException(status_code=400, detail="title is required")
@@ -645,9 +890,16 @@ def create_reading_book(body: ReadingBookBody):
         total = None
     current = _clamp_page(body.current_page, total)
     status = body.status if body.status in _READING_STATUSES else "active"
+    priority = _clamp_reading_priority(body.priority) if body.priority is not None else READING_PRIORITY_DEFAULT
+    to_buy = 1 if body.to_buy else 0
+    purchase_url = _validate_purchase_url(body.purchase_url)
     now = datetime.now().isoformat()
     today = date.today().isoformat()
-    started = body.started_at or today
+    if to_buy:
+        current = 0
+        started = None
+    else:
+        started = body.started_at or today
 
     conn = get_connection()
     with conn:
@@ -657,10 +909,12 @@ def create_reading_book(body: ReadingBookBody):
         cur = conn.execute(
             """INSERT INTO reading_books
                  (title, author, total_pages, current_page, status, started_at,
-                  finished_at, notes, display_order, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                  finished_at, notes, display_order, created_at, updated_at,
+                  priority, to_buy, purchase_url, purchase_notes, purchased_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (title, (body.author or "").strip(), total, current, status, started,
-             body.finished_at, (body.notes or ""), next_order, now, now),
+             body.finished_at, (body.notes or ""), next_order, now, now,
+             priority, to_buy, purchase_url, (body.purchase_notes or ""), None),
         )
         book_id = cur.lastrowid
         if current > 0:
@@ -712,6 +966,26 @@ def update_reading_book(book_id: int, body: ReadingBookBody):
     if body.current_page is not None:
         total = updates.get("total_pages", book.get("total_pages"))
         updates["current_page"] = _clamp_page(body.current_page, total)
+    if body.priority is not None:
+        updates["priority"] = _clamp_reading_priority(body.priority)
+    if body.purchase_url is not None:
+        updates["purchase_url"] = _validate_purchase_url(body.purchase_url)
+    if body.purchase_notes is not None:
+        updates["purchase_notes"] = body.purchase_notes
+    if body.purchased_at is not None:
+        updates["purchased_at"] = body.purchased_at or None
+    if body.to_buy is not None:
+        new_to_buy = 1 if body.to_buy else 0
+        updates["to_buy"] = new_to_buy
+        old_to_buy = int(book.get("to_buy") or 0)
+        # Mark bought (to_buy 1 → 0): stamp purchased_at (unless caller supplied
+        # one) so Reports can count purchases per period. The book keeps its
+        # title/author/notes and becomes a normal owned/unread library book —
+        # no checkpoint entries are fabricated. Re-wishlisting clears the stamp.
+        if old_to_buy == 1 and new_to_buy == 0 and body.purchased_at is None:
+            updates["purchased_at"] = date.today().isoformat()
+        elif old_to_buy == 0 and new_to_buy == 1:
+            updates["purchased_at"] = None
 
     if updates:
         updates["updated_at"] = datetime.now().isoformat()
@@ -1738,10 +2012,15 @@ def export_backup():
             "SELECT * FROM date_cell_overrides ORDER BY task_id, date"
         ).fetchall()
     ]
+    task_hiatus_periods = [
+        dict(r) for r in conn.execute(
+            "SELECT * FROM task_hiatus_periods ORDER BY task_id, start_date"
+        ).fetchall()
+    ]
     conn.close()
 
     payload = {
-        "schema_version": 5,  # P9.1 added date_cell_overrides
+        "schema_version": 6,  # P11.0 added task_hiatus_periods + reading priority/to-buy
         "exported_at": datetime.now().isoformat(),
         "tasks": tasks,
         "completions": completions,
@@ -1751,6 +2030,7 @@ def export_backup():
         "reading_books": reading_books,
         "reading_entries": reading_entries,
         "date_cell_overrides": date_cell_overrides,
+        "task_hiatus_periods": task_hiatus_periods,
     }
     filename = f"taskos-backup-{date.today().isoformat()}.json"
     return Response(
@@ -1843,7 +2123,7 @@ def export_sheet_csv(
 # Restore
 # ---------------------------------------------------------------------------
 
-_SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4, 5})
+_SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4, 5, 6})
 
 
 @app.post("/restore/backup.json", status_code=200)
@@ -1854,8 +2134,10 @@ async def restore_backup(file: UploadFile = File(...)):
     Before overwriting anything, a safety copy of the current DB is written to
     <db-dir>/backups/pre-restore-<timestamp>.db using the SQLite backup API.
 
-    Supported schema_versions: 1, 2, 3, 4, 5. Older backups without the
-    date_cell_overrides section restore with no overrides (treated as empty).
+    Supported schema_versions: 1–6. Older backups without the
+    date_cell_overrides / task_hiatus_periods sections restore those as empty;
+    reading books without priority/to-buy fields restore with defaults
+    (priority 3, to_buy 0, empty purchase fields).
     All existing rows are deleted and replaced with backup data in a single
     transaction; if the insert phase fails the transaction rolls back and the
     safety copy lets you recover manually.
@@ -1884,6 +2166,7 @@ async def restore_backup(file: UploadFile = File(...)):
     reading_books_data = payload.get("reading_books", [])
     reading_entries_data = payload.get("reading_entries", [])
     date_cell_overrides_data = payload.get("date_cell_overrides", [])
+    task_hiatus_periods_data = payload.get("task_hiatus_periods", [])
 
     # Safety backup before any writes. Resolved via the database module so the
     # copy always sits next to the DB actually in use (TASKOS_DB_PATH included).
@@ -1905,6 +2188,7 @@ async def restore_backup(file: UploadFile = File(...)):
             conn.execute("DELETE FROM reading_entries")
             conn.execute("DELETE FROM reading_books")
             conn.execute("DELETE FROM task_daily_snapshots")
+            conn.execute("DELETE FROM task_hiatus_periods")
             conn.execute("DELETE FROM date_cell_overrides")
             conn.execute("DELETE FROM cell_notes")
             conn.execute("DELETE FROM completions")
@@ -2056,11 +2340,13 @@ async def restore_backup(file: UploadFile = File(...)):
                     INSERT INTO reading_books (
                         id, title, author, total_pages, current_page, status,
                         started_at, finished_at, notes, display_order,
-                        created_at, updated_at
+                        created_at, updated_at,
+                        priority, to_buy, purchase_url, purchase_notes, purchased_at
                     ) VALUES (
                         :id, :title, :author, :total_pages, :current_page, :status,
                         :started_at, :finished_at, :notes, :display_order,
-                        :created_at, :updated_at
+                        :created_at, :updated_at,
+                        :priority, :to_buy, :purchase_url, :purchase_notes, :purchased_at
                     )
                     """,
                     {
@@ -2076,6 +2362,12 @@ async def restore_backup(file: UploadFile = File(...)):
                         "display_order": b.get("display_order", 0),
                         "created_at":    b.get("created_at"),
                         "updated_at":    b.get("updated_at"),
+                        # P11.0 fields — pre-v6 backups restore with defaults.
+                        "priority":       b.get("priority", 3),
+                        "to_buy":         b.get("to_buy", 0),
+                        "purchase_url":   b.get("purchase_url", ""),
+                        "purchase_notes": b.get("purchase_notes", ""),
+                        "purchased_at":   b.get("purchased_at"),
                     },
                 )
 
@@ -2120,6 +2412,27 @@ async def restore_backup(file: UploadFile = File(...)):
                         "updated_at": o.get("updated_at"),
                     },
                 )
+
+            # Hiatus periods (P11.0, schema_version 6+). Absent in older
+            # backups — the loop simply runs zero times.
+            for h in task_hiatus_periods_data:
+                conn.execute(
+                    """
+                    INSERT INTO task_hiatus_periods (
+                        id, task_id, start_date, end_date, created_at, updated_at
+                    ) VALUES (
+                        :id, :task_id, :start_date, :end_date, :created_at, :updated_at
+                    )
+                    """,
+                    {
+                        "id":         h.get("id"),
+                        "task_id":    h["task_id"],
+                        "start_date": h["start_date"],
+                        "end_date":   h.get("end_date"),
+                        "created_at": h.get("created_at"),
+                        "updated_at": h.get("updated_at"),
+                    },
+                )
     except Exception as exc:
         conn.close()
         raise HTTPException(status_code=500, detail=f"Restore failed: {exc}")
@@ -2136,6 +2449,7 @@ async def restore_backup(file: UploadFile = File(...)):
         "reading_books": len(reading_books_data),
         "reading_entries": len(reading_entries_data),
         "date_cell_overrides": len(date_cell_overrides_data),
+        "task_hiatus_periods": len(task_hiatus_periods_data),
         "safety_backup": str(safety_path),
     }
 
@@ -2494,6 +2808,9 @@ async def import_apply(file: UploadFile = File(...)):
             task_id = cursor.lastrowid
             existing_keys.add(dup_key)
             tasks_created += 1
+            # Imported hiatus tasks get an open interval from today (P11.0).
+            if status == 'hiatus':
+                _open_hiatus_period(conn, task_id, today_str)
 
             for iso_date in date_cols:
                 idx = header_to_idx.get(iso_date)

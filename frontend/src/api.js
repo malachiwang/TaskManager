@@ -250,6 +250,30 @@ export async function batchDeleteDateCellOverrides(items) {
   return res.json();
 }
 
+// ---------------------------------------------------------------------------
+// Task hiatus periods (P11.0) — persisted intervals behind DateCell blanking.
+// ---------------------------------------------------------------------------
+
+// Intervals overlapping [start, end] — used for grid range rendering.
+export async function fetchHiatusPeriodsInRange(start, end) {
+  const res = await fetch(`${BASE}/task-hiatus-periods?start=${start}&end=${end}`);
+  if (!res.ok) throw new Error(`fetchHiatusPeriodsInRange failed: ${res.status}`);
+  return res.json();
+}
+
+// All intervals for one task — used by the Task Details hiatus history list.
+export async function fetchHiatusPeriodsForTask(taskId) {
+  const res = await fetch(`${BASE}/task-hiatus-periods?task_id=${taskId}`);
+  if (!res.ok) throw new Error(`fetchHiatusPeriodsForTask failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteHiatusPeriod(id) {
+  const res = await fetch(`${BASE}/task-hiatus-periods/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`deleteHiatusPeriod failed: ${res.status}`);
+  return res.json();
+}
+
 export async function previewImport(file) {
   const formData = new FormData();
   formData.append('file', file);

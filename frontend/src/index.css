@@ -6562,3 +6562,110 @@ select.task-modal-input {
 .report-change-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .report-change-list li { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
 .report-change-list li > span:first-child { font-weight: 500; color: var(--ink); min-width: 90px; }
+
+/* -------------------------------------------------------------------------
+   P11.0 — Hiatus-blank DateCells + Reading priority badges + Books to Buy.
+   Token-only additions: every color routes through existing theme tokens so
+   all P10.1 themes (Classic/Paper/Graphite/Ocean/Forest/Midnight) and
+   Light/Dark appearance adapt without per-theme overrides.
+   ---------------------------------------------------------------------- */
+
+/* Hiatus-blank cell — a date inside a persisted hiatus interval. Reads as a
+   deliberately blank cell (same tone as before-active/after-end), with a
+   faint pause mark so it is not confused with a deleted text-override cell.
+   Selection outline still applies on top for keyboard navigation. */
+.date-cell.hiatus-blank {
+  background: var(--bg-app);
+  cursor: default;
+}
+.dc-hiatus {
+  font-size: 8px;
+  line-height: 1;
+  color: color-mix(in srgb, var(--muted-2) 55%, transparent);
+  user-select: none;
+}
+
+/* Task Details — hiatus history list */
+.task-modal-hiatus-list { display: flex; flex-direction: column; gap: 4px; }
+.task-modal-hiatus-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 4px 8px; font-size: 12px;
+  background: var(--bg-app); border: 1px solid var(--rule-2);
+}
+.task-modal-hiatus-range { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.task-modal-hiatus-delete {
+  padding: 1px 8px; font-size: 10px; letter-spacing: 0.03em;
+  color: var(--muted); background: transparent;
+  border: 1px solid var(--rule-2); border-radius: 2px; cursor: pointer;
+}
+.task-modal-hiatus-delete:hover { color: var(--urg-crit); border-color: var(--urg-crit); }
+.task-modal-hiatus-confirm {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--muted);
+}
+.task-modal-hiatus-confirm .task-modal-confirm-delete,
+.task-modal-hiatus-confirm .task-modal-cancel { padding: 2px 8px; font-size: 10px; }
+
+/* Reading priority badge — calm bands, not urgency alarms.
+   P1–2 low/background (green, P1 most muted) · P3 normal (accent/neutral) ·
+   P4 high (amber) · P5 highest (rose accent). */
+.rd-pri-badge {
+  display: inline-block;
+  min-width: 20px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-align: center;
+  border: 1px solid transparent;
+  font-variant-numeric: tabular-nums;
+}
+.rd-pri-1 {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted-2) 10%, transparent);
+  border-color: color-mix(in srgb, var(--muted-2) 25%, transparent);
+}
+.rd-pri-2 {
+  color: var(--good);
+  background: color-mix(in srgb, var(--good) 10%, transparent);
+  border-color: color-mix(in srgb, var(--good) 28%, transparent);
+}
+.rd-pri-3 {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.rd-pri-4 {
+  color: var(--urg-mid);
+  background: color-mix(in srgb, var(--urg-mid) 12%, transparent);
+  border-color: color-mix(in srgb, var(--urg-mid) 30%, transparent);
+}
+.rd-pri-5 {
+  color: var(--urg-crit);
+  background: color-mix(in srgb, var(--urg-crit) 12%, transparent);
+  border-color: color-mix(in srgb, var(--urg-crit) 30%, transparent);
+}
+
+/* Priority column + modal priority segment band dots */
+.rd-col-pri { width: 40px; text-align: center; }
+.rd-priority-seg .task-modal-seg-btn::before {
+  content: '';
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+.rd-priority-seg .rd-pri-seg-1::before { background: var(--muted-2); }
+.rd-priority-seg .rd-pri-seg-2::before { background: var(--good); }
+.rd-priority-seg .rd-pri-seg-3::before { background: var(--accent); }
+.rd-priority-seg .rd-pri-seg-4::before { background: var(--urg-mid); }
+.rd-priority-seg .rd-pri-seg-5::before { background: var(--urg-crit); }
+
+/* Books to Buy table */
+.reading-grid--tobuy .rd-col-link { width: 60px; }
+.rd-buy-link { color: var(--accent); text-decoration: underline; }
+.rd-buy-link:hover { color: var(--accent-blue-strong, var(--accent)); }
+.rd-buy-nolink { color: var(--muted-2); }
+.rd-col-buynotes { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }

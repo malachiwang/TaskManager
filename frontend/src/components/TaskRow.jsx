@@ -280,7 +280,7 @@ function InlineTextCell({
 export default function TaskRow({
   task, dates, todayStr, completions, notes, selectedCell, colLayout,
   selectedMetaCell, editingTextCell, rangeSelection,
-  cellOverrides, editingOverrideCell,
+  cellOverrides, editingOverrideCell, hiatusCells,
   reorderEnabled, isDragOver, isDragSource, onHandlePointerDown,
   onIncrement, onEdit, onSelect, onExtendRange,
   onSelectMeta, onStartTextEdit, onCommitTextEdit, onCancelTextEdit,
@@ -421,6 +421,7 @@ export default function TaskRow({
             isFuture={isFuture}
             isToday={date === todayStr}
             isPaused={isPaused}
+            isHiatusBlank={hiatusCells ? hiatusCells.has(noteKey) : false}
             activeFrom={task.active_from || null}
             endDate={task.end_date || null}
             isSelected={selectedCell?.taskId === task.id && selectedCell?.date === date}

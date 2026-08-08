@@ -305,17 +305,65 @@ export function stalenessReport(tasks) {
 }
 
 // ── Optional Reading summary (books-only, no per-book entry fetches) ─────────
+// To-buy wishlist entries (P11.0) are excluded — they are not being read;
+// booksToBuySummary below owns that view.
 export function readingSummary(books, start, end) {
+  const owned = books.filter((b) => !b.to_buy);
   const inRange = (d) => d && d.slice(0, 10) >= start && d.slice(0, 10) <= end;
-  const updated = books.filter((b) => inRange(b.updated_at) || inRange(b.last_entry_date));
-  const finished = books.filter((b) => b.status === 'finished' && inRange(b.finished_at));
+  const updated = owned.filter((b) => inRange(b.updated_at) || inRange(b.last_entry_date));
+  const finished = owned.filter((b) => b.status === 'finished' && inRange(b.finished_at));
   return {
-    total: books.length,
-    active: books.filter((b) => b.status === 'active').length,
-    finishedTotal: books.filter((b) => b.status === 'finished').length,
-    archived: books.filter((b) => b.status === 'archived').length,
+    total: owned.length,
+    active: owned.filter((b) => b.status === 'active').length,
+    finishedTotal: owned.filter((b) => b.status === 'finished').length,
+    archived: owned.filter((b) => b.status === 'archived').length,
     updatedInPeriod: updated.length,
     finishedInPeriod: finished,
     updatedList: updated.slice(0, 6),
+  };
+}
+
+// ── Reading priority bands (P11.0) — active library books only ───────────────
+// Bands mirror the badge colors: high = 4–5, normal = 3, low = 1–2.
+export function readingPrioritySummary(books) {
+  const active = books.filter((b) => !b.to_buy && b.status === 'active');
+  const pri = (b) => b.priority ?? 3;
+  const high = active.filter((b) => pri(b) >= 4);
+  return {
+    activeCount: active.length,
+    high: high.length,
+    normal: active.filter((b) => pri(b) === 3).length,
+    low: active.filter((b) => pri(b) <= 2).length,
+    topHigh: high.sort((a, b) => pri(b) - pri(a) || (a.title || '').localeCompare(b.title || '')).slice(0, 5),
+  };
+}
+
+// ── Books to Buy summary (P11.0) ─────────────────────────────────────────────
+// boughtInPeriod uses purchased_at (stamped when a book is marked bought), so
+// it includes books that have already left the to-buy list.
+export function booksToBuySummary(books, start, end) {
+  const inRange = (d) => d && d.slice(0, 10) >= start && d.slice(0, 10) <= end;
+  const toBuy = books.filter((b) => !!b.to_buy);
+  const pri = (b) => b.priority ?? 3;
+  return {
+    count: toBuy.length,
+    topPriority: toBuy.sort((a, b) => pri(b) - pri(a) || (a.title || '').localeCompare(b.title || '')).slice(0, 5),
+    boughtInPeriod: books.filter((b) => inRange(b.purchased_at)),
+  };
+}
+
+// ── Hiatus summary (P11.0) — current state + interval activity in period ─────
+// `periods` comes from /task-hiatus-periods?start&end (intervals overlapping
+// the period); started/ended count interval boundaries inside the period.
+// No historical snapshots are required.
+export function hiatusSummary(tasks, periods, start, end) {
+  const inRange = (d) => d && d >= start && d <= end;
+  const current = tasks.filter((t) => t.is_paused === 1 && !t.is_ended);
+  const list = periods || [];
+  return {
+    currentCount: current.length,
+    currentList: current.slice(0, 6),
+    startedInPeriod: list.filter((p) => inRange(p.start_date)).length,
+    endedInPeriod: list.filter((p) => inRange(p.end_date)).length,
   };
 }

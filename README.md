@@ -98,8 +98,11 @@ cloud, no telemetry.
 - Date-cell completion tracking with guarded keyboard behavior
 - Per-cell text overrides: convert any specific date cell from a checkbox into
   a small text cell (and back) without affecting the rest of the grid
+- Hiatus history: pausing a task blanks its date cells for the hiatus period —
+  permanently, even after resuming — while preserving completion history
 - Pressure and urgency scoring for stale or high-priority work
-- Reading sheet for books, current pages, and checkpoints
+- Reading sheet for books, current pages, and checkpoints, with color-coded
+  book priorities and a Books-to-Buy wishlist view
 - Dashboard for present-tense action planning: what to do now
 - Reports for past-tense period review
 - Archive snapshots for preserved historical views

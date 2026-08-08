@@ -7,9 +7,11 @@ import {
   createReadingEntry,
   fetchReadingEntries,
 } from '../api.js';
-import ReadingBookModal from './ReadingBookModal.jsx';
+import ReadingBookModal, { PRIORITY_LABELS } from './ReadingBookModal.jsx';
 import KeyboardHelp from './KeyboardHelp.jsx';
 import { matchKeybind, resolveKeybinds } from '../keybinds.js';
+import { normalizeSafeUrl } from '../linkUtils.js';
+import { handleSafeLinkClick } from '../openExternalLink.js';
 
 const STATUS_LABELS = { active: 'Active', finished: 'Finished', archived: 'Archived' };
 const FILTERS = [
@@ -19,6 +21,16 @@ const FILTERS = [
   { key: 'all',      label: 'All' },
 ];
 const STALE_DAYS = 21; // subtle "not updated recently" indicator threshold
+
+// Priority badge (P11.0) — compact colored chip shown in both views.
+function PriorityBadge({ priority }) {
+  const p = Math.max(1, Math.min(5, priority ?? 3));
+  return (
+    <span className={`rd-pri-badge rd-pri-${p}`} title={`Priority ${p} — ${PRIORITY_LABELS[p]}`}>
+      P{p}
+    </span>
+  );
+}
 
 function getToday() {
   const d = new Date();
@@ -43,6 +55,10 @@ export default function ReadingSheet() {
   const [filter, setFilter] = useState('active');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingBook, setEditingBook] = useState(null);
+
+  // View mode (P11.0): 'library' = owned books (existing behavior);
+  // 'tobuy' = wishlist entries (to_buy=1), sorted by priority.
+  const [viewMode, setViewMode] = useState('library');
 
   // Inline checkpoint entry state (which book row is adding, + draft values).
   const [addingFor, setAddingFor] = useState(null);
@@ -80,14 +96,24 @@ export default function ReadingSheet() {
   useEffect(() => { load(); }, [load]);
 
   const q = searchQuery.trim().toLowerCase();
-  const visible = books.filter((b) =>
-    (filter === 'all' || b.status === filter)
-    && (!q
-      || (b.title  && b.title.toLowerCase().includes(q))
-      || (b.author && b.author.toLowerCase().includes(q))
-      || (b.status && b.status.toLowerCase().includes(q))),
-  );
-  const counts = books.reduce((acc, b) => { acc[b.status] = (acc[b.status] || 0) + 1; return acc; }, {});
+  const matchesSearch = (b) => !q
+    || (b.title  && b.title.toLowerCase().includes(q))
+    || (b.author && b.author.toLowerCase().includes(q))
+    || (b.status && b.status.toLowerCase().includes(q));
+  // Mode split first (to-buy books never mix into the library list), then
+  // status filter (library only) and search. To Buy sorts by priority desc.
+  const modeBooks = books.filter((b) => (viewMode === 'tobuy' ? !!b.to_buy : !b.to_buy));
+  const visible = viewMode === 'tobuy'
+    ? modeBooks.filter(matchesSearch).slice().sort(
+        (a, b) => (b.priority ?? 3) - (a.priority ?? 3)
+          || (a.title || '').localeCompare(b.title || ''),
+      )
+    : modeBooks.filter((b) => (filter === 'all' || b.status === filter) && matchesSearch(b));
+  const counts = books.reduce((acc, b) => {
+    if (b.to_buy) acc.tobuy = (acc.tobuy || 0) + 1;
+    else acc[b.status] = (acc[b.status] || 0) + 1;
+    return acc;
+  }, {});
 
   const selectedBook = visible.find((b) => b.id === selectedBookId) || null;
 
@@ -127,6 +153,19 @@ export default function ReadingSheet() {
   function changeStatus(book, status) {
     updateReadingBook(book.id, { status }).then(replaceBook).catch((e) => console.error(e));
   }
+
+  // Mark a to-buy book bought (P11.0) — backend stamps purchased_at and the
+  // book leaves the To Buy view as a normal owned/unread library book. No
+  // checkpoint entries are created.
+  function markBought(book) {
+    updateReadingBook(book.id, { to_buy: false }).then(replaceBook).catch((e) => console.error(e));
+  }
+
+  // Row selection does not carry across views — the visible id set changes.
+  useEffect(() => {
+    setSelectedBookId(null);
+    setConfirmDeleteId(null);
+  }, [viewMode]);
 
   function openAdd() { setEditingBook(null); setModalOpen(true); }
   function openEdit(book) { setEditingBook(book); setModalOpen(true); }
@@ -179,6 +218,7 @@ export default function ReadingSheet() {
     modalOpen, helpOpen, selectedBookId, confirmDeleteId, addingFor,
     visibleIds: visible.map((b) => b.id),
     selectedBook,
+    viewMode,
   };
 
   useEffect(() => {
@@ -227,9 +267,10 @@ export default function ReadingSheet() {
       }
 
       // Enter — open the checkpoint form for the selected book (page input
-      // autofocuses, so typing the page number flows naturally).
+      // autofocuses, so typing the page number flows naturally). To-buy books
+      // have no checkpoints, so Enter is a no-op in the To Buy view.
       if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        if (s.selectedBookId == null || s.addingFor != null) return;
+        if (s.selectedBookId == null || s.addingFor != null || s.viewMode === 'tobuy') return;
         e.preventDefault();
         startAdd(s.selectedBookId);
         return;
@@ -291,7 +332,9 @@ export default function ReadingSheet() {
     <>
       <div className="ws-grid-shelf">
         <div className="ws-shelf-left">
-          <button className="ws-shelf-btn ws-shelf-btn--primary" onClick={openAdd}>+ Add Book</button>
+          <button className="ws-shelf-btn ws-shelf-btn--primary" onClick={openAdd}>
+            {viewMode === 'tobuy' ? '+ Add Book to Buy' : '+ Add Book'}
+          </button>
         </div>
       </div>
 
@@ -304,6 +347,8 @@ export default function ReadingSheet() {
             <span>{counts.finished || 0} finished</span>
             <span className="ws-meta-sep">·</span>
             <span>{counts.archived || 0} archived</span>
+            <span className="ws-meta-sep">·</span>
+            <span>{counts.tobuy || 0} to buy</span>
           </div>
         </div>
         <div className="ws-sheet-header-right">
@@ -332,15 +377,31 @@ export default function ReadingSheet() {
       </div>
 
       <div className="ws-filter-bar">
-        <div className="ws-filter-pills">
-          {FILTERS.map((f) => (
-            <button key={f.key}
-              className={`ws-filter-pill${filter === f.key ? ' ws-filter-pill--active' : ''}`}
-              onClick={() => setFilter(f.key)}>
-              {f.label}
-            </button>
-          ))}
+        <div className="ws-filter-seg" role="group" aria-label="Library or to-buy view">
+          <button
+            className={`ws-filter-seg-btn${viewMode === 'library' ? ' ws-filter-seg-btn--active' : ''}`}
+            aria-pressed={viewMode === 'library'}
+            onClick={() => setViewMode('library')}>
+            Library
+          </button>
+          <button
+            className={`ws-filter-seg-btn${viewMode === 'tobuy' ? ' ws-filter-seg-btn--active' : ''}`}
+            aria-pressed={viewMode === 'tobuy'}
+            onClick={() => setViewMode('tobuy')}>
+            To Buy{counts.tobuy ? ` (${counts.tobuy})` : ''}
+          </button>
         </div>
+        {viewMode === 'library' && (
+          <div className="ws-filter-pills">
+            {FILTERS.map((f) => (
+              <button key={f.key}
+                className={`ws-filter-pill${filter === f.key ? ' ws-filter-pill--active' : ''}`}
+                onClick={() => setFilter(f.key)}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+        )}
         <input
           ref={searchInputRef}
           className="ws-filter-input"
@@ -353,7 +414,7 @@ export default function ReadingSheet() {
         />
         {q && (
           <span className="ws-filter-count">
-            {visible.length} of {books.length}
+            {visible.length} of {modeBooks.length}
           </span>
         )}
       </div>
@@ -378,9 +439,63 @@ export default function ReadingSheet() {
 
       <div className="ws-grid-canvas">
         <div className="grid-wrapper">
+          {viewMode === 'tobuy' ? (
+          <table className="reading-grid reading-grid--tobuy">
+            <thead>
+              <tr>
+                <th className="rd-col-pri" title="Priority">Pri</th>
+                <th className="rd-col-title">Title</th>
+                <th className="rd-col-author">Author</th>
+                <th className="rd-col-link">Link</th>
+                <th className="rd-col-buynotes">Why / Notes</th>
+                <th className="rd-col-actions"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((book) => {
+                const safeUrl = normalizeSafeUrl(book.purchase_url);
+                return (
+                  <tr
+                    key={book.id}
+                    className={`reading-row rd-row-tobuy${selectedBookId === book.id ? ' rd-row-selected' : ''}`}
+                    onClick={(e) => handleRowClick(e, book.id)}
+                    aria-selected={selectedBookId === book.id || undefined}
+                  >
+                    <td className="rd-col-pri"><PriorityBadge priority={book.priority} /></td>
+                    <td className="rd-col-title" title={book.title}>{book.title}</td>
+                    <td className="rd-col-author" title={book.author}>{book.author || '—'}</td>
+                    <td className="rd-col-link">
+                      {safeUrl ? (
+                        <a
+                          href={safeUrl}
+                          className="rd-buy-link"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={safeUrl}
+                          onClick={(e) => handleSafeLinkClick(e, safeUrl)}
+                        >link</a>
+                      ) : (
+                        // Unsafe/absent URLs render inert — plain muted text, never a link.
+                        <span className="rd-buy-nolink">{book.purchase_url ? 'unsafe link' : '—'}</span>
+                      )}
+                    </td>
+                    <td className="rd-col-buynotes" title={book.purchase_notes}>{book.purchase_notes || '—'}</td>
+                    <td className="rd-col-actions">
+                      <div className="rd-action-group">
+                        <button className="action-btn" onClick={() => markBought(book)} title="Mark bought — moves to the library as an unread book">BOUGHT</button>
+                        <button className="action-btn" onClick={() => openEdit(book)} title="Book details">EDIT</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          ) : (
           <table className="reading-grid">
             <thead>
               <tr>
+                <th className="rd-col-pri" title="Priority">Pri</th>
                 <th className="rd-col-title">Title</th>
                 <th className="rd-col-author">Author</th>
                 <th className="rd-col-page">Current Page</th>
@@ -404,6 +519,7 @@ export default function ReadingSheet() {
                     onClick={(e) => handleRowClick(e, book.id)}
                     aria-selected={selectedBookId === book.id || undefined}
                   >
+                    <td className="rd-col-pri"><PriorityBadge priority={book.priority} /></td>
                     <td className="rd-col-title" title={book.title}>{book.title}</td>
                     <td className="rd-col-author" title={book.author}>{book.author || '—'}</td>
                     <td className="rd-col-page">
@@ -476,13 +592,19 @@ export default function ReadingSheet() {
               })}
             </tbody>
           </table>
+          )}
 
-          {books.length === 0 && (
+          {modeBooks.length === 0 && viewMode === 'tobuy' && (
+            <div className="grid-status">
+              No books on the buy list. Click <strong>+ Add Book to Buy</strong> to start a wishlist.
+            </div>
+          )}
+          {modeBooks.length === 0 && viewMode === 'library' && (
             <div className="grid-status">
               No books yet. Click <strong>+ Add Book</strong> to start tracking your current page.
             </div>
           )}
-          {books.length > 0 && visible.length === 0 && (
+          {modeBooks.length > 0 && visible.length === 0 && (
             <div className="grid-status">
               {q ? `No books match "${searchQuery.trim()}".` : `No ${filter} books.`}
             </div>
@@ -496,6 +618,7 @@ export default function ReadingSheet() {
           onSave={handleSave}
           onDelete={handleDelete}
           onClose={closeModal}
+          initialToBuy={viewMode === 'tobuy'}
         />
       )}
     </>

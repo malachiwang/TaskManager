@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { fetchTasks, fetchCompletions, fetchSnapshotPressure, fetchReadingBooks } from '../api.js';
+import { fetchTasks, fetchCompletions, fetchSnapshotPressure, fetchReadingBooks, fetchHiatusPeriodsInRange } from '../api.js';
 import { urgencyClass, urgencyLabel } from '../urgency.js';
 import {
   completionSummary, consistency, finishedInPeriod,
@@ -7,6 +7,7 @@ import {
   cleanupReport, readingSummary,
   PERIOD_MODES, periodRange, periodLabel, shiftPeriodAnchor,
   periodComparison, stalenessReport,
+  readingPrioritySummary, booksToBuySummary, hiatusSummary,
 } from '../reportAnalytics.js';
 
 const PERIOD_MODE_LABELS = { week: 'Week', month: 'Month', quarter: 'Quarter', year: 'Year' };
@@ -69,6 +70,14 @@ export default function MonthlyReport({ onOpenDashboard }) {
     fetchCompletions(start, end).then(setCompletions).catch((e) => setCompError(e.message));
   }, [start, end]);
 
+  // Hiatus intervals overlapping the period (P11.0) — failures degrade to the
+  // card's empty state rather than an error.
+  const [hiatusPeriods, setHiatusPeriods] = useState(null);
+  useEffect(() => {
+    setHiatusPeriods(null);
+    fetchHiatusPeriodsInRange(start, end).then(setHiatusPeriods).catch(() => setHiatusPeriods([]));
+  }, [start, end]);
+
   // Previous-period completions — comparison card only; failures degrade to
   // the card's empty state rather than an error.
   useEffect(() => {
@@ -97,6 +106,13 @@ export default function MonthlyReport({ onOpenDashboard }) {
   const pressure = useMemo(() => sectionPressureChange(snapshot), [snapshot]);
   const cleanup = useMemo(() => (tasks ? cleanupReport(tasks) : null), [tasks]);
   const reading = useMemo(() => (books ? readingSummary(books, start, end) : null), [books, start, end]);
+  // P11.0 summaries — priority bands, buy list, hiatus intervals.
+  const readingPri = useMemo(() => (books ? readingPrioritySummary(books) : null), [books]);
+  const toBuy = useMemo(() => (books ? booksToBuySummary(books, start, end) : null), [books, start, end]);
+  const hiatus = useMemo(
+    () => (tasks && hiatusPeriods ? hiatusSummary(tasks, hiatusPeriods, start, end) : null),
+    [tasks, hiatusPeriods, start, end],
+  );
 
   // Previous-period mirrors of the current-period derivations (P10.1).
   const prevActivity = useMemo(
@@ -487,8 +503,75 @@ export default function MonthlyReport({ onOpenDashboard }) {
                   {reading.updatedList.length > 0 && (
                     <div className="report-note">Recently updated: {reading.updatedList.map((b) => b.title).join(', ')}</div>
                   )}
+                  {readingPri && readingPri.activeCount > 0 && (
+                    <>
+                      <div className="report-stat-row">
+                        <span><strong>{readingPri.high}</strong> high priority</span>
+                        <span><strong>{readingPri.normal}</strong> normal</span>
+                        <span><strong>{readingPri.low}</strong> low/background</span>
+                        <span className="dash-muted">of {readingPri.activeCount} active books</span>
+                      </div>
+                      {readingPri.topHigh.length > 0 && (
+                        <div className="report-note">
+                          Top priority: {readingPri.topHigh.map((b) => b.title).join(', ')}
+                        </div>
+                      )}
+                    </>
+                  )}
                 </>
               )}
+          </div>
+        </div>
+
+        {/* Books to Buy (P11.0) */}
+        <div className="ws-frame ws-frame--full">
+          <div className="ws-frame-header"><span>Books to Buy</span><span className="ws-frame-header-sub">reading wishlist · marked-bought activity in {label}</span></div>
+          <div className="ws-frame-body">
+            {!toBuy ? <div className="ws-empty">Loading…</div>
+              : toBuy.count === 0 && toBuy.boughtInPeriod.length === 0
+                ? <div className="ws-empty">No books on the buy list.</div>
+                : (
+                  <>
+                    <div className="report-stat-row">
+                      <span><strong>{toBuy.count}</strong> on the buy list</span>
+                      <span><strong>{toBuy.boughtInPeriod.length}</strong> bought this period</span>
+                    </div>
+                    {toBuy.topPriority.length > 0 && (
+                      <div className="report-note">
+                        Highest priority: {toBuy.topPriority.map((b) => `${b.title} (P${b.priority ?? 3})`).join(', ')}
+                      </div>
+                    )}
+                    {toBuy.boughtInPeriod.length > 0 && (
+                      <div className="report-note">
+                        Bought: {toBuy.boughtInPeriod.map((b) => b.title).join(', ')}
+                      </div>
+                    )}
+                  </>
+                )}
+          </div>
+        </div>
+
+        {/* Hiatus (P11.0) — current state + interval boundaries in the period */}
+        <div className="ws-frame ws-frame--full">
+          <div className="ws-frame-header"><span>Hiatus</span><span className="ws-frame-header-sub">tasks on pause · hiatus intervals touching {label}</span></div>
+          <div className="ws-frame-body">
+            {!hiatus ? <div className="ws-empty">Loading…</div>
+              : hiatus.currentCount === 0 && hiatus.startedInPeriod === 0 && hiatus.endedInPeriod === 0
+                ? <div className="ws-empty">No tasks on hiatus and no hiatus activity this period.</div>
+                : (
+                  <>
+                    <div className="report-stat-row">
+                      <span><strong>{hiatus.currentCount}</strong> currently on hiatus</span>
+                      <span><strong>{hiatus.startedInPeriod}</strong> hiatus{hiatus.startedInPeriod !== 1 ? 'es' : ''} started this period</span>
+                      <span><strong>{hiatus.endedInPeriod}</strong> ended this period</span>
+                    </div>
+                    {hiatus.currentList.length > 0 && (
+                      <div className="report-note">
+                        On hiatus: {hiatus.currentList.map((t) => t.name).join(', ')}
+                      </div>
+                    )}
+                  </>
+                )}
           </div>
         </div>
 
