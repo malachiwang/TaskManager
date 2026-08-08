@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { urgencyLabel, urgencyReason } from '../urgency.js';
 import { extractLinks, normalizeSafeUrl, spliceMarkdownLink } from '../linkUtils.js';
 import { handleSafeLinkClick } from '../openExternalLink.js';
-import { fetchHiatusPeriodsForTask, deleteHiatusPeriod } from '../api.js';
+import { fetchHiatusPeriodsForTask, updateHiatusPeriod, deleteHiatusPeriod } from '../api.js';
 import LinkifiedText from './LinkifiedText.jsx';
 import SectionCombobox from './SectionCombobox.jsx';
 import TaskDatePicker, { getLocalTodayIso } from './TaskDatePicker.jsx';
@@ -88,6 +88,74 @@ export default function TaskModal({ task, sectionSuggestions = [], onSave, onDel
       onHiatusChanged?.();
     } catch (e) {
       console.error('delete hiatus period failed:', e);
+    }
+  }
+
+  // Inline interval editor (P11.2) — one row at a time. wasOpen remembers
+  // whether the interval was open when editing began: only then may End stay
+  // blank (sent as '' = keep open); closed intervals require an end date.
+  const [editingPeriod, setEditingPeriod] = useState(null); // { id, start, end, wasOpen, error, saving }
+
+  function startEditPeriod(p) {
+    setConfirmPeriodDelete(null);
+    setEditingPeriod({
+      id: p.id,
+      start: p.start_date,
+      end: p.end_date ?? '',
+      wasOpen: p.end_date === null,
+      error: '',
+      saving: false,
+    });
+  }
+
+  function cancelEditPeriod() {
+    setEditingPeriod(null);
+  }
+
+  async function saveEditPeriod() {
+    const { id, start, end, wasOpen, saving } = editingPeriod;
+    if (saving) return;
+    // Fast client-side checks; the backend re-validates all of these plus overlap.
+    let error = '';
+    if (!start) error = 'Start date is required.';
+    else if (!end && !wasOpen) error = 'End date is required for a closed interval.';
+    else if (end && end < start) error = 'End date must not be before the start date.';
+    if (error) {
+      setEditingPeriod((e) => (e ? { ...e, error } : e));
+      return;
+    }
+    setEditingPeriod((e) => (e ? { ...e, saving: true, error: '' } : e));
+    try {
+      const updated = await updateHiatusPeriod(id, { start_date: start, end_date: end });
+      setHiatusPeriods((prev) =>
+        prev.map((p) => (p.id === id ? updated : p))
+            .sort((a, b) => (a.start_date < b.start_date ? -1 : 1)),
+      );
+      setEditingPeriod(null);
+      onHiatusChanged?.();
+    } catch (err) {
+      setEditingPeriod((e) =>
+        (e ? { ...e, saving: false, error: err?.message || 'Save failed. Please try again.' } : e),
+      );
+    }
+  }
+
+  // Escape cancels the interval editor without closing the whole modal. The
+  // date picker's own popover Escape never reaches here (it stops propagation).
+  // Enter in a date input commits the interval edit — without this it would
+  // implicitly submit the surrounding task form and discard the edit. Buttons
+  // keep native Enter activation (target check), and the picker's calendar
+  // grid handles its own Enter on a div, which this ignores.
+  function handlePeriodEditorKeyDown(e) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      cancelEditPeriod();
+    }
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT') {
+      e.preventDefault();
+      e.stopPropagation();
+      saveEditPeriod();
     }
   }
   const nameRef = useRef(null);
@@ -447,37 +515,87 @@ export default function TaskModal({ task, sectionSuggestions = [], onSave, onDel
               <div className="task-modal-field-hint">{statusHint(statusChoice, task)}</div>
             </div>
 
-            {/* Hiatus history (P11.0) — read-only list + guarded delete */}
+            {/* Hiatus history (P11.0/P11.2) — per-interval Edit + guarded delete */}
             {isEdit && hiatusPeriods.length > 0 && (
               <div className="task-modal-field task-modal-field--full">
                 <label className="task-modal-label">Hiatus history</label>
                 <div className="task-modal-hiatus-list">
                   {hiatusPeriods.map((p) => (
-                    <div key={p.id} className="task-modal-hiatus-row">
-                      <span className="task-modal-hiatus-range">
-                        {p.end_date === null
-                          ? `On hiatus since ${p.start_date}`
-                          : `${p.start_date} → ${p.end_date}`}
-                      </span>
-                      {confirmPeriodDelete === p.id ? (
-                        <span className="task-modal-hiatus-confirm">
-                          Un-blank these dates?
-                          <button type="button" className="task-modal-confirm-delete"
-                            onClick={() => handleDeletePeriod(p.id)}>Remove</button>
+                    editingPeriod?.id === p.id ? (
+                      <div key={p.id} className="task-modal-hiatus-editor"
+                        onKeyDown={handlePeriodEditorKeyDown}>
+                        <div className="task-modal-hiatus-editor-fields">
+                          <label className="task-modal-hiatus-editor-field">
+                            <span>Start</span>
+                            <TaskDatePicker
+                              value={editingPeriod.start}
+                              onChange={(v) => setEditingPeriod((e) => (e ? { ...e, start: v, error: '' } : e))}
+                              clearable={false}
+                              ariaLabel="Hiatus start date"
+                            />
+                          </label>
+                          <label className="task-modal-hiatus-editor-field">
+                            <span>End</span>
+                            <TaskDatePicker
+                              value={editingPeriod.end}
+                              onChange={(v) => setEditingPeriod((e) => (e ? { ...e, end: v, error: '' } : e))}
+                              clearable={editingPeriod.wasOpen}
+                              ariaLabel="Hiatus end date"
+                            />
+                          </label>
+                        </div>
+                        {editingPeriod.wasOpen && (
+                          <div className="task-modal-field-hint">
+                            Leave End blank to keep this hiatus open.
+                          </div>
+                        )}
+                        {editingPeriod.error && (
+                          <div className="task-modal-hiatus-editor-error" role="alert">
+                            {editingPeriod.error}
+                          </div>
+                        )}
+                        <div className="task-modal-hiatus-editor-actions">
                           <button type="button" className="task-modal-cancel"
-                            onClick={() => setConfirmPeriodDelete(null)}>Cancel</button>
+                            onClick={cancelEditPeriod} disabled={editingPeriod.saving}>Cancel</button>
+                          <button type="button" className="task-modal-save"
+                            onClick={saveEditPeriod} disabled={editingPeriod.saving}>
+                            {editingPeriod.saving ? 'Saving…' : 'Save'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div key={p.id} className="task-modal-hiatus-row">
+                        <span className="task-modal-hiatus-range">
+                          {p.end_date === null
+                            ? `On hiatus since ${p.start_date}`
+                            : `${p.start_date} → ${p.end_date}`}
                         </span>
-                      ) : (
-                        <button type="button" className="task-modal-hiatus-delete"
-                          title="Remove this hiatus interval — its dates return to normal cells; nothing else changes"
-                          onClick={() => setConfirmPeriodDelete(p.id)}>Remove</button>
-                      )}
-                    </div>
+                        {confirmPeriodDelete === p.id ? (
+                          <span className="task-modal-hiatus-confirm">
+                            Un-blank these dates?
+                            <button type="button" className="task-modal-confirm-delete"
+                              onClick={() => handleDeletePeriod(p.id)}>Remove</button>
+                            <button type="button" className="task-modal-cancel"
+                              onClick={() => setConfirmPeriodDelete(null)}>Cancel</button>
+                          </span>
+                        ) : (
+                          <span className="task-modal-hiatus-actions">
+                            <button type="button" className="task-modal-hiatus-edit-btn"
+                              title="Edit this interval's dates — blanking follows the new range; completions are untouched"
+                              onClick={() => startEditPeriod(p)}>Edit</button>
+                            <button type="button" className="task-modal-hiatus-delete"
+                              title="Remove this hiatus interval — its dates return to normal cells; nothing else changes"
+                              onClick={() => setConfirmPeriodDelete(p.id)}>Remove</button>
+                          </span>
+                        )}
+                      </div>
+                    )
                   ))}
                 </div>
                 <div className="task-modal-field-hint">
                   Dates inside these intervals render as blank hiatus cells.
-                  Removing an interval only un-blanks its dates — completions are untouched.
+                  Editing an interval changes which dates are blank; removing one
+                  un-blanks its dates. Completions and text overrides are preserved.
                 </div>
               </div>
             )}

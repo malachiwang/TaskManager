@@ -6802,6 +6802,33 @@ select.task-modal-input {
 .task-modal-hiatus-confirm .task-modal-confirm-delete,
 .task-modal-hiatus-confirm .task-modal-cancel { padding: 2px 8px; font-size: 10px; }
 
+/* P11.2 — per-interval Edit button + inline date editor */
+.task-modal-hiatus-actions { display: flex; align-items: center; gap: 4px; }
+.task-modal-hiatus-edit-btn {
+  padding: 1px 8px; font-size: 10px; letter-spacing: 0.03em;
+  color: var(--muted); background: transparent;
+  border: 1px solid var(--rule-2); border-radius: 2px; cursor: pointer;
+}
+.task-modal-hiatus-edit-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+.task-modal-hiatus-editor {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 6px 8px;
+  background: var(--bg-app); border: 1px solid var(--ink-3);
+}
+.task-modal-hiatus-editor-fields {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+}
+.task-modal-hiatus-editor-field { display: flex; flex-direction: column; gap: 3px; }
+.task-modal-hiatus-editor-field > span {
+  font-family: var(--font-mono); font-size: 9px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-2);
+}
+.task-modal-hiatus-editor-error { font-size: 11px; color: var(--urg-crit); }
+.task-modal-hiatus-editor-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.task-modal-hiatus-editor-actions .task-modal-cancel,
+.task-modal-hiatus-editor-actions .task-modal-save { padding: 2px 10px; font-size: 10px; }
+
 /* Reading priority badge — calm bands, not urgency alarms.
    P1–2 low/background (green, P1 most muted) · P3 normal (accent/neutral) ·
    P4 high (amber) · P5 highest (rose accent). */

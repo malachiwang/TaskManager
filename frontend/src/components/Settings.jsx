@@ -818,7 +818,7 @@ D = days_since   I = interval_days`}</pre>
                 <div className="ws-state-row">
                   <div className="ws-ctrl-info">
                     <span className="ws-ctrl-label">Hiatus intervals</span>
-                    <span className="ws-ctrl-desc">Entering Hiatus starts a persisted interval (from today); resuming closes it as of yesterday. Dates inside any interval render as blank hiatus cells forever — completions underneath are preserved, never deleted. Mistaken intervals can be removed from Task Details.</span>
+                    <span className="ws-ctrl-desc">Entering Hiatus starts a persisted interval (from today); resuming closes it as of yesterday. Dates inside any interval render as blank hiatus cells forever — completions underneath are preserved, never deleted. Mistaken intervals can be edited or removed from Task Details; overlapping intervals are rejected.</span>
                   </div>
                   <span className="ws-state-badge">history</span>
                 </div>

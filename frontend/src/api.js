@@ -268,6 +268,24 @@ export async function fetchHiatusPeriodsForTask(taskId) {
   return res.json();
 }
 
+// Edit one interval's dates (P11.2). fields: { start_date, end_date } — ISO
+// strings; end_date '' clears the interval back to open. Backend validation
+// failures (inverted range, overlap, duplicate open) surface their detail
+// message so the modal can show it next to the editor.
+export async function updateHiatusPeriod(periodId, fields) {
+  const res = await fetch(`${BASE}/task-hiatus-periods/${periodId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) {
+    let detail = `updateHiatusPeriod failed: ${res.status}`;
+    try { const b = await res.json(); if (b.detail) detail = b.detail; } catch {}
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
 export async function deleteHiatusPeriod(id) {
   const res = await fetch(`${BASE}/task-hiatus-periods/${id}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(`deleteHiatusPeriod failed: ${res.status}`);

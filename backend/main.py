@@ -632,6 +632,27 @@ class HiatusPeriodPatch(BaseModel):
     end_date: Optional[str] = None
 
 
+def _find_overlapping_period(conn, task_id: int, start_iso: str,
+                             end_iso: Optional[str], exclude_id: Optional[int] = None):
+    """First interval of task_id overlapping [start_iso, end_iso] (inclusive).
+
+    end_iso None means unbounded (open interval), which overlaps everything at
+    or after start_iso. Rows with NULL end_date are likewise treated as
+    unbounded. Used by the correction endpoints (POST/PATCH) — the internal
+    status-transition helpers stay validation-free.
+    """
+    query = ("SELECT id FROM task_hiatus_periods WHERE task_id = ? "
+             "AND (end_date IS NULL OR end_date >= ?)")
+    params: list = [task_id, start_iso]
+    if end_iso is not None:
+        query += " AND start_date <= ?"
+        params.append(end_iso)
+    if exclude_id is not None:
+        query += " AND id != ?"
+        params.append(exclude_id)
+    return conn.execute(query + " LIMIT 1", params).fetchone()
+
+
 @app.get("/task-hiatus-periods")
 def list_task_hiatus_periods(
     task_id: Optional[int] = None,
@@ -683,6 +704,9 @@ def create_task_hiatus_period(body: HiatusPeriodBody):
         if open_row:
             conn.close()
             raise HTTPException(status_code=409, detail="Task already has an open hiatus interval")
+    if _find_overlapping_period(conn, body.task_id, body.start_date, body.end_date):
+        conn.close()
+        raise HTTPException(status_code=409, detail="This overlaps another hiatus interval.")
     now = datetime.now().isoformat()
     with conn:
         cur = conn.execute(
@@ -729,6 +753,9 @@ def update_task_hiatus_period(period_id: int, body: HiatusPeriodPatch):
         if open_row:
             conn.close()
             raise HTTPException(status_code=409, detail="Task already has an open hiatus interval")
+    if _find_overlapping_period(conn, period["task_id"], new_start, new_end, exclude_id=period_id):
+        conn.close()
+        raise HTTPException(status_code=409, detail="This overlaps another hiatus interval.")
 
     with conn:
         conn.execute(
