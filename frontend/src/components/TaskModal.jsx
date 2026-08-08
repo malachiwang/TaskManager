@@ -4,17 +4,37 @@ import { extractLinks, normalizeSafeUrl, spliceMarkdownLink } from '../linkUtils
 import { handleSafeLinkClick } from '../openExternalLink.js';
 import { fetchHiatusPeriodsForTask, deleteHiatusPeriod } from '../api.js';
 import LinkifiedText from './LinkifiedText.jsx';
+import SectionCombobox from './SectionCombobox.jsx';
+import TaskDatePicker, { getLocalTodayIso } from './TaskDatePicker.jsx';
 
-const STATUS_OPTIONS = ['active', 'hiatus'];
-// Display labels only — the stored status value stays lowercase ('active'/'hiatus').
-const STATUS_LABELS = { active: 'Active', hiatus: 'Hiatus' };
+// Modal-level status choices (P11.1). 'active' and 'hiatus' are the stored
+// status values; 'finished' is a UI alias for the canonical end_date pathway
+// (is_ended = end_date <= today) — the backend never stores a 'finished' status.
+const STATUS_OPTIONS = ['active', 'hiatus', 'finished'];
+const STATUS_LABELS = { active: 'Active', hiatus: 'Hiatus', finished: 'Finished' };
 
-function getLocalToday() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+// One-line consequence hint under the status control. Transition-specific
+// copy (opening/closing a hiatus, un-finishing) wins over the steady state.
+function statusHint(choice, task) {
+  if (choice === 'active') {
+    if (task?.status === 'hiatus') {
+      return 'Resuming closes the hiatus as of yesterday — its dates stay blank permanently. Today onward returns to normal checkboxes.';
+    }
+    if (task?.is_ended) {
+      return 'Clears the end date — the task returns to normal tracking.';
+    }
+    return 'Tracks normally and counts toward pressure.';
+  }
+  if (choice === 'hiatus') {
+    if (task?.status !== 'hiatus') {
+      return 'Hiatus starts today. Dates during the hiatus render as blank cells; completion history underneath is preserved.';
+    }
+    return 'Paused — hiatus-period cells render blank; completion history is preserved.';
+  }
+  if (task?.is_ended) {
+    return 'Finished — excluded from tracking and pressure. Past completions are preserved.';
+  }
+  return 'Sets the End date below — dates after it are disabled and the task leaves active tracking. Past completions are preserved.';
 }
 
 function loadTaskDefaults() {
@@ -42,7 +62,7 @@ function stopLinkUiPropagation(e) {
   e.stopPropagation();
 }
 
-export default function TaskModal({ task, onSave, onDelete, onClose, onHiatusChanged }) {
+export default function TaskModal({ task, sectionSuggestions = [], onSave, onDelete, onClose, onHiatusChanged }) {
   const isEdit = task != null;
 
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -87,10 +107,34 @@ export default function TaskModal({ task, onSave, onDelete, onClose, onHiatusCha
       interval_days:             task?.interval_days             ?? d.defaultIntervalDays ?? 7,
       notes:                     task?.notes                     ?? '',
       manual_last_done_override: task?.manual_last_done_override ?? '',
-      active_from:               task?.active_from               ?? (isEdit ? '' : getLocalToday()),
+      active_from:               task?.active_from               ?? (isEdit ? '' : getLocalTodayIso()),
       end_date:                  task?.end_date                  ?? '',
     };
   });
+
+  // Three-way status choice (P11.1). Finished wins over the stored status when
+  // the task is already ended, so the control reflects what the grid shows.
+  const [statusChoice, setStatusChoice] = useState(() =>
+    task?.is_ended ? 'finished' : (task?.status ?? 'active'),
+  );
+
+  function chooseStatus(next) {
+    setStatusChoice(next);
+    const today = getLocalTodayIso();
+    setForm((prev) => {
+      if (next === 'finished') {
+        // Prefill the End date so the field shows what saving will do.
+        // An already-past end date is kept; form.status is left untouched so
+        // finishing never opens/closes hiatus intervals as a side effect.
+        const ended = prev.end_date && prev.end_date <= today;
+        return { ...prev, end_date: ended ? prev.end_date : today };
+      }
+      // Leaving Finished clears a past end date (un-finishes); a future
+      // end date is unrelated to Finished and stays.
+      const ended = prev.end_date && prev.end_date <= today;
+      return { ...prev, status: next, end_date: ended ? '' : prev.end_date };
+    });
+  }
   const [linkPanelOpen, setLinkPanelOpen] = useState(false);
   const [linkText, setLinkText] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
@@ -111,7 +155,16 @@ export default function TaskModal({ task, onSave, onDelete, onClose, onHiatusCha
     setSaveError('');
     setSaving(true);
     try {
-      await onSave(form);
+      const payload = { ...form };
+      if (statusChoice === 'finished') {
+        // Finished must actually finish even if the End date was hand-cleared
+        // after selecting it. Status is sent unchanged from the stored value so
+        // finishing never triggers a hiatus open/close transition.
+        const today = getLocalTodayIso();
+        if (!payload.end_date || payload.end_date > today) payload.end_date = today;
+        payload.status = task?.status ?? 'active';
+      }
+      await onSave(payload);
     } catch (err) {
       setSaving(false);
       setSaveError(err?.message || 'Save failed. Please try again.');
@@ -187,6 +240,21 @@ export default function TaskModal({ task, onSave, onDelete, onClose, onHiatusCha
     if (linkPanelOpen) linkUrlRef.current?.focus();
   }, [linkPanelOpen]);
 
+  // Shared keys for both Insert Link inputs. Escape closes the panel only —
+  // stopPropagation keeps the grid's global Escape from closing the modal.
+  // Enter inserts (when the URL is valid) instead of submitting the form.
+  function handleLinkPanelKeyDown(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (linkUrlSafe) insertMarkdownLink();
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeInsertLink();
+    }
+  }
+
   // (p-1)/9 maps [1..10] → [0%..100%], matching the slider thumb's actual travel range.
   const p = Math.min(10, Math.max(1, form.priority));
   const priorityPct = `${((p - 1) / 9) * 100}%`;
@@ -211,6 +279,7 @@ export default function TaskModal({ task, onSave, onDelete, onClose, onHiatusCha
             onChange={(e) => setLinkText(e.target.value)}
             onMouseDown={stopLinkUiPropagation}
             onClick={stopLinkUiPropagation}
+            onKeyDown={handleLinkPanelKeyDown}
           />
         </label>
         <label className="insert-link-field">
@@ -222,16 +291,7 @@ export default function TaskModal({ task, onSave, onDelete, onClose, onHiatusCha
             onChange={(e) => setLinkUrl(e.target.value)}
             onMouseDown={stopLinkUiPropagation}
             onClick={stopLinkUiPropagation}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && linkUrlSafe) {
-                e.preventDefault();
-                insertMarkdownLink();
-              }
-              if (e.key === 'Escape') {
-                e.preventDefault();
-                closeInsertLink();
-              }
-            }}
+            onKeyDown={handleLinkPanelKeyDown}
             placeholder="https://example.com"
           />
         </label>
@@ -349,11 +409,11 @@ export default function TaskModal({ task, onSave, onDelete, onClose, onHiatusCha
             <div className="task-modal-grid">
               <div className="task-modal-field">
                 <label className="task-modal-label" htmlFor="tm-section">Section</label>
-                <input
+                <SectionCombobox
                   id="tm-section"
-                  className="task-modal-input"
                   value={form.section}
-                  onChange={(e) => set('section', e.target.value)}
+                  onChange={(v) => set('section', v)}
+                  suggestions={sectionSuggestions}
                   placeholder="General"
                 />
               </div>
@@ -368,7 +428,7 @@ export default function TaskModal({ task, onSave, onDelete, onClose, onHiatusCha
               </div>
             </div>
 
-            {/* Status — segmented buttons */}
+            {/* Status — segmented buttons (Active / Hiatus / Finished) */}
             <div className="task-modal-field task-modal-field--full">
               <label className="task-modal-label">Status</label>
               <div className="task-modal-seg" role="group" aria-label="Status">
@@ -376,25 +436,15 @@ export default function TaskModal({ task, onSave, onDelete, onClose, onHiatusCha
                   <button
                     key={s}
                     type="button"
-                    className={`task-modal-seg-btn${form.status === s ? ' task-modal-seg-btn--active' : ''}`}
-                    onClick={() => set('status', s)}
+                    className={`task-modal-seg-btn${statusChoice === s ? ' task-modal-seg-btn--active' : ''}`}
+                    aria-pressed={statusChoice === s}
+                    onClick={() => chooseStatus(s)}
                   >
                     {STATUS_LABELS[s] ?? s}
                   </button>
                 ))}
               </div>
-              {form.status === 'hiatus' && task?.status !== 'hiatus' && (
-                <div className="task-modal-field-hint">
-                  Hiatus starts today. Dates during the hiatus render as blank cells;
-                  completion history underneath is preserved.
-                </div>
-              )}
-              {form.status === 'active' && task?.status === 'hiatus' && (
-                <div className="task-modal-field-hint">
-                  Resuming closes the hiatus as of yesterday — its dates stay blank
-                  permanently. Today onward returns to normal checkboxes.
-                </div>
-              )}
+              <div className="task-modal-field-hint">{statusHint(statusChoice, task)}</div>
             </div>
 
             {/* Hiatus history (P11.0) — read-only list + guarded delete */}
@@ -474,42 +524,29 @@ export default function TaskModal({ task, onSave, onDelete, onClose, onHiatusCha
               </div>
               <div className="task-modal-field">
                 <label className="task-modal-label" htmlFor="tm-lastdone">Manual last done</label>
-                <input
+                <TaskDatePicker
                   id="tm-lastdone"
-                  className="task-modal-input"
-                  type="date"
                   value={form.manual_last_done_override}
-                  onChange={(e) => set('manual_last_done_override', e.target.value)}
+                  onChange={(v) => set('manual_last_done_override', v)}
                 />
                 <div className="task-modal-field-hint">MM/DD/YYYY</div>
               </div>
               <div className="task-modal-field">
                 <label className="task-modal-label" htmlFor="tm-active-from">Active from</label>
-                <input
+                <TaskDatePicker
                   id="tm-active-from"
-                  className="task-modal-input"
-                  type="date"
                   value={form.active_from}
-                  onChange={(e) => set('active_from', e.target.value)}
+                  onChange={(v) => set('active_from', v)}
                 />
                 <div className="task-modal-field-hint">MM/DD/YYYY</div>
               </div>
               <div className="task-modal-field">
                 <label className="task-modal-label" htmlFor="tm-end-date">End date</label>
-                <input
+                <TaskDatePicker
                   id="tm-end-date"
-                  className="task-modal-input"
-                  type="date"
                   value={form.end_date}
-                  onChange={(e) => set('end_date', e.target.value)}
+                  onChange={(v) => set('end_date', v)}
                 />
-                <button
-                  type="button"
-                  className="task-modal-end-today-btn"
-                  onClick={() => set('end_date', getLocalToday())}
-                >
-                  End today
-                </button>
                 <div className="task-modal-field-hint">
                   MM/DD/YYYY · Dates after this are disabled; past completions are preserved.
                 </div>

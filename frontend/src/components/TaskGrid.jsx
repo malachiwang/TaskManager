@@ -26,7 +26,7 @@ import EditBar from './EditBar.jsx';
 import KeyboardHelp from './KeyboardHelp.jsx';
 import { FILTERS, FILTER_LABELS, PRIMARY_FILTERS, SECONDARY_FILTERS, taskPassesFilter } from '../filters.js';
 import FilterMenu from './FilterMenu.jsx';
-import { GROUP_MODES, groupTasks } from '../grouping.js';
+import { GROUP_MODES, groupTasks, uniqueSections } from '../grouping.js';
 import { matchKeybind, resolveKeybinds } from '../keybinds.js';
 import SavedViewsControl from './SavedViewsControl.jsx';
 import GroupSelect from './GroupSelect.jsx';
@@ -374,6 +374,10 @@ export default function TaskGrid() {
     () => groupTasks(filteredTasks, groupMode),
     [filteredTasks, groupMode],
   );
+
+  // Existing section names (all tasks, not just the filtered view) — feeds the
+  // Section combobox suggestions in the Add/Edit Task modal.
+  const sectionSuggestions = useMemo(() => uniqueSections(tasks), [tasks]);
 
   // Flat task list in visual render order — used for keyboard navigation.
   // CRITICAL: tasksRef.current must point here, not at filteredTasks.
@@ -1984,6 +1988,7 @@ export default function TaskGrid() {
       {modalOpen && (
         <TaskModal
           task={editingTask}
+          sectionSuggestions={sectionSuggestions}
           onSave={handleSave}
           onDelete={handleDelete}
           onClose={closeModal}

@@ -100,6 +100,9 @@ cloud, no telemetry.
   a small text cell (and back) without affecting the rest of the grid
 - Hiatus history: pausing a task blanks its date cells for the hiatus period —
   permanently, even after resuming — while preserving completion history
+- Task lifecycle control: mark a task Active, Hiatus, or Finished directly from
+  the task modal, with section suggestions and themed date pickers for
+  scheduling fields
 - Pressure and urgency scoring for stale or high-priority work
 - Reading sheet for books, current pages, and checkpoints, with color-coded
   book priorities and a Books-to-Buy wishlist view

@@ -40,6 +40,21 @@ export const URGENCY_BANDS = [
   { key: 'ended',      label: 'Finished'   },
 ];
 
+// Unique, non-blank section names in encounter order — mirrors the SECTION
+// grouping below so combobox suggestions match the grid's group order.
+export function uniqueSections(tasks) {
+  const seen = new Set();
+  const out = [];
+  for (const task of tasks) {
+    const name = task.section?.trim();
+    if (name && !seen.has(name)) {
+      seen.add(name);
+      out.push(name);
+    }
+  }
+  return out;
+}
+
 // Derives pausedCount and avgUrgency for a task array.
 function groupMeta(tasks) {
   const pausedCount = tasks.filter((t) => t.is_paused === 1).length;
