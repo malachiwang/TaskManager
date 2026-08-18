@@ -260,6 +260,7 @@ html[data-appearance="dark"] .ws-inspector-badge {
 
 html[data-appearance="dark"] .edit-bar-btn.primary,
 html[data-appearance="dark"] .btn-add-task,
+html[data-appearance="dark"] .grid-status-retry,
 html[data-appearance="dark"] .task-modal-save,
 html[data-appearance="dark"] .ws-views-save-btn,
 html[data-appearance="dark"] .task-modal-seg-btn--active,
@@ -1457,6 +1458,38 @@ thead .meta-col {
   padding: 2px 6px;
   border-radius: 3px;
   font-style: normal;
+}
+
+/* Failed-load detail line (which request timed out) + its Retry action. */
+.grid-status-detail {
+  display: block;
+  margin-top: 4px;
+  font-style: normal;
+  font-size: 12px;
+}
+
+.grid-status-hint {
+  color: var(--muted);
+}
+
+.grid-status-actions {
+  margin-top: 14px;
+}
+
+/* Same treatment as .btn-add-task — see the dark-appearance rule above. */
+.grid-status-retry {
+  padding: 4px 12px;
+  font-family: inherit;
+  font-size: 12px;
+  font-style: normal;
+  cursor: pointer;
+  background: var(--ink);
+  color: #fff;
+  border: 1px solid var(--ink-2);
+}
+
+.grid-status-retry:hover {
+  background: var(--ink-2);
 }
 
 /* -------------------------------------------------------------------------

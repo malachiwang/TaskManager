@@ -461,9 +461,21 @@ export default function TaskGrid() {
   // Data fetching — reruns when month changes (dates reference changes)
   // ---------------------------------------------------------------------------
 
-  const loadData = useCallback(() => {
+  // Every request below is timeout-bounded in api.js, so this Promise.all
+  // always settles and `.finally` always clears the loading gate — the grid
+  // can no longer be stranded on "Loading…" by a request that hangs.
+  // The all-or-nothing load is deliberate: hiatus intervals and cell text
+  // overrides decide whether a date cell is interactive and what it means, so
+  // a partial render would show misleading cells.
+  //
+  // `gate` engages the full-surface loading state. Only the initial mount load
+  // and the explicit Retry do that; post-mutation refreshes and month changes
+  // swap data in place, as before, so the grid does not flash.
+  const loadData = useCallback((options) => {
     const start = dates[0];
     const end = dates[dates.length - 1];
+    if (options?.gate === true) setLoading(true);
+    setError(null);
     return Promise.all([
       fetchTasks(), fetchCompletions(start, end), fetchNotes(start, end),
       fetchDateCellOverrides(start, end), fetchHiatusPeriodsInRange(start, end),
@@ -494,6 +506,9 @@ export default function TaskGrid() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Manual recovery from a failed/timed-out load — no app restart needed.
+  const retryLoad = useCallback(() => { loadData({ gate: true }); }, [loadData]);
 
   // Refresh only the tasks array after a completion mutation so that
   // server-computed fields (days_since, urgency) update without a full reload.
@@ -1656,8 +1671,15 @@ export default function TaskGrid() {
   if (loading) return <div className="grid-status">Loading…</div>;
   if (error) return (
     <div className="grid-status error">
-      Error: {error}<br />
-      Is the backend running? <code>uvicorn backend.main:app --reload</code>
+      Could not load workspace data.
+      <span className="grid-status-detail">{error}</span>
+      <span className="grid-status-detail grid-status-hint">
+        If this keeps happening, check the backend:{' '}
+        <code>uvicorn backend.main:app --reload</code>
+      </span>
+      <div className="grid-status-actions">
+        <button className="grid-status-retry" onClick={retryLoad}>Retry</button>
+      </div>
     </div>
   );
 

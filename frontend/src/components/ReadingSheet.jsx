@@ -77,8 +77,13 @@ export default function ReadingSheet() {
   const helpCloseBtnRef = useRef(null);
   const [resolvedKb] = useState(resolveKeybinds);
 
+  // Both requests are timeout-bounded in api.js, so this chain always settles
+  // and `.finally` always clears the loading gate. A single book's history
+  // failing still falls back to [] as before — with a bound, that fallback now
+  // also covers a request that hangs instead of holding Promise.all forever.
   const load = useCallback(() => {
     setLoading(true);
+    setError(null);
     fetchReadingBooks()
       .then(async (rows) => {
         setBooks(rows);
@@ -324,7 +329,11 @@ export default function ReadingSheet() {
   if (loading) return <div className="grid-status">Loading…</div>;
   if (error) return (
     <div className="grid-status error">
-      Error: {error}<br />Is the backend running?
+      Could not load the reading library.
+      <span className="grid-status-detail">{error}</span>
+      <div className="grid-status-actions">
+        <button className="grid-status-retry" onClick={() => load()}>Retry</button>
+      </div>
     </div>
   );
 

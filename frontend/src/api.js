@@ -1,11 +1,80 @@
 const BASE = import.meta.env.VITE_API_BASE ?? '/api';
 
+// ---------------------------------------------------------------------------
+// Bounded requests
+//
+// Native fetch() has no timeout. A backend that accepts the TCP connection but
+// never sends a response leaves the promise permanently *pending* — it never
+// resolves and never rejects. Any loading gate awaiting such a request (the App
+// boot probe, TaskGrid's Promise.all, ReadingSheet's load) then sits on
+// "Loading…" forever, because even `.finally()` never runs.
+//
+// requestWithTimeout puts a hard deadline on the whole exchange — connect,
+// headers, and body read — via AbortController, and reports the stall as a
+// labelled RequestTimeoutError so UI error states can name the endpoint that
+// hung. Timeouts are deliberately distinguishable from ordinary HTTP errors,
+// which keep their original `<fnName> failed: <status>` text.
+//
+// This is applied to the reads that gate a full screen or sheet on startup.
+// It is *not* applied blanket-wide: downloads, restores and imports can take
+// legitimately much longer and are left alone.
+// ---------------------------------------------------------------------------
+
+// Per-attempt cap for the boot readiness probe. Short because App.jsx retries.
+export const HEALTH_TIMEOUT_MS = 1500;
+// Cap for the initial data reads behind a loading gate.
+export const READ_TIMEOUT_MS = 8000;
+
+function formatTimeout(ms) {
+  const seconds = ms / 1000;
+  return `${Number.isInteger(seconds) ? seconds : seconds.toFixed(1)}s`;
+}
+
+export class RequestTimeoutError extends Error {
+  constructor(label, timeoutMs) {
+    super(`${label} timed out after ${formatTimeout(timeoutMs)}`);
+    this.name = 'RequestTimeoutError';
+    this.isTimeout = true;
+    this.label = label;
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+// `label` names the request in user-facing text ("Hiatus history request").
+// `failureName` keeps the pre-existing message for non-2xx responses.
+// Nothing user-specific (paths, task names, DB contents) goes into either.
+async function requestWithTimeout(url, options, { timeoutMs, label, failureName }) {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    if (!res.ok) throw new Error(`${failureName} failed: ${res.status}`);
+    // Parsed inside the deadline: a response whose body never finishes
+    // streaming would otherwise hang here instead.
+    return await res.json();
+  } catch (err) {
+    if (timedOut) {
+      console.warn(`[TaskManager API] ${label} timed out after ${timeoutMs}ms`);
+      throw new RequestTimeoutError(label, timeoutMs);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Cheap readiness probe — used by the App boot gate. Hits the backend /health
 // endpoint (no DB work) instead of a heavy data endpoint.
 export async function fetchHealth() {
-  const res = await fetch(`${BASE}/health`);
-  if (!res.ok) throw new Error(`fetchHealth failed: ${res.status}`);
-  return res.json();
+  return requestWithTimeout(`${BASE}/health`, undefined, {
+    timeoutMs: HEALTH_TIMEOUT_MS,
+    label: 'Backend health check',
+    failureName: 'fetchHealth',
+  });
 }
 
 export async function fetchDoc(name) {
@@ -15,15 +84,19 @@ export async function fetchDoc(name) {
 }
 
 export async function fetchTasks() {
-  const res = await fetch(`${BASE}/tasks`);
-  if (!res.ok) throw new Error(`fetchTasks failed: ${res.status}`);
-  return res.json();
+  return requestWithTimeout(`${BASE}/tasks`, undefined, {
+    timeoutMs: READ_TIMEOUT_MS,
+    label: 'Tasks request',
+    failureName: 'fetchTasks',
+  });
 }
 
 export async function fetchCompletions(start, end) {
-  const res = await fetch(`${BASE}/completions?start=${start}&end=${end}`);
-  if (!res.ok) throw new Error(`fetchCompletions failed: ${res.status}`);
-  return res.json();
+  return requestWithTimeout(`${BASE}/completions?start=${start}&end=${end}`, undefined, {
+    timeoutMs: READ_TIMEOUT_MS,
+    label: 'Completions request',
+    failureName: 'fetchCompletions',
+  });
 }
 
 export async function upsertCompletion(taskId, date) {
@@ -184,9 +257,11 @@ export async function setCompletionCount(taskId, date, count) {
 }
 
 export async function fetchNotes(start, end) {
-  const res = await fetch(`${BASE}/notes?start=${start}&end=${end}`);
-  if (!res.ok) throw new Error(`fetchNotes failed: ${res.status}`);
-  return res.json();
+  return requestWithTimeout(`${BASE}/notes?start=${start}&end=${end}`, undefined, {
+    timeoutMs: READ_TIMEOUT_MS,
+    label: 'Notes request',
+    failureName: 'fetchNotes',
+  });
 }
 
 export async function upsertNote(taskId, date, note) {
@@ -206,9 +281,11 @@ export async function deleteNote(taskId, date) {
 // ---------------------------------------------------------------------------
 
 export async function fetchDateCellOverrides(start, end) {
-  const res = await fetch(`${BASE}/date-cell-overrides?start=${start}&end=${end}`);
-  if (!res.ok) throw new Error(`fetchDateCellOverrides failed: ${res.status}`);
-  return res.json();
+  return requestWithTimeout(`${BASE}/date-cell-overrides?start=${start}&end=${end}`, undefined, {
+    timeoutMs: READ_TIMEOUT_MS,
+    label: 'Cell text overrides request',
+    failureName: 'fetchDateCellOverrides',
+  });
 }
 
 export async function upsertDateCellOverride(taskId, date, text) {
@@ -256,9 +333,11 @@ export async function batchDeleteDateCellOverrides(items) {
 
 // Intervals overlapping [start, end] — used for grid range rendering.
 export async function fetchHiatusPeriodsInRange(start, end) {
-  const res = await fetch(`${BASE}/task-hiatus-periods?start=${start}&end=${end}`);
-  if (!res.ok) throw new Error(`fetchHiatusPeriodsInRange failed: ${res.status}`);
-  return res.json();
+  return requestWithTimeout(`${BASE}/task-hiatus-periods?start=${start}&end=${end}`, undefined, {
+    timeoutMs: READ_TIMEOUT_MS,
+    label: 'Hiatus history request',
+    failureName: 'fetchHiatusPeriodsInRange',
+  });
 }
 
 // All intervals for one task — used by the Task Details hiatus history list.
@@ -315,9 +394,11 @@ export async function reorderTasks(orderedIds) {
 // ---------------------------------------------------------------------------
 
 export async function fetchReadingBooks() {
-  const res = await fetch(`${BASE}/reading/books`);
-  if (!res.ok) throw new Error(`fetchReadingBooks failed: ${res.status}`);
-  return res.json();
+  return requestWithTimeout(`${BASE}/reading/books`, undefined, {
+    timeoutMs: READ_TIMEOUT_MS,
+    label: 'Reading library request',
+    failureName: 'fetchReadingBooks',
+  });
 }
 
 export async function createReadingBook(fields) {
@@ -375,9 +456,11 @@ export async function createReadingEntry(bookId, page, opts = {}) {
 }
 
 export async function fetchReadingEntries(bookId) {
-  const res = await fetch(`${BASE}/reading/books/${bookId}/entries`);
-  if (!res.ok) throw new Error(`fetchReadingEntries failed: ${res.status}`);
-  return res.json();
+  return requestWithTimeout(`${BASE}/reading/books/${bookId}/entries`, undefined, {
+    timeoutMs: READ_TIMEOUT_MS,
+    label: 'Reading history request',
+    failureName: 'fetchReadingEntries',
+  });
 }
 
 export async function reorderReadingBooks(orderedIds) {

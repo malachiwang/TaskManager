@@ -29,11 +29,23 @@ if ! command -v rustc &>/dev/null; then
   exit 1
 fi
 
+# Prefer the project's own .venv when no virtualenv is already active. Whatever
+# pyinstaller is first on PATH decides which environment gets frozen into the
+# sidecar — with a conda base active that silently bundles conda's site-packages
+# instead of requirements.txt, producing a much larger binary built from the
+# wrong dependency set. An explicitly activated venv still wins.
+if [ -z "${VIRTUAL_ENV:-}" ] && [ -x "$PROJECT_ROOT/.venv/bin/pyinstaller" ]; then
+  export PATH="$PROJECT_ROOT/.venv/bin:$PATH"
+  echo "Using project virtualenv: $PROJECT_ROOT/.venv"
+fi
+
 if ! command -v pyinstaller &>/dev/null; then
   echo "ERROR: pyinstaller not found. Install it:"
   echo "  pip install -r requirements.txt"
   exit 1
 fi
+
+echo "pyinstaller: $(command -v pyinstaller)"
 
 if [ ! -f "backend/server.py" ]; then
   echo "ERROR: backend/server.py not found."

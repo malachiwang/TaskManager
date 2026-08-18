@@ -29,23 +29,50 @@ export default function App() {
   // then reveal the app. A hard cap guarantees we never trap the user on the
   // loading screen — if the backend stays down we still reveal the shell and
   // let each surface show its own error state.
+  //
+  // The cap is an INDEPENDENT timer, armed once when the effect starts. It used
+  // to be an elapsed-time check inside the probe's catch block, which is not a
+  // real deadline: a backend that accepts the connection but never answers left
+  // `await fetchHealth()` pending forever, so the catch block — and therefore
+  // the check — never ran, and the loading screen stayed up indefinitely.
+  // fetchHealth is now bounded too (HEALTH_TIMEOUT_MS), so each attempt
+  // settles; the standalone timer is the backstop that does not depend on it.
   const [booting, setBooting] = useState(true);
   useEffect(() => {
-    let cancelled = false;
-    const startedAt = Date.now();
     const MAX_WAIT_MS = 6000;
+    const RETRY_MS = 400;
+    let done = false;
+    let retryTimer = null;
+    let hardStopTimer = null;
+
+    // Reveal the shell at most once, and stop everything after. Also guards
+    // against setState from a probe that lands after unmount or after the cap.
+    function reveal() {
+      if (done) return;
+      done = true;
+      clearTimeout(retryTimer);
+      clearTimeout(hardStopTimer);
+      setBooting(false);
+    }
+
+    hardStopTimer = setTimeout(reveal, MAX_WAIT_MS);
+
     async function probe() {
       try {
         await fetchHealth();
-        if (!cancelled) setBooting(false);
+        reveal();
       } catch {
-        if (cancelled) return;
-        if (Date.now() - startedAt >= MAX_WAIT_MS) setBooting(false);
-        else setTimeout(probe, 400);
+        if (done) return;
+        retryTimer = setTimeout(probe, RETRY_MS);
       }
     }
     probe();
-    return () => { cancelled = true; };
+
+    return () => {
+      done = true;
+      clearTimeout(retryTimer);
+      clearTimeout(hardStopTimer);
+    };
   }, []);
 
   // Apply saved appearance on mount (P10.1: visual theme + mode + accent +
