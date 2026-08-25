@@ -19,6 +19,7 @@ import {
 import TaskModal from './TaskModal.jsx';
 import CalendarEditor, { TimeRangeFields } from './CalendarEditor.jsx';
 import SectionCombobox from './SectionCombobox.jsx';
+import { displayTitle } from '../linkUtils.js';
 
 // Pointer capture keeps a drag alive when the cursor leaves the grid. It is
 // an enhancement, not a requirement — synthetic events (tests, automation)
@@ -935,7 +936,7 @@ export default function CalendarView() {
           width: `calc(${width}% - 3px)`,
         }}
         onPointerDown={(e) => onBlockPointerDown(e, s, item)}
-        title={`${s.task_name} · ${formatTimeRange(item.startMin, item.endMin)}`}
+        title={`${displayTitle(s.task_name)} · ${formatTimeRange(item.startMin, item.endMin)}`}
       >
         <div className="cal-block-head">
           <button
@@ -947,7 +948,7 @@ export default function CalendarView() {
           >
             {done ? '✓' : partial ? '◐' : ''}
           </button>
-          <span className="cal-block-title">{s.task_name}</span>
+          <span className="cal-block-title">{displayTitle(s.task_name)}</span>
           {isNow && <span className="cal-now-chip">NOW</span>}
           {mismatch && (
             <span
@@ -1189,7 +1190,7 @@ export default function CalendarView() {
                   title="Schedule this task in the selected interval"
                   onClick={() => scheduleExistingTask(t)}
                 >
-                  <span className="cal-task-picker-name">{t.name}</span>
+                  <span className="cal-task-picker-name">{displayTitle(t.name)}</span>
                   <span className="cal-task-picker-meta">
                     {[
                       t.section && t.section !== 'General' ? t.section : null,
@@ -1241,7 +1242,7 @@ export default function CalendarView() {
         <div className="cal-popover-head">
           <span className="cal-popover-name">
             {isNow && s.status === 'scheduled' && <span className="cal-now-chip">NOW</span>}
-            {s.task_name}
+            {displayTitle(s.task_name)}
           </span>
           <button type="button" className="cal-popover-close" aria-label="Close" onClick={() => setSelected(null)}>×</button>
         </div>
@@ -1405,7 +1406,7 @@ export default function CalendarView() {
                 }}
                 title="Drag onto the calendar to schedule"
               >
-                <span className="cal-drawer-item-name">{t.name}</span>
+                <span className="cal-drawer-item-name">{displayTitle(t.name)}</span>
                 <span className="cal-drawer-item-meta">
                   {t.estimated_minutes
                     ? ((t.logged_minutes || t.scheduled_pending_minutes)
@@ -1632,7 +1633,7 @@ export default function CalendarView() {
             return (
               <div key={s.id} className="cal-reconcile-row">
                 <div className="cal-reconcile-info">
-                  <span className="cal-reconcile-name">{s.task_name}</span>
+                  <span className="cal-reconcile-name">{displayTitle(s.task_name)}</span>
                   <span className="cal-reconcile-time">
                     {fullDateLabel(dIso)} · {formatTimeRange(sm, sm + s.planned_minutes)}
                   </span>

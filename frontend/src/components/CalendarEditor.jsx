@@ -6,6 +6,7 @@ import {
   plannedDate, plannedMinutes, combinePlanned, combinePlannedEnd,
   durationLabel, fullDateLabel,
 } from '../calendarUtils.js';
+import { displayTitle } from '../linkUtils.js';
 
 // CalendarEditor (P13.1) — the Calendar-native session/task editor.
 //
@@ -190,7 +191,7 @@ export default function CalendarEditor({
         <div className="task-modal-header">
           <div className="task-modal-header-left">
             <div className="task-modal-kicker">Calendar Session</div>
-            <div className="task-modal-title">{task?.name || session.task_name}</div>
+            <div className="task-modal-title">{displayTitle(task?.name || session.task_name)}</div>
             <div className="task-modal-subtitle">
               {fullDateLabel(dateIso)} · {statusLabel.toLowerCase()}
               {task?.estimated_minutes
