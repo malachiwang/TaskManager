@@ -484,4 +484,19 @@ def init_db() -> None:
             position += 1
         conn.commit()
 
+    # ── Migration 14: depth_window_skips (P13.0) — recurrence exceptions ─────
+    # One row = "this recurring depth window does not apply on this date".
+    # Deleting a weekly window on a single day inserts a skip instead of
+    # destroying the series. ON DELETE CASCADE cleans up with the window.
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS depth_window_skips (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            window_id  INTEGER NOT NULL REFERENCES depth_windows(id) ON DELETE CASCADE,
+            date       TEXT    NOT NULL,
+            created_at TEXT    NOT NULL,
+            UNIQUE (window_id, date)
+        );
+    """)
+    conn.commit()
+
     conn.close()

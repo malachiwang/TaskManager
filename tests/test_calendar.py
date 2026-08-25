@@ -384,6 +384,134 @@ class TestDepthWindows:
         assert client.delete("/depth-windows/9999").status_code == 404
 
 
+class TestSessionRollups:
+    """P13.0 — factual execution rollups attached to task endpoints."""
+
+    def test_no_sessions_yields_zeroes(self, client):
+        t = _make_task(client, estimated_minutes=120)
+        got = client.get(f"/tasks/{t['id']}").json()
+        assert got["logged_minutes"] == 0
+        assert got["scheduled_pending_minutes"] == 0
+        assert got["remaining_minutes"] == 120
+        assert got["remaining_unscheduled_minutes"] == 120
+
+    def test_no_estimate_yields_null_remaining(self, client):
+        t = _make_task(client)
+        got = client.get(f"/tasks/{t['id']}").json()
+        assert got["remaining_minutes"] is None
+        assert got["remaining_unscheduled_minutes"] is None
+
+    def test_scheduled_session_counts_as_pending(self, client):
+        t = _make_task(client, estimated_minutes=180)
+        _make_session(client, t["id"])  # 90m scheduled
+        got = client.get(f"/tasks/{t['id']}").json()
+        assert got["logged_minutes"] == 0
+        assert got["scheduled_pending_minutes"] == 90
+        assert got["remaining_minutes"] == 180
+        assert got["remaining_unscheduled_minutes"] == 90
+
+    def test_completed_session_logs_planned_when_no_actuals(self, client):
+        t = _make_task(client, estimated_minutes=180)
+        s = _make_session(client, t["id"])  # 90m
+        client.patch(f"/sessions/{s['id']}", json={"status": "completed"})
+        got = client.get(f"/tasks/{t['id']}").json()
+        assert got["logged_minutes"] == 90
+        assert got["scheduled_pending_minutes"] == 0
+        assert got["remaining_minutes"] == 90
+
+    def test_completed_session_prefers_actual_minutes(self, client):
+        t = _make_task(client, estimated_minutes=180)
+        s = _make_session(client, t["id"])  # planned 90m
+        client.patch(f"/sessions/{s['id']}", json={"status": "completed", "actual_minutes": 60})
+        got = client.get(f"/tasks/{t['id']}").json()
+        assert got["logged_minutes"] == 60
+        assert got["remaining_minutes"] == 120
+
+    def test_partial_session_logs_only_actual(self, client):
+        # Partial completion (§37): a 90m plan reconciled as 45m of work
+        # reduces remaining effort by 45m, never the full plan.
+        t = _make_task(client, estimated_minutes=180)
+        s = _make_session(client, t["id"])
+        client.patch(f"/sessions/{s['id']}", json={"status": "partial", "actual_minutes": 45})
+        got = client.get(f"/tasks/{t['id']}").json()
+        assert got["logged_minutes"] == 45
+        assert got["scheduled_pending_minutes"] == 0
+        assert got["remaining_minutes"] == 135
+        assert got["remaining_unscheduled_minutes"] == 135
+
+    def test_skipped_session_frees_effort(self, client):
+        t = _make_task(client, estimated_minutes=120)
+        s = _make_session(client, t["id"])  # 90m scheduled
+        client.patch(f"/sessions/{s['id']}", json={"status": "skipped"})
+        got = client.get(f"/tasks/{t['id']}").json()
+        assert got["logged_minutes"] == 0
+        assert got["scheduled_pending_minutes"] == 0
+        assert got["remaining_unscheduled_minutes"] == 120
+
+    def test_remaining_never_negative(self, client):
+        t = _make_task(client, estimated_minutes=60)
+        s = _make_session(client, t["id"], start="2026-08-25T09:00", end="2026-08-25T11:00")
+        client.patch(f"/sessions/{s['id']}", json={"status": "completed"})  # 120m logged
+        got = client.get(f"/tasks/{t['id']}").json()
+        assert got["remaining_minutes"] == 0
+        assert got["remaining_unscheduled_minutes"] == 0
+
+    def test_rollups_present_in_list_endpoint(self, client):
+        t = _make_task(client, estimated_minutes=90)
+        _make_session(client, t["id"])
+        listed = client.get("/tasks").json()
+        row = next(x for x in listed if x["id"] == t["id"])
+        assert row["scheduled_pending_minutes"] == 90
+
+
+class TestDepthWindowSkips:
+    """P13.0 — per-day exceptions on recurring windows (§38)."""
+
+    def _weekly(self, client, weekday=1):
+        return client.post("/depth-windows", json={
+            "depth": 1, "weekday": weekday, "start_minutes": 540, "end_minutes": 720,
+        }).json()
+
+    def test_skip_day_on_recurring_window(self, client):
+        w = self._weekly(client)
+        res = client.post(f"/depth-windows/{w['id']}/skips", json={"date": "2026-08-25"})
+        assert res.status_code == 201
+        assert res.json()["skips"] == ["2026-08-25"]
+        listed = client.get("/depth-windows").json()
+        assert listed[0]["skips"] == ["2026-08-25"]
+
+    def test_skip_is_idempotent(self, client):
+        w = self._weekly(client)
+        client.post(f"/depth-windows/{w['id']}/skips", json={"date": "2026-08-25"})
+        res = client.post(f"/depth-windows/{w['id']}/skips", json={"date": "2026-08-25"})
+        assert res.status_code == 201
+        assert res.json()["skips"] == ["2026-08-25"]
+
+    def test_one_off_window_rejects_skip(self, client):
+        w = client.post("/depth-windows", json={
+            "depth": 2, "date": "2026-08-25", "start_minutes": 540, "end_minutes": 720,
+        }).json()
+        res = client.post(f"/depth-windows/{w['id']}/skips", json={"date": "2026-08-25"})
+        assert res.status_code == 422
+
+    def test_skip_unknown_window_404(self, client):
+        assert client.post("/depth-windows/999/skips", json={"date": "2026-08-25"}).status_code == 404
+
+    def test_skip_bad_date_422(self, client):
+        w = self._weekly(client)
+        res = client.post(f"/depth-windows/{w['id']}/skips", json={"date": "25/08/2026"})
+        assert res.status_code == 422
+
+    def test_deleting_window_removes_skips(self, client):
+        w = self._weekly(client)
+        client.post(f"/depth-windows/{w['id']}/skips", json={"date": "2026-08-25"})
+        client.delete(f"/depth-windows/{w['id']}")
+        # Recreate and confirm no orphaned skips bleed into the new window.
+        w2 = self._weekly(client)
+        listed = client.get("/depth-windows").json()
+        assert next(x for x in listed if x["id"] == w2["id"])["skips"] == []
+
+
 class TestExistingBehaviorPreserved:
     def test_task_endpoints_unchanged_without_calendar_fields(self, client):
         # A task created the pre-calendar way still round-trips identically.

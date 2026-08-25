@@ -3,13 +3,14 @@ import {
   fetchTasks, fetchSessions, fetchDepthWindows, fetchCompletions,
   createTask, updateTask, deleteTask,
   createSession, updateSession, deleteSession,
-  createDepthWindow, deleteDepthWindow,
+  createDepthWindow, deleteDepthWindow, skipDepthWindowDay,
   upsertCompletion, setCompletionCount,
 } from '../api.js';
 import {
   SNAP_MINUTES, MIN_SESSION_MINUTES, DEFAULT_SESSION_MINUTES, DAY_MINUTES,
   todayIso, isoDate, addDaysIso, weekDates, isWeekendIso, weekdayOfIso,
   plannedDate, plannedMinutes, combinePlanned, combinePlannedEnd,
+  shiftPlannedDays, plannedDiffMinutes,
   snapMinutes, clampDayMinutes, sessionSegmentOnDate,
   formatHourLabel, formatTimeRange, durationLabel,
   dayHeaderLabel, fullDateLabel, rangeLabel,
@@ -80,10 +81,31 @@ export default function CalendarView() {
   const [tasks, setTasks] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [upcomingSessions, setUpcomingSessions] = useState([]);
+  const [recentSessions, setRecentSessions] = useState([]); // trailing 14d, for reconciliation
   const [windows, setWindows] = useState([]);
   const [completions, setCompletions] = useState({}); // "taskId:date" -> count
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Execution-surface preferences (P13.0) — localStorage like other UI prefs.
+  const [hideCompleted, setHideCompleted] = useState(
+    () => localStorage.getItem('taskos-cal-hide-completed') === '1',
+  );
+  const [showCapacity, setShowCapacity] = useState(
+    () => localStorage.getItem('taskos-cal-capacity') === '1',
+  );
+  useEffect(() => {
+    localStorage.setItem('taskos-cal-hide-completed', hideCompleted ? '1' : '0');
+  }, [hideCompleted]);
+  useEffect(() => {
+    localStorage.setItem('taskos-cal-capacity', showCapacity ? '1' : '0');
+  }, [showCapacity]);
+
+  // Reconciliation / confirmation surfaces (P13.0)
+  const [reconcileOpen, setReconcileOpen] = useState(false);
+  const [partialEdit, setPartialEdit] = useState(null); // { sessionId, minutes }
+  const [confirmAction, setConfirmAction] = useState(null); // { message, onConfirm }
+  const [windowMenu, setWindowMenu] = useState(null); // { windowId, dateIso }
 
   // Interaction state. Drag is mirrored in a ref: pointer events can arrive
   // faster than React re-renders (a fast flick is pointerdown+move+up inside
@@ -132,17 +154,19 @@ export default function CalendarView() {
     setError('');
     try {
       const today = todayIso();
-      const [tasksData, rangeSessions, upcoming, windowsData, completionRows] =
+      const [tasksData, rangeSessions, upcoming, recent, windowsData, completionRows] =
         await Promise.all([
           fetchTasks(),
           fetchSessions(rangeStart, rangeEnd),
           fetchSessions(today, addDaysIso(today, 365)),
+          fetchSessions(addDaysIso(today, -14), today),
           fetchDepthWindows(),
           fetchCompletions(rangeStart, rangeEnd),
         ]);
       setTasks(tasksData);
       setSessions(rangeSessions);
       setUpcomingSessions(upcoming);
+      setRecentSessions(recent);
       setWindows(windowsData);
       const compMap = {};
       for (const row of completionRows) {
@@ -176,6 +200,10 @@ export default function CalendarView() {
   function closeOverlays() {
     setCreator(null);
     setSelected(null);
+    setConfirmAction(null);
+    setWindowMenu(null);
+    setPartialEdit(null);
+    setReconcileOpen(false);
   }
 
   // ── Navigation ─────────────────────────────────────────────────────────────
@@ -297,7 +325,7 @@ export default function CalendarView() {
       }
       if (endMin - startMin < MIN_SESSION_MINUTES) endMin = Math.min(DAY_MINUTES, startMin + MIN_SESSION_MINUTES);
       if (d.type === 'window') {
-        setCreator({ kind: 'window', dateIso: d.dateIso, startMin, endMin, depth: 1, weekly: false, saving: false, error: '' });
+        setCreator({ kind: 'window', dateIso: d.dateIso, startMin, endMin, depth: 1, weekly: false, protected: false, saving: false, error: '' });
       } else {
         setCreator({
           kind: 'task',
@@ -356,7 +384,46 @@ export default function CalendarView() {
     capturePointer(daysRef.current, e.pointerId);
   }
 
-  async function commitMove(d) {
+  // ── Depth-window awareness (P13.0) ─────────────────────────────────────────
+  // Advisory only (§7): a session overlapping windows on its date, none of
+  // which match the task's depth. Returns a representative window or null.
+  function depthMismatchAt(dateIso, startMin, endMin, taskDepth) {
+    if (!taskDepth) return null;
+    const overlapping = windowsOnDate(windows, dateIso)
+      .filter((w) => w.start_minutes < endMin && w.end_minutes > startMin);
+    if (overlapping.length === 0) return null;
+    if (overlapping.some((w) => w.depth === taskDepth)) return null;
+    return overlapping[0];
+  }
+
+  // Protected windows (§8): scheduling other-depth work into one asks first —
+  // always overridable, never blocking.
+  function protectedConflictAt(dateIso, startMin, endMin, taskDepth) {
+    return windowsOnDate(windows, dateIso).find((w) =>
+      w.protected === 1 && w.depth !== taskDepth
+      && w.start_minutes < endMin && w.end_minutes > startMin) ?? null;
+  }
+
+  function confirmProtected(window, taskDepth, taskName, proceed) {
+    setConfirmAction({
+      message: `This is a protected D${window.depth} window`
+        + `${taskDepth ? ` and “${taskName}” is D${taskDepth}` : taskName ? ` and “${taskName}” has no depth` : ''}. `
+        + 'Schedule anyway?',
+      onConfirm: proceed,
+    });
+  }
+
+  function commitMove(d) {
+    const conflict = protectedConflictAt(
+      d.dateIso, d.startMin, d.startMin + d.durMin, d.session.task_depth);
+    if (conflict) {
+      confirmProtected(conflict, d.session.task_depth, d.session.task_name, () => performMove(d));
+      return;
+    }
+    performMove(d);
+  }
+
+  async function performMove(d) {
     const start = combinePlanned(d.dateIso, d.startMin);
     const end = combinePlannedEnd(d.dateIso, d.startMin + d.durMin);
     setSessions((prev) => prev.map((s) =>
@@ -412,6 +479,106 @@ export default function CalendarView() {
     loadData();
   }
 
+  // ── Execution actions (P13.0, §3/§36/§37) ──────────────────────────────────
+  // Lightweight Start/Finish stamps actual_* without turning this into a
+  // timer app; planned_* is never touched by execution.
+
+  async function startNow(session) {
+    try {
+      await updateSession(session.id, { actual_start: combinePlanned(nowIso, nowMin) });
+    } catch (err) {
+      console.error('start session failed:', err);
+    }
+    loadData();
+  }
+
+  async function finishNow(session) {
+    const end = combinePlanned(nowIso, nowMin);
+    const minutes = Math.max(1, plannedDiffMinutes(session.actual_start, end));
+    const dateIso = plannedDate(session.planned_start);
+    try {
+      await updateSession(session.id, {
+        actual_end: end, actual_minutes: minutes, status: 'completed',
+      });
+      if (dateIso <= todayIso()) await upsertCompletion(session.task_id, dateIso);
+    } catch (err) {
+      console.error('finish session failed:', err);
+    }
+    loadData();
+  }
+
+  async function savePartial(session) {
+    const minutes = Number(partialEdit?.minutes);
+    setPartialEdit(null);
+    if (!Number.isFinite(minutes) || minutes <= 0) return;
+    try {
+      await updateSession(session.id, { status: 'partial', actual_minutes: Math.round(minutes) });
+    } catch (err) {
+      console.error('partial completion failed:', err);
+    }
+    loadData();
+  }
+
+  async function toggleFixed(session) {
+    const next = session.is_fixed ? 0 : 1;
+    setSessions((prev) => prev.map((s) => (s.id === session.id ? { ...s, is_fixed: next } : s)));
+    try {
+      await updateSession(session.id, { is_fixed: !!next });
+    } catch (err) {
+      console.error('toggle fixed failed:', err);
+    }
+    loadData();
+  }
+
+  // §50 — another session for the same task, same time tomorrow. Never
+  // duplicates the underlying task.
+  async function duplicateSession(session, deltaDays = 1) {
+    try {
+      await createSession({
+        task_id: session.task_id,
+        planned_start: shiftPlannedDays(session.planned_start, deltaDays),
+        planned_end: shiftPlannedDays(session.planned_end, deltaDays),
+      });
+    } catch (err) {
+      console.error('duplicate session failed:', err);
+    }
+    loadData();
+  }
+
+  async function rescheduleSession(session, deltaDays) {
+    try {
+      await updateSession(session.id, {
+        planned_start: shiftPlannedDays(session.planned_start, deltaDays),
+        planned_end: shiftPlannedDays(session.planned_end, deltaDays),
+      });
+    } catch (err) {
+      console.error('reschedule session failed:', err);
+    }
+    loadData();
+  }
+
+  // Skipped = "this didn't happen": planned history is kept, the block stays
+  // (muted) as displaced work, and the effort returns to the backlog.
+  async function skipSession(session) {
+    try {
+      await updateSession(session.id, { status: 'skipped' });
+    } catch (err) {
+      console.error('skip session failed:', err);
+    }
+    loadData();
+  }
+
+  async function skipWindowDay(windowId, dateIso) {
+    setWindowMenu(null);
+    try {
+      await skipDepthWindowDay(windowId, dateIso);
+      setWindows((prev) => prev.map((w) =>
+        (w.id === windowId ? { ...w, skips: [...(w.skips ?? []), dateIso] } : w)));
+    } catch (err) {
+      console.error('skip window day failed:', err);
+    }
+  }
+
   // ── Creation ───────────────────────────────────────────────────────────────
   async function commitCreateTask() {
     const c = creator;
@@ -449,7 +616,7 @@ export default function CalendarView() {
         depth: c.depth,
         start_minutes: c.startMin,
         end_minutes: c.endMin,
-        protected: false,
+        protected: c.protected,
       };
       if (c.weekly) fields.weekday = weekdayOfIso(c.dateIso);
       else fields.date = c.dateIso;
@@ -500,7 +667,10 @@ export default function CalendarView() {
     if (!task) return null;
     const slot = pointToSlot(clientX, clientY);
     if (!slot) return null;
-    const dur = task.estimated_minutes || DEFAULT_SESSION_MINUTES;
+    // Multi-session tasks (§17): the next session offers the task's remaining
+    // unscheduled effort, falling back to the full estimate, then the default.
+    const dur = Math.max(MIN_SESSION_MINUTES,
+      task.remaining_unscheduled_minutes || task.estimated_minutes || DEFAULT_SESSION_MINUTES);
     const startMin = Math.max(0, Math.min(DAY_MINUTES - dur, snapMinutes(slot.minutes)));
     return { task, dateIso: slot.dateIso, startMin, endMin: startMin + dur };
   }
@@ -513,12 +683,22 @@ export default function CalendarView() {
     setDropPreview({ dateIso: target.dateIso, startMin: target.startMin, endMin: target.endMin });
   }
 
-  async function onGridDrop(e) {
+  function onGridDrop(e) {
     const target = drawerDropTarget(e.clientX, e.clientY);
     drawerDragRef.current = null;
     setDropPreview(null);
     if (!target) return;
     e.preventDefault();
+    const conflict = protectedConflictAt(
+      target.dateIso, target.startMin, target.endMin, target.task.depth);
+    if (conflict) {
+      confirmProtected(conflict, target.task.depth, target.task.name, () => performDrawerDrop(target));
+      return;
+    }
+    performDrawerDrop(target);
+  }
+
+  async function performDrawerDrop(target) {
     try {
       await createSession({
         task_id: target.task.id,
@@ -537,23 +717,69 @@ export default function CalendarView() {
     for (const dIso of dates) {
       const dayBlocks = [];
       for (const s of sessions) {
+        if (hideCompleted && s.status === 'completed') continue;
         const seg = sessionSegmentOnDate(s, dIso);
         if (seg) dayBlocks.push({ session: s, ...seg });
       }
       map[dIso] = layoutBlocks(dayBlocks);
     }
     return map;
-  }, [sessions, dates]);
+  }, [sessions, dates, hideCompleted]);
 
+  // Unscheduled queue (P13.0, §16/§17): a task is offered when it has no
+  // upcoming scheduled session, OR when its estimate still has unscheduled
+  // remaining effort — multi-session tasks stay available until covered.
   const unscheduledByDepth = useMemo(() => {
-    const scheduledIds = new Set(upcomingSessions.map((s) => s.task_id));
+    const scheduledIds = new Set(
+      upcomingSessions.filter((s) => s.status === 'scheduled').map((s) => s.task_id),
+    );
     const groups = { 1: [], 2: [], 3: [], 0: [] };
     for (const t of tasks) {
-      if (t.is_paused || t.is_ended || scheduledIds.has(t.id)) continue;
+      if (t.is_paused || t.is_ended) continue;
+      const hasUpcoming = scheduledIds.has(t.id);
+      const hasRemaining = !!t.estimated_minutes && (t.remaining_unscheduled_minutes ?? 0) > 0;
+      if (hasUpcoming && !hasRemaining) continue;
       groups[t.depth ?? 0].push(t);
     }
     return groups;
   }, [tasks, upcomingSessions]);
+
+  // Sessions whose planned time has fully passed while still 'scheduled' —
+  // the end-of-day reconciliation queue (§36). Union of the visible range and
+  // the trailing 14 days so last week's misses surface too.
+  const nowStamp = combinePlanned(nowIso, nowMin);
+  const unresolvedSessions = useMemo(() => {
+    const byId = new Map();
+    for (const s of [...recentSessions, ...sessions, ...upcomingSessions]) {
+      if (s.status !== 'scheduled') continue;
+      if (s.planned_end >= nowStamp) continue;
+      byId.set(s.id, s);
+    }
+    return [...byId.values()].sort((a, b) => (a.planned_start < b.planned_start ? -1 : 1));
+  }, [recentSessions, sessions, upcomingSessions, nowStamp]);
+
+  // Capacity vs scheduled vs completed (§41/§42) — factual minute sums over
+  // the visible dates, per depth. User-declared windows only; no inference.
+  const capacity = useMemo(() => {
+    const res = {
+      1: { designated: 0, scheduled: 0, done: 0 },
+      2: { designated: 0, scheduled: 0, done: 0 },
+      3: { designated: 0, scheduled: 0, done: 0 },
+    };
+    for (const d of dates) {
+      for (const w of windowsOnDate(windows, d)) {
+        res[w.depth].designated += w.end_minutes - w.start_minutes;
+      }
+    }
+    for (const s of sessions) {
+      const dep = s.task_depth;
+      if (!dep || s.status === 'skipped') continue;
+      res[dep].scheduled += s.planned_minutes;
+      if (s.status === 'completed') res[dep].done += s.actual_minutes ?? s.planned_minutes;
+      else if (s.status === 'partial') res[dep].done += s.actual_minutes ?? 0;
+    }
+    return res;
+  }, [dates, windows, sessions]);
 
   const unscheduledCount = unscheduledByDepth[1].length + unscheduledByDepth[2].length
     + unscheduledByDepth[3].length + unscheduledByDepth[0].length;
@@ -634,7 +860,14 @@ export default function CalendarView() {
     const isDragSource = drag && (drag.type === 'move' || drag.type === 'resize')
       && drag.moved && drag.session.id === s.id;
     const done = s.status === 'completed';
+    const partial = s.status === 'partial';
+    const skipped = s.status === 'skipped';
     const depth = s.task_depth;
+    // Now state (§3): the current-time line is inside this still-scheduled
+    // block on today — restrained highlight, actions live in the popover.
+    const isNow = dateIso === nowIso && s.status === 'scheduled'
+      && item.startMin <= nowMin && nowMin < item.endMin;
+    const mismatch = depthMismatchAt(dateIso, item.startMin, item.endMin, depth);
     const heightPx = Math.max(14, minutesToPx(item.endMin - item.startMin) - 2);
     const compact = heightPx < 34;
     const width = 100 / item.cols;
@@ -645,6 +878,9 @@ export default function CalendarView() {
           'cal-block',
           depth ? `cal-block--d${depth}` : 'cal-block--d0',
           done ? 'is-done' : '',
+          partial ? 'is-partial' : '',
+          skipped ? 'is-skipped' : '',
+          isNow ? 'is-now' : '',
           s.is_fixed ? 'is-fixed' : '',
           isDragSource ? 'is-drag-source' : '',
         ].filter(Boolean).join(' ')}
@@ -665,15 +901,24 @@ export default function CalendarView() {
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => { e.stopPropagation(); toggleComplete(s); }}
           >
-            {done ? '✓' : ''}
+            {done ? '✓' : partial ? '◐' : ''}
           </button>
           <span className="cal-block-title">{s.task_name}</span>
+          {isNow && <span className="cal-now-chip">NOW</span>}
+          {mismatch && (
+            <span
+              className="cal-mismatch"
+              title={`D${depth} task in D${mismatch.depth} window`}
+            >!</span>
+          )}
           {depth != null && <span className={`cal-depth-pill cal-depth-pill--d${depth}`}>D{depth}</span>}
         </div>
         {!compact && (
           <div className="cal-block-meta">
             {formatTimeRange(item.startMin, item.endMin)}
-            {s.task_section && s.task_section !== 'General' ? ` · ${s.task_section}` : ''}
+            {partial && s.actual_minutes ? ` · ${durationLabel(s.actual_minutes)} done` : ''}
+            {skipped ? ' · skipped' : ''}
+            {!partial && !skipped && s.task_section && s.task_section !== 'General' ? ` · ${s.task_section}` : ''}
           </div>
         )}
         <div className="cal-block-resize" aria-hidden="true" />
@@ -732,6 +977,14 @@ export default function CalendarView() {
             />
             Repeat weekly on {fullDateLabel(creator.dateIso).split(',')[0]}s
           </label>
+          <label className="cal-popover-checkline">
+            <input
+              type="checkbox"
+              checked={creator.protected}
+              onChange={(e) => setCreator((c) => (c ? { ...c, protected: e.target.checked } : c))}
+            />
+            Protected — ask before scheduling other-depth work here
+          </label>
           <div className="cal-popover-hint">
             Depth windows are background capacity regions — what kind of work this
             time is for, not a task.
@@ -772,6 +1025,14 @@ export default function CalendarView() {
           Creates a real task record scheduled here. Tip: {QUICK_CREATE_HINT} on
           empty time for instant inline creation; ⇧ drag for a depth window.
         </div>
+        {(() => {
+          const pw = protectedConflictAt(creator.dateIso, creator.startMin, creator.endMin, creator.depth || null);
+          return pw ? (
+            <div className="cal-popover-warn">
+              This time sits in a protected D{pw.depth} window.
+            </div>
+          ) : null;
+        })()}
         {creator.error && <div className="cal-popover-error" role="alert">{creator.error}</div>}
         <div className="cal-popover-actions">
           <button type="button" className="task-modal-cancel" onClick={() => setCreator(null)}>Cancel</button>
@@ -789,13 +1050,25 @@ export default function CalendarView() {
     const s = selectedSession;
     const startMin = plannedMinutes(s.planned_start);
     const dateIso = plannedDate(s.planned_start);
-    const style = popoverPosition(selected.rect, 300, 250);
+    const style = popoverPosition(selected.rect, 320, 320);
     const done = s.status === 'completed';
     const task = tasks.find((t) => t.id === s.task_id) ?? null;
+    const isNow = dateIso === nowIso && startMin <= nowMin && nowMin < startMin + s.planned_minutes;
+    const canStart = isNow && s.status === 'scheduled' && !s.actual_start;
+    const canFinish = s.actual_start && !s.actual_end && s.status === 'scheduled';
+    const actualLine = s.actual_start || s.actual_minutes != null
+      ? [
+        s.actual_start ? `${s.actual_start.slice(11, 16)}${s.actual_end ? `–${s.actual_end.slice(11, 16)}` : '–…'}` : null,
+        s.actual_minutes != null ? durationLabel(s.actual_minutes) : null,
+      ].filter(Boolean).join(' · ')
+      : null;
     return (
       <div className="cal-popover" style={style} role="dialog" aria-label="Session details">
         <div className="cal-popover-head">
-          <span className="cal-popover-name">{s.task_name}</span>
+          <span className="cal-popover-name">
+            {isNow && s.status === 'scheduled' && <span className="cal-now-chip">NOW</span>}
+            {s.task_name}
+          </span>
           <button type="button" className="cal-popover-close" aria-label="Close" onClick={() => setSelected(null)}>×</button>
         </div>
         <div className="cal-popover-time">
@@ -803,16 +1076,92 @@ export default function CalendarView() {
           <br />
           {formatTimeRange(startMin, startMin + s.planned_minutes)} · {durationLabel(s.planned_minutes)}
           {s.task_section && s.task_section !== 'General' ? ` · ${s.task_section}` : ''}
+          {s.status === 'partial' ? ' · partial' : s.status === 'skipped' ? ' · skipped' : ''}
+          {actualLine && (
+            <>
+              <br />
+              <span className="cal-popover-actual">Actual: {actualLine}</span>
+            </>
+          )}
         </div>
+        {task?.estimated_minutes ? (
+          <div className="cal-popover-effort">
+            Effort: {durationLabel(task.logged_minutes ?? 0)} logged ·{' '}
+            {durationLabel(task.remaining_minutes ?? 0)} remaining of{' '}
+            {durationLabel(task.estimated_minutes)}
+          </div>
+        ) : null}
         <DepthSeg value={s.task_depth ?? 0} onChange={(d) => setTaskDepth(s.task_id, d)} />
+        {partialEdit?.sessionId === s.id ? (
+          <div className="cal-partial-row">
+            <span>Worked</span>
+            <input
+              type="number"
+              min="1"
+              className="cal-partial-input"
+              autoFocus
+              value={partialEdit.minutes}
+              onChange={(e) => setPartialEdit((p) => (p ? { ...p, minutes: e.target.value } : p))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); savePartial(s); }
+                if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setPartialEdit(null); }
+              }}
+            />
+            <span>min</span>
+            <button type="button" className="task-modal-save" onClick={() => savePartial(s)}>Save</button>
+            <button type="button" className="task-modal-cancel" onClick={() => setPartialEdit(null)}>Cancel</button>
+          </div>
+        ) : (
+          <div className="cal-popover-actions cal-popover-actions--wrap">
+            {canStart && (
+              <button type="button" className="cal-complete-btn" onClick={() => startNow(s)}
+                title="Stamp the actual start time — planned times are untouched">
+                Start now
+              </button>
+            )}
+            {canFinish && (
+              <button type="button" className="cal-complete-btn" onClick={() => finishNow(s)}
+                title="Stamp the actual end, record the actual minutes, and complete the session">
+                Finish
+              </button>
+            )}
+            <button
+              type="button"
+              className={`cal-complete-btn${done ? ' is-done' : ''}`}
+              onClick={() => toggleComplete(s)}
+            >
+              {done ? '✓ Completed' : 'Complete'}
+            </button>
+            <button
+              type="button"
+              className="cal-complete-btn"
+              title="Record that only part of this session's work happened"
+              onClick={() => setPartialEdit({ sessionId: s.id, minutes: s.planned_minutes })}
+            >
+              Partial…
+            </button>
+          </div>
+        )}
         <div className="cal-popover-actions cal-popover-actions--spread">
-          <button
-            type="button"
-            className={`cal-complete-btn${done ? ' is-done' : ''}`}
-            onClick={() => toggleComplete(s)}
-          >
-            {done ? '✓ Completed' : 'Mark complete'}
-          </button>
+          <div className="cal-popover-actions-right">
+            <button
+              type="button"
+              className={`cal-flag-btn${s.is_fixed ? ' is-active' : ''}`}
+              aria-pressed={!!s.is_fixed}
+              title="Fixed sessions resist future automatic replanning; task sessions default to flexible"
+              onClick={() => toggleFixed(s)}
+            >
+              {s.is_fixed ? 'Fixed' : 'Flexible'}
+            </button>
+            <button
+              type="button"
+              className="cal-flag-btn"
+              title="Add another session for this task tomorrow at the same time"
+              onClick={() => duplicateSession(s, 1)}
+            >
+              +1 day
+            </button>
+          </div>
           <div className="cal-popover-actions-right">
             <button
               type="button"
@@ -878,7 +1227,11 @@ export default function CalendarView() {
               >
                 <span className="cal-drawer-item-name">{t.name}</span>
                 <span className="cal-drawer-item-meta">
-                  {t.estimated_minutes ? durationLabel(t.estimated_minutes) : '—'}
+                  {t.estimated_minutes
+                    ? ((t.logged_minutes || t.scheduled_pending_minutes)
+                      ? `${durationLabel(t.remaining_unscheduled_minutes ?? 0)} left of ${durationLabel(t.estimated_minutes)}`
+                      : durationLabel(t.estimated_minutes))
+                    : '—'}
                   {t.section && t.section !== 'General' ? ` · ${t.section}` : ''}
                 </span>
               </div>
@@ -931,6 +1284,35 @@ export default function CalendarView() {
               onClick={() => setViewMode('day')}
             >Day</button>
           </div>
+          {unresolvedSessions.length > 0 && (
+            <button
+              type="button"
+              className={`cal-nav-btn cal-review-btn${reconcileOpen ? ' is-active' : ''}`}
+              aria-pressed={reconcileOpen}
+              title="Planned sessions whose time passed without being resolved"
+              onClick={() => setReconcileOpen((o) => !o)}
+            >
+              Review · {unresolvedSessions.length}
+            </button>
+          )}
+          <button
+            type="button"
+            className={`cal-nav-btn${showCapacity ? ' is-active' : ''}`}
+            aria-pressed={showCapacity}
+            title="Show designated depth-window time vs scheduled and completed work"
+            onClick={() => setShowCapacity((v) => !v)}
+          >
+            Depth
+          </button>
+          <button
+            type="button"
+            className={`cal-nav-btn${hideCompleted ? ' is-active' : ''}`}
+            aria-pressed={hideCompleted}
+            title="Hide completed sessions (history is kept — this only filters the view)"
+            onClick={() => setHideCompleted((v) => !v)}
+          >
+            {hideCompleted ? 'Done hidden' : 'Hide done'}
+          </button>
           <button
             type="button"
             className={`cal-nav-btn cal-drawer-toggle${drawerOpen ? ' is-active' : ''}`}
@@ -941,6 +1323,31 @@ export default function CalendarView() {
           </button>
         </div>
       </div>
+
+      {/* Capacity vs scheduled (§41/§42) — factual minutes, never a score. */}
+      {showCapacity && (
+        <div className="cal-capacity" aria-label="Depth capacity summary">
+          {[1, 2, 3].map((d) => {
+            const c = capacity[d];
+            if (!c.designated && !c.scheduled && !c.done) return null;
+            const beyond = c.designated > 0 ? c.scheduled - c.designated : 0;
+            return (
+              <span key={d} className={`cal-capacity-chip cal-capacity-chip--d${d}`}>
+                <strong>D{d}</strong>
+                {' '}windows {durationLabel(c.designated)}
+                {' '}· scheduled {durationLabel(c.scheduled)}
+                {' '}· completed {durationLabel(c.done)}
+                {beyond > 0 ? ` · ${durationLabel(beyond)} beyond windows` : ''}
+              </span>
+            );
+          })}
+          {![1, 2, 3].some((d) => capacity[d].designated || capacity[d].scheduled || capacity[d].done) && (
+            <span className="cal-capacity-empty">
+              No depth windows or depth-tagged sessions in view.
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="cal-main">
         <div className="cal-scroll" ref={scrollRef}>
@@ -1001,24 +1408,39 @@ export default function CalendarView() {
                     {windowsOnDate(windows, dIso).map((w) => (
                       <div
                         key={w.id}
-                        className={`cal-window cal-window--d${w.depth}`}
+                        className={`cal-window cal-window--d${w.depth}${w.protected ? ' is-protected' : ''}`}
                         style={{
                           top: minutesToPx(w.start_minutes),
                           height: minutesToPx(w.end_minutes - w.start_minutes),
                         }}
                       >
                         <span className="cal-window-label">
-                          D{w.depth}{w.weekday != null ? ' · weekly' : ''}
+                          D{w.depth}
+                          {w.weekday != null ? ' · weekly' : ''}
+                          {w.protected ? ' · protected' : ''}
                         </span>
-                        <button
-                          type="button"
-                          className="cal-window-del"
-                          aria-label="Remove depth window"
-                          title={w.weekday != null
-                            ? 'Remove this weekly depth window (all weeks)'
-                            : 'Remove this depth window'}
-                          onClick={() => removeWindow(w.id)}
-                        >×</button>
+                        {windowMenu?.windowId === w.id && windowMenu.dateIso === dIso ? (
+                          <span className="cal-window-menu">
+                            <button type="button" title="Remove only this day's occurrence"
+                              onClick={() => skipWindowDay(w.id, dIso)}>This day</button>
+                            <button type="button" title="Delete the whole weekly window"
+                              onClick={() => { setWindowMenu(null); removeWindow(w.id); }}>All weeks</button>
+                            <button type="button" aria-label="Cancel"
+                              onClick={() => setWindowMenu(null)}>×</button>
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="cal-window-del"
+                            aria-label="Remove depth window"
+                            title={w.weekday != null
+                              ? 'Remove — choose this day only or the whole series'
+                              : 'Remove this depth window'}
+                            onClick={() => (w.weekday != null
+                              ? setWindowMenu({ windowId: w.id, dateIso: dIso })
+                              : removeWindow(w.id))}
+                          >×</button>
+                        )}
                       </div>
                     ))}
                     {blocksByDate[dIso]?.map((item) => renderBlock(item, dIso))}
@@ -1040,6 +1462,91 @@ export default function CalendarView() {
 
       {renderCreatorPopover()}
       {renderSessionPopover()}
+
+      {/* End-of-day reconciliation (§36) — lightweight, never mandatory. */}
+      {reconcileOpen && (
+        <div className="cal-popover cal-reconcile" role="dialog" aria-label="Sessions needing review">
+          <div className="cal-popover-head">
+            <span className="cal-popover-kicker">Needs review</span>
+            <button type="button" className="cal-popover-close" aria-label="Close"
+              onClick={() => setReconcileOpen(false)}>×</button>
+          </div>
+          <div className="cal-popover-hint">
+            Planned sessions whose time passed without being resolved. Deciding
+            keeps the history honest — nothing here is required.
+          </div>
+          {unresolvedSessions.length === 0 && (
+            <div className="cal-popover-time">All caught up.</div>
+          )}
+          {unresolvedSessions.map((s) => {
+            const dIso = plannedDate(s.planned_start);
+            const sm = plannedMinutes(s.planned_start);
+            return (
+              <div key={s.id} className="cal-reconcile-row">
+                <div className="cal-reconcile-info">
+                  <span className="cal-reconcile-name">{s.task_name}</span>
+                  <span className="cal-reconcile-time">
+                    {fullDateLabel(dIso)} · {formatTimeRange(sm, sm + s.planned_minutes)}
+                  </span>
+                </div>
+                {partialEdit?.sessionId === s.id ? (
+                  <div className="cal-partial-row">
+                    <input
+                      type="number"
+                      min="1"
+                      className="cal-partial-input"
+                      autoFocus
+                      value={partialEdit.minutes}
+                      onChange={(e) => setPartialEdit((p) => (p ? { ...p, minutes: e.target.value } : p))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); savePartial(s); }
+                        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setPartialEdit(null); }
+                      }}
+                    />
+                    <span>min</span>
+                    <button type="button" className="task-modal-save" onClick={() => savePartial(s)}>Save</button>
+                    <button type="button" className="task-modal-cancel" onClick={() => setPartialEdit(null)}>Cancel</button>
+                  </div>
+                ) : (
+                  <div className="cal-reconcile-actions">
+                    <button type="button" title="It happened as planned"
+                      onClick={() => toggleComplete(s)}>Done</button>
+                    <button type="button" title="Some of it happened — record the minutes"
+                      onClick={() => setPartialEdit({ sessionId: s.id, minutes: s.planned_minutes })}>
+                      Partial…
+                    </button>
+                    <button type="button" title="Move this session to tomorrow, same time"
+                      onClick={() => rescheduleSession(s, 1)}>Tmrw</button>
+                    <button type="button" title="It didn't happen — keep the record, return the effort to the backlog"
+                      onClick={() => skipSession(s)}>Skip</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Protected-window override (§8) — always permits scheduling. */}
+      {confirmAction && (
+        <div className="cal-confirm-overlay" onClick={() => setConfirmAction(null)}>
+          <div className="cal-popover cal-confirm" role="alertdialog" aria-label="Protected window"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="cal-popover-kicker">Protected window</div>
+            <div className="cal-popover-time">{confirmAction.message}</div>
+            <div className="cal-popover-actions">
+              <button type="button" className="task-modal-cancel"
+                onClick={() => setConfirmAction(null)}>Cancel</button>
+              <button type="button" className="task-modal-save"
+                onClick={() => {
+                  const go = confirmAction.onConfirm;
+                  setConfirmAction(null);
+                  go();
+                }}>Schedule anyway</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {editingTask && (
         <TaskModal

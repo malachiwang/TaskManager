@@ -239,6 +239,52 @@ def _enrich_task(row: dict, today: date) -> dict:
     return t
 
 
+def _attach_session_rollups(conn, tasks: list) -> list:
+    """Attach execution rollups (P13.0) to enriched task dicts.
+
+    Factual sums only — no scores, no inferred capacity:
+      logged_minutes             work recorded by completed/partial sessions
+                                 (actual_minutes; a completed session with no
+                                 actuals counts its planned duration)
+      scheduled_pending_minutes  planned minutes still sitting in 'scheduled'
+                                 sessions (past-due ones included until the
+                                 user reconciles them)
+      remaining_minutes          estimate − logged   (None without an estimate)
+      remaining_unscheduled_minutes
+                                 estimate − logged − pending (None without an
+                                 estimate) — what the drawer offers to place
+    """
+    if not tasks:
+        return tasks
+    rows = conn.execute(
+        """
+        SELECT task_id,
+               SUM(CASE
+                     WHEN status = 'completed' THEN COALESCE(actual_minutes,
+                          CAST(ROUND((julianday(planned_end) - julianday(planned_start)) * 1440) AS INTEGER))
+                     WHEN status = 'partial' THEN COALESCE(actual_minutes, 0)
+                     ELSE 0
+                   END) AS logged,
+               SUM(CASE
+                     WHEN status = 'scheduled' THEN
+                          CAST(ROUND((julianday(planned_end) - julianday(planned_start)) * 1440) AS INTEGER)
+                     ELSE 0
+                   END) AS pending
+        FROM task_sessions
+        GROUP BY task_id
+        """
+    ).fetchall()
+    agg = {r["task_id"]: (r["logged"] or 0, r["pending"] or 0) for r in rows}
+    for t in tasks:
+        logged, pending = agg.get(t["id"], (0, 0))
+        t["logged_minutes"] = logged
+        t["scheduled_pending_minutes"] = pending
+        est = t.get("estimated_minutes")
+        t["remaining_minutes"] = max(0, est - logged) if est else None
+        t["remaining_unscheduled_minutes"] = max(0, est - logged - pending) if est else None
+    return tasks
+
+
 def _capture_daily_snapshots(conn, snapshot_date: date) -> None:
     """
     Upsert one snapshot row per active task for snapshot_date.
@@ -352,9 +398,10 @@ def list_tasks(include_paused: bool = True):
     query += " ORDER BY t.display_order, t.id"
 
     rows = conn.execute(query).fetchall()
-    conn.close()
     today = date.today()
-    return [_enrich_task(dict(r), today) for r in rows]
+    out = _attach_session_rollups(conn, [_enrich_task(dict(r), today) for r in rows])
+    conn.close()
+    return out
 
 
 @app.get("/tasks/{task_id}")
@@ -371,10 +418,12 @@ def get_task(task_id: int):
         """,
         (task_id,),
     ).fetchone()
-    conn.close()
     if not row:
+        conn.close()
         raise HTTPException(status_code=404, detail="Task not found")
-    return _enrich_task(dict(row), date.today())
+    out = _attach_session_rollups(conn, [_enrich_task(dict(row), date.today())])[0]
+    conn.close()
+    return out
 
 
 @app.post("/tasks", status_code=201)
@@ -444,8 +493,9 @@ def create_task(
         "SELECT t.*, NULL AS latest_completion FROM tasks t WHERE t.id = ?",
         (task_id,),
     ).fetchone()
+    out = _attach_session_rollups(conn, [_enrich_task(dict(row), date.today())])[0]
     conn.close()
-    return _enrich_task(dict(row), date.today())
+    return out
 
 
 class TaskPatch(BaseModel):
@@ -625,8 +675,9 @@ def update_task(
         """,
         (task_id,),
     ).fetchone()
+    out = _attach_session_rollups(conn, [_enrich_task(dict(row), date.today())])[0]
     conn.close()
-    return _enrich_task(dict(row), date.today())
+    return out
 
 
 @app.delete("/tasks/{task_id}")
@@ -1280,15 +1331,63 @@ def _validate_window_fields(depth: int, start_minutes: int, end_minutes: int,
 def list_depth_windows():
     """All depth windows — one-off (date set) and recurring (weekday set).
 
-    The frontend expands recurring windows onto concrete dates; the table is
-    small enough that range filtering server-side buys nothing.
+    Recurring windows embed their per-day exceptions as skips: [dates] (P13.0);
+    the frontend expands recurrence onto concrete dates and drops skipped days.
+    The table is small enough that range filtering server-side buys nothing.
     """
     conn = get_connection()
     rows = conn.execute(
         "SELECT * FROM depth_windows ORDER BY COALESCE(date, ''), weekday, start_minutes"
     ).fetchall()
+    skip_rows = conn.execute(
+        "SELECT window_id, date FROM depth_window_skips ORDER BY date"
+    ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    skips: dict = defaultdict(list)
+    for s in skip_rows:
+        skips[s["window_id"]].append(s["date"])
+    out = []
+    for r in rows:
+        w = dict(r)
+        w["skips"] = skips.get(w["id"], [])
+        out.append(w)
+    return out
+
+
+class WindowSkipBody(BaseModel):
+    date: str
+
+
+@app.post("/depth-windows/{window_id}/skips", status_code=201)
+def create_depth_window_skip(window_id: int, body: WindowSkipBody):
+    """Exempt one date from a RECURRING window ("remove just this day").
+
+    One-off windows have no recurrence to except — delete the window instead
+    (422 here). Skipping the same date twice is idempotent.
+    """
+    _validate_iso_date(body.date, "date")
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM depth_windows WHERE id = ?", (window_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Depth window not found")
+    if row["weekday"] is None:
+        conn.close()
+        raise HTTPException(
+            status_code=422,
+            detail="Only recurring windows take day exceptions — delete the one-off window instead",
+        )
+    now = datetime.now().isoformat()
+    with conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO depth_window_skips (window_id, date, created_at) VALUES (?, ?, ?)",
+            (window_id, body.date, now),
+        )
+    dates = [r["date"] for r in conn.execute(
+        "SELECT date FROM depth_window_skips WHERE window_id = ? ORDER BY date", (window_id,)
+    ).fetchall()]
+    conn.close()
+    return {"window_id": window_id, "skips": dates}
 
 
 @app.post("/depth-windows", status_code=201)

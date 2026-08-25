@@ -449,6 +449,17 @@ export async function createDepthWindow(fields) {
   return res.json();
 }
 
+// Exempt one date from a recurring window ("remove just this day", P13.0).
+export async function skipDepthWindowDay(id, date) {
+  const res = await fetch(`${BASE}/depth-windows/${id}/skips`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ date }),
+  });
+  if (!res.ok) throw new Error(`skipDepthWindowDay failed: ${res.status}`);
+  return res.json();
+}
+
 export async function updateDepthWindow(id, fields) {
   const res = await fetch(`${BASE}/depth-windows/${id}`, {
     method: 'PATCH',

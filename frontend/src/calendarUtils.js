@@ -175,12 +175,25 @@ export function rangeLabel(dates) {
 // ---------------------------------------------------------------------------
 
 // Windows applying to one date: one-off rows matching the date plus recurring
-// rows matching its weekday.
+// rows matching its weekday, minus per-day exceptions (skips, P13.0).
 export function windowsOnDate(windows, dateIso) {
   const wd = weekdayOfIso(dateIso);
-  return windows.filter((w) =>
-    (w.date != null && w.date === dateIso) || (w.date == null && w.weekday === wd),
-  );
+  return windows.filter((w) => {
+    if (w.date != null) return w.date === dateIso;
+    if (w.weekday !== wd) return false;
+    return !(w.skips ?? []).includes(dateIso);
+  });
+}
+
+// Shift a planned "YYYY-MM-DDTHH:MM" by whole days, keeping the time of day.
+export function shiftPlannedDays(planned, deltaDays) {
+  return `${addDaysIso(plannedDate(planned), deltaDays)}T${planned.slice(11, 16)}`;
+}
+
+// Whole minutes between two planned datetimes (end - start, floor 0).
+export function plannedDiffMinutes(startPlanned, endPlanned) {
+  const ms = new Date(endPlanned) - new Date(startPlanned);
+  return Math.max(0, Math.round(ms / 60000));
 }
 
 // ---------------------------------------------------------------------------

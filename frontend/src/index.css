@@ -7629,3 +7629,243 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
   box-shadow: inset 0 0 0 2px var(--ink);
   background: var(--accent-soft);
 }
+
+/* -------------------------------------------------------------------------
+   Calendar execution layer (P13.0) — now state, reconciliation, capacity,
+   protected windows. Same restraint as the base calendar: thin markers,
+   token colors, no gamification.
+   ---------------------------------------------------------------------- */
+
+/* The session the current-time line is inside right now. */
+.cal-block.is-now {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+.cal-now-chip {
+  flex-shrink: 0;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: var(--accent);
+  color: #fff;
+  margin-right: 2px;
+}
+
+/* Partial: half-done marker keeps the day's record honest without hiding it. */
+.cal-block.is-partial { opacity: 0.8; }
+.cal-block.is-partial .cal-block-check {
+  color: var(--good);
+  border-color: var(--good);
+  background: transparent;
+}
+
+/* Skipped: displaced work stays visible as history, clearly de-emphasized. */
+.cal-block.is-skipped {
+  opacity: 0.4;
+  border-style: dashed;
+  border-left-style: solid;
+}
+
+/* Advisory depth-mismatch cue (D1 task sitting in a D3 window). */
+.cal-mismatch {
+  flex-shrink: 0;
+  width: 11px;
+  height: 11px;
+  line-height: 11px;
+  text-align: center;
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--caution-text, var(--urg-mid));
+  background: color-mix(in srgb, var(--urg-mid) 18%, transparent);
+  cursor: help;
+}
+
+/* Protected windows — slightly firmer edge, still background-quiet. */
+.cal-window.is-protected { border-left-width: 3px; }
+
+/* This-day-vs-series mini menu on recurring windows. */
+.cal-window-menu {
+  position: absolute;
+  top: 1px;
+  right: 3px;
+  pointer-events: auto;
+  display: inline-flex;
+  gap: 3px;
+  background: var(--bg-panel);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 1px 3px;
+  z-index: 5;
+}
+.cal-window-menu button {
+  font-family: inherit;
+  font-size: 9px;
+  border: none;
+  background: transparent;
+  color: var(--ink-2);
+  padding: 1px 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cal-window-menu button:hover { color: var(--urg-crit); }
+
+/* Popover additions */
+.cal-popover-warn {
+  font-size: 11px;
+  color: var(--caution-text, var(--urg-mid));
+  background: var(--caution-bg, transparent);
+  border: 1px solid var(--caution-border, var(--urg-mid));
+  border-radius: 3px;
+  padding: 4px 8px;
+}
+.cal-popover-actual { color: var(--muted); }
+.cal-popover-effort {
+  font-size: 11px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.cal-popover-actions--wrap {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+.cal-flag-btn {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 9px;
+  cursor: pointer;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  background: var(--bg-panel);
+  color: var(--muted);
+}
+.cal-flag-btn:hover { border-color: var(--accent); color: var(--ink-2); }
+.cal-flag-btn.is-active {
+  border-color: var(--ink-2);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* Inline partial-minutes editor (popover + reconciliation rows). */
+.cal-partial-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.cal-partial-input {
+  width: 64px;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Toolbar review chip — quiet amber until opened. */
+.cal-review-btn {
+  border-color: var(--caution-border, var(--urg-mid));
+  color: var(--caution-text, var(--urg-mid));
+}
+.cal-review-btn.is-active {
+  border-color: var(--caution-border, var(--urg-mid));
+  color: var(--caution-text, var(--urg-mid));
+}
+
+/* Capacity strip — one factual line under the toolbar. */
+.cal-capacity {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: center;
+  padding: 5px 14px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--rule);
+  font-size: 11px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.cal-capacity-chip strong {
+  font-weight: 700;
+  margin-right: 2px;
+}
+.cal-capacity-chip--d1 strong { color: var(--accent-blue-strong, var(--accent)); }
+.cal-capacity-chip--d2 strong { color: var(--good); }
+.cal-capacity-chip--d3 strong { color: var(--muted-2); }
+.cal-capacity-empty { color: var(--muted); font-style: italic; }
+
+/* Reconciliation panel — fixed under the toolbar's right side. */
+.cal-reconcile {
+  top: 96px;
+  right: 12px;
+  left: auto;
+  width: 360px;
+  max-height: min(60vh, 480px);
+  overflow-y: auto;
+}
+.cal-reconcile-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--hair);
+}
+.cal-reconcile-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.cal-reconcile-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cal-reconcile-time {
+  font-size: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.cal-reconcile-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.cal-reconcile-actions button {
+  font-family: inherit;
+  font-size: 10px;
+  padding: 2px 7px;
+  cursor: pointer;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  background: var(--bg-panel);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.cal-reconcile-actions button:hover { border-color: var(--accent); }
+
+/* Protected-window override confirm. */
+.cal-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(0, 0, 0, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cal-confirm {
+  position: static;
+  width: 340px;
+}
