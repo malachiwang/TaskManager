@@ -17,6 +17,8 @@ import {
   windowsOnDate, layoutBlocks, minutesToPx, pxToMinutes,
 } from '../calendarUtils.js';
 import TaskModal from './TaskModal.jsx';
+import CalendarEditor, { TimeRangeFields } from './CalendarEditor.jsx';
+import SectionCombobox from './SectionCombobox.jsx';
 
 // Pointer capture keeps a drag alive when the cursor leaves the grid. It is
 // an enhancement, not a requirement — synthetic events (tests, automation)
@@ -91,15 +93,9 @@ export default function CalendarView() {
   const [hideCompleted, setHideCompleted] = useState(
     () => localStorage.getItem('taskos-cal-hide-completed') === '1',
   );
-  const [showCapacity, setShowCapacity] = useState(
-    () => localStorage.getItem('taskos-cal-capacity') === '1',
-  );
   useEffect(() => {
     localStorage.setItem('taskos-cal-hide-completed', hideCompleted ? '1' : '0');
   }, [hideCompleted]);
-  useEffect(() => {
-    localStorage.setItem('taskos-cal-capacity', showCapacity ? '1' : '0');
-  }, [showCapacity]);
 
   // Reconciliation / confirmation surfaces (P13.0)
   const [reconcileOpen, setReconcileOpen] = useState(false);
@@ -119,7 +115,8 @@ export default function CalendarView() {
   }, []);
   const [creator, setCreator] = useState(null);
   const [selected, setSelected] = useState(null); // { sessionId, rect }
-  const [editingTask, setEditingTask] = useState(null);
+  const [editorSessionId, setEditorSessionId] = useState(null); // Calendar session editor (P13.1)
+  const [editingTask, setEditingTask] = useState(null); // full canonical TaskModal
   const [drawerOpen, setDrawerOpen] = useState(false);
   // Drawer drag uses HTML5 DnD; the dragged task lives in a ref for the same
   // reason as dragRef — drop can fire before any dragstart state would commit.
@@ -195,7 +192,9 @@ export default function CalendarView() {
 
   useEffect(() => {
     if (creator && creatorInputRef.current) creatorInputRef.current.focus();
-  }, [creator?.dateIso, creator?.startMin, creator?.kind]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Deliberately NOT keyed on start/end: editing the time fields re-renders
+    // the creator and must not yank focus back into the title/search input.
+  }, [creator?.dateIso, creator?.kind, creator?.tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function closeOverlays() {
     setCreator(null);
@@ -222,7 +221,7 @@ export default function CalendarView() {
     function onKey(e) {
       const tag = e.target.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable) return;
-      if (editingTask) return;
+      if (editingTask || editorSessionId) return;
       if (e.key === 'Escape') {
         updateDrag(null);
         closeOverlays();
@@ -233,14 +232,17 @@ export default function CalendarView() {
       if (k === 't') goToday();
       else if (k === 'w') setViewMode('week');
       else if (k === 'd') setViewMode('day');
-      else if (e.key === 'ArrowLeft') shiftPeriod(-1);
+      else if (k === 'e' && selected) {
+        // §14 — E edits the selected session in the Calendar editor.
+        setEditorSessionId(selected.sessionId);
+      } else if (e.key === 'ArrowLeft') shiftPeriod(-1);
       else if (e.key === 'ArrowRight') shiftPeriod(1);
       else return;
       e.preventDefault();
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [editingTask, goToday, shiftPeriod, updateDrag]);
+  }, [editingTask, editorSessionId, selected, goToday, shiftPeriod, updateDrag]);
 
   // ── Pointer → slot math ────────────────────────────────────────────────────
   const pointToSlot = useCallback((clientX, clientY) => {
@@ -318,11 +320,10 @@ export default function CalendarView() {
     if (!d) return;
     updateDrag(null);
     if (d.type === 'select' || d.type === 'window') {
+      // §2 — a plain click on empty space never opens creation; creating a
+      // scheduled block requires an intentional drag gesture.
+      if (!d.moved) return;
       let { startMin, endMin } = d;
-      if (!d.moved) {
-        startMin = d.anchorMin;
-        endMin = Math.min(DAY_MINUTES, startMin + DEFAULT_SESSION_MINUTES);
-      }
       if (endMin - startMin < MIN_SESSION_MINUTES) endMin = Math.min(DAY_MINUTES, startMin + MIN_SESSION_MINUTES);
       if (d.type === 'window') {
         setCreator({ kind: 'window', dateIso: d.dateIso, startMin, endMin, depth: 1, weekly: false, protected: false, saving: false, error: '' });
@@ -330,8 +331,11 @@ export default function CalendarView() {
         setCreator({
           kind: 'task',
           mode: d.quick ? 'inline' : 'popover',
+          tab: 'new',
           dateIso: d.dateIso, startMin, endMin,
-          title: '', depth: 0, saving: false, error: '',
+          title: '', section: 'General', category: '', depth: 0, priority: 5, isFixed: false,
+          search: '',
+          saving: false, error: '',
         });
       }
     } else if (d.type === 'move') {
@@ -592,19 +596,50 @@ export default function CalendarView() {
     try {
       const task = await createTask({
         name: title,
+        section: c.section?.trim() || 'General',
+        category: c.category ?? '',
         depth: c.depth || 0,
+        priority: Math.max(1, Math.min(10, Number(c.priority) || 5)),
         estimated_minutes: c.endMin - c.startMin,
       });
       await createSession({
         task_id: task.id,
         planned_start: combinePlanned(c.dateIso, c.startMin),
         planned_end: combinePlannedEnd(c.dateIso, c.endMin),
+        is_fixed: !!c.isFixed,
       });
       setCreator(null);
       await loadData();
     } catch (err) {
       setCreator((cc) => (cc ? { ...cc, saving: false, error: err?.message || 'Create failed.' } : cc));
     }
+  }
+
+  // Existing-task mode (§7/§33): schedules ONE new session for the chosen
+  // canonical task in the selected interval — never a duplicate task record.
+  async function scheduleExistingTask(task) {
+    const c = creator;
+    if (!c || c.saving) return;
+    const commit = async () => {
+      setCreator((cc) => (cc ? { ...cc, saving: true, error: '' } : cc));
+      try {
+        await createSession({
+          task_id: task.id,
+          planned_start: combinePlanned(c.dateIso, c.startMin),
+          planned_end: combinePlannedEnd(c.dateIso, c.endMin),
+        });
+        setCreator(null);
+        await loadData();
+      } catch (err) {
+        setCreator((cc) => (cc ? { ...cc, saving: false, error: err?.message || 'Schedule failed.' } : cc));
+      }
+    };
+    const conflict = protectedConflictAt(c.dateIso, c.startMin, c.endMin, task.depth);
+    if (conflict) {
+      confirmProtected(conflict, task.depth, task.name, commit);
+      return;
+    }
+    await commit();
   }
 
   async function commitCreateWindow() {
@@ -758,28 +793,23 @@ export default function CalendarView() {
     return [...byId.values()].sort((a, b) => (a.planned_start < b.planned_start ? -1 : 1));
   }, [recentSessions, sessions, upcomingSessions, nowStamp]);
 
-  // Capacity vs scheduled vs completed (§41/§42) — factual minute sums over
-  // the visible dates, per depth. User-declared windows only; no inference.
-  const capacity = useMemo(() => {
-    const res = {
-      1: { designated: 0, scheduled: 0, done: 0 },
-      2: { designated: 0, scheduled: 0, done: 0 },
-      3: { designated: 0, scheduled: 0, done: 0 },
-    };
-    for (const d of dates) {
-      for (const w of windowsOnDate(windows, d)) {
-        res[w.depth].designated += w.end_minutes - w.start_minutes;
+  // Existing-task selector candidates (§7) — active canonical tasks matching
+  // the search across name / section / category / depth ("d1" matches).
+  const existingTaskMatches = useMemo(() => {
+    if (!creator || creator.kind !== 'task' || creator.tab !== 'existing') return [];
+    const q = (creator.search ?? '').trim().toLowerCase();
+    const out = [];
+    for (const t of tasks) {
+      if (t.is_paused || t.is_ended) continue;
+      if (q) {
+        const hay = `${t.name} ${t.section ?? ''} ${t.category ?? ''} d${t.depth ?? ''}`.toLowerCase();
+        if (!hay.includes(q)) continue;
       }
+      out.push(t);
+      if (out.length >= 30) break;
     }
-    for (const s of sessions) {
-      const dep = s.task_depth;
-      if (!dep || s.status === 'skipped') continue;
-      res[dep].scheduled += s.planned_minutes;
-      if (s.status === 'completed') res[dep].done += s.actual_minutes ?? s.planned_minutes;
-      else if (s.status === 'partial') res[dep].done += s.actual_minutes ?? 0;
-    }
-    return res;
-  }, [dates, windows, sessions]);
+    return out;
+  }, [creator, tasks]);
 
   const unscheduledCount = unscheduledByDepth[1].length + unscheduledByDepth[2].length
     + unscheduledByDepth[3].length + unscheduledByDepth[0].length;
@@ -814,6 +844,19 @@ export default function CalendarView() {
     }
     if (dropPreview && dropPreview.dateIso === dateIso) {
       ghosts.push({ key: 'drop', cls: 'cal-ghost cal-ghost--move', startMin: dropPreview.startMin, endMin: dropPreview.endMin });
+    }
+    // §3 — the selected interval stays highlighted (with its exact times)
+    // while the creation UI is open, and tracks live edits to start/end.
+    if (creator && creator.dateIso === dateIso
+      && (creator.kind === 'window' || creator.mode === 'popover')) {
+      ghosts.push({
+        key: 'creator',
+        cls: creator.kind === 'window'
+          ? 'cal-ghost cal-ghost--window cal-ghost--pinned'
+          : 'cal-ghost cal-ghost--pinned',
+        startMin: creator.startMin,
+        endMin: creator.endMin,
+      });
     }
     return ghosts.map((g) => (
       <div
@@ -883,6 +926,7 @@ export default function CalendarView() {
           isNow ? 'is-now' : '',
           s.is_fixed ? 'is-fixed' : '',
           isDragSource ? 'is-drag-source' : '',
+          selected?.sessionId === s.id || editorSessionId === s.id ? 'is-selected' : '',
         ].filter(Boolean).join(' ')}
         style={{
           top: minutesToPx(item.startMin),
@@ -953,17 +997,21 @@ export default function CalendarView() {
         };
       }
     }
-    const style = popoverPosition(anchorRect, 320, creator.kind === 'window' ? 240 : 300);
+    const style = popoverPosition(anchorRect, creator.kind === 'window' ? 340 : 380, creator.kind === 'window' ? 330 : 430);
     const minutes = creator.endMin - creator.startMin;
 
     if (creator.kind === 'window') {
       return (
-        <div className="cal-popover" style={style} role="dialog" aria-label="New depth window">
+        <div className="cal-popover cal-creator" style={style} role="dialog" aria-label="New depth window">
           <div className="cal-popover-kicker">New Depth Window</div>
           <div className="cal-popover-time">
-            {fullDateLabel(creator.dateIso)}
-            <br />{formatTimeRange(creator.startMin, creator.endMin)} · {durationLabel(minutes)}
+            {fullDateLabel(creator.dateIso)} · {formatTimeRange(creator.startMin, creator.endMin)} · {durationLabel(minutes)}
           </div>
+          <TimeRangeFields
+            startMin={creator.startMin}
+            endMin={creator.endMin}
+            onChange={({ startMin, endMin }) => setCreator((c) => (c ? { ...c, startMin, endMin } : c))}
+          />
           <DepthSeg
             allowNone={false}
             value={creator.depth}
@@ -1000,46 +1048,172 @@ export default function CalendarView() {
       );
     }
 
+    const setTimes = ({ startMin, endMin }) =>
+      setCreator((c) => (c ? { ...c, startMin, endMin } : c));
+    const timeLine = `${fullDateLabel(creator.dateIso)} · ${formatTimeRange(creator.startMin, creator.endMin)} · ${durationLabel(creator.endMin - creator.startMin)}`;
+
     return (
-      <div className="cal-popover" style={style} role="dialog" aria-label="New task">
-        <div className="cal-popover-kicker">New Task</div>
-        <input
-          ref={creatorInputRef}
-          className="task-modal-input cal-popover-title"
-          placeholder="Task name…"
-          value={creator.title}
-          onChange={(e) => setCreator((c) => (c ? { ...c, title: e.target.value } : c))}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') { e.preventDefault(); commitCreateTask(); }
-            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setCreator(null); }
-          }}
-        />
-        <div className="cal-popover-time">
-          {fullDateLabel(creator.dateIso)} · {formatTimeRange(creator.startMin, creator.endMin)} · {durationLabel(minutes)}
-        </div>
-        <DepthSeg
-          value={creator.depth}
-          onChange={(d) => setCreator((c) => (c ? { ...c, depth: d } : c))}
-        />
-        <div className="cal-popover-hint">
-          Creates a real task record scheduled here. Tip: {QUICK_CREATE_HINT} on
-          empty time for instant inline creation; ⇧ drag for a depth window.
-        </div>
-        {(() => {
-          const pw = protectedConflictAt(creator.dateIso, creator.startMin, creator.endMin, creator.depth || null);
-          return pw ? (
-            <div className="cal-popover-warn">
-              This time sits in a protected D{pw.depth} window.
-            </div>
-          ) : null;
-        })()}
-        {creator.error && <div className="cal-popover-error" role="alert">{creator.error}</div>}
-        <div className="cal-popover-actions">
-          <button type="button" className="task-modal-cancel" onClick={() => setCreator(null)}>Cancel</button>
-          <button type="button" className="task-modal-save" onClick={commitCreateTask} disabled={creator.saving}>
-            {creator.saving ? 'Creating…' : 'Create task'}
+      <div className="cal-popover cal-creator" style={style} role="dialog" aria-label="Schedule this time">
+        {/* §6 — one selected interval, two intents. */}
+        <div className="cal-seg cal-creator-tabs" role="tablist" aria-label="Creation mode">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={creator.tab === 'new'}
+            className={`cal-seg-btn${creator.tab === 'new' ? ' is-active' : ''}`}
+            onClick={() => setCreator((c) => (c ? { ...c, tab: 'new', error: '' } : c))}
+          >
+            New task
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={creator.tab === 'existing'}
+            className={`cal-seg-btn${creator.tab === 'existing' ? ' is-active' : ''}`}
+            onClick={() => setCreator((c) => (c ? { ...c, tab: 'existing', error: '' } : c))}
+          >
+            Existing task
           </button>
         </div>
+        <div className="cal-popover-time">{timeLine}</div>
+        <TimeRangeFields
+          startMin={creator.startMin}
+          endMin={creator.endMin}
+          onChange={setTimes}
+        />
+
+        {creator.tab === 'new' ? (
+          <>
+            <input
+              ref={creatorInputRef}
+              className="task-modal-input cal-popover-title"
+              placeholder="Task name…"
+              value={creator.title}
+              onChange={(e) => setCreator((c) => (c ? { ...c, title: e.target.value } : c))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); commitCreateTask(); }
+                if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setCreator(null); }
+              }}
+            />
+            <div className="cal-creator-grid">
+              <label className="cal-creator-field">
+                <span>Section</span>
+                <SectionCombobox
+                  value={creator.section}
+                  onChange={(v) => setCreator((c) => (c ? { ...c, section: v } : c))}
+                  suggestions={sectionSuggestions}
+                  placeholder="General"
+                />
+              </label>
+              <label className="cal-creator-field">
+                <span>Category</span>
+                <input
+                  className="task-modal-input"
+                  value={creator.category}
+                  onChange={(e) => setCreator((c) => (c ? { ...c, category: e.target.value } : c))}
+                />
+              </label>
+            </div>
+            <div className="cal-creator-row">
+              <DepthSeg
+                value={creator.depth}
+                onChange={(d) => setCreator((c) => (c ? { ...c, depth: d } : c))}
+              />
+              <label className="cal-creator-priority">
+                <span>Priority</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={creator.priority}
+                  onChange={(e) => setCreator((c) => (c ? { ...c, priority: e.target.value } : c))}
+                />
+              </label>
+              <button
+                type="button"
+                className={`cal-flag-btn${creator.isFixed ? ' is-active' : ''}`}
+                aria-pressed={creator.isFixed}
+                title="Fixed sessions resist future automatic replanning"
+                onClick={() => setCreator((c) => (c ? { ...c, isFixed: !c.isFixed } : c))}
+              >
+                {creator.isFixed ? 'Fixed' : 'Flexible'}
+              </button>
+            </div>
+            <div className="cal-popover-hint">
+              Creates a real task record scheduled here. {QUICK_CREATE_HINT} for
+              instant inline creation · ⇧ drag for a depth window.
+            </div>
+            {(() => {
+              const pw = protectedConflictAt(creator.dateIso, creator.startMin, creator.endMin, creator.depth || null);
+              return pw ? (
+                <div className="cal-popover-warn">
+                  This time sits in a protected D{pw.depth} window.
+                </div>
+              ) : null;
+            })()}
+            {creator.error && <div className="cal-popover-error" role="alert">{creator.error}</div>}
+            <div className="cal-popover-actions">
+              <button type="button" className="task-modal-cancel" onClick={() => setCreator(null)}>Cancel</button>
+              <button type="button" className="task-modal-save" onClick={commitCreateTask} disabled={creator.saving}>
+                {creator.saving ? 'Creating…' : 'Create task'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <input
+              ref={creatorInputRef}
+              className="task-modal-input cal-popover-title"
+              placeholder="Search tasks — name, section, category, d1…"
+              value={creator.search}
+              onChange={(e) => setCreator((c) => (c ? { ...c, search: e.target.value } : c))}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setCreator(null); }
+                if (e.key === 'Enter' && existingTaskMatches.length === 1) {
+                  e.preventDefault();
+                  scheduleExistingTask(existingTaskMatches[0]);
+                }
+              }}
+            />
+            <div className="cal-task-picker" role="listbox" aria-label="Choose a task to schedule">
+              {existingTaskMatches.length === 0 && (
+                <div className="cal-task-picker-empty">No matching active tasks.</div>
+              )}
+              {existingTaskMatches.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="option"
+                  aria-selected="false"
+                  className={`cal-task-picker-row${t.depth ? ` cal-task-picker-row--d${t.depth}` : ''}`}
+                  title="Schedule this task in the selected interval"
+                  onClick={() => scheduleExistingTask(t)}
+                >
+                  <span className="cal-task-picker-name">{t.name}</span>
+                  <span className="cal-task-picker-meta">
+                    {[
+                      t.section && t.section !== 'General' ? t.section : null,
+                      t.depth ? `D${t.depth}` : null,
+                      t.estimated_minutes
+                        ? (t.remaining_minutes != null && t.remaining_minutes !== t.estimated_minutes
+                          ? `${durationLabel(t.remaining_minutes)} remaining`
+                          : durationLabel(t.estimated_minutes))
+                        : null,
+                    ].filter(Boolean).join(' · ') || '—'}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="cal-popover-hint">
+              Schedules a session for the chosen task — the task itself is never
+              duplicated.
+            </div>
+            {creator.error && <div className="cal-popover-error" role="alert">{creator.error}</div>}
+            <div className="cal-popover-actions">
+              <button type="button" className="task-modal-cancel" onClick={() => setCreator(null)}>Cancel</button>
+            </div>
+          </>
+        )}
       </div>
     );
   }
@@ -1166,10 +1340,10 @@ export default function CalendarView() {
             <button
               type="button"
               className="task-modal-cancel"
-              onClick={() => { setSelected(null); if (task) setEditingTask(task); }}
-              disabled={!task}
+              title="Edit this session and its task's scheduling fields (E)"
+              onClick={() => { setSelected(null); setEditorSessionId(s.id); }}
             >
-              Open task
+              Edit
             </button>
             <button
               type="button"
@@ -1187,15 +1361,21 @@ export default function CalendarView() {
 
   // ── Drawer ─────────────────────────────────────────────────────────────────
   function renderDrawer() {
-    if (!drawerOpen) return null;
     const groups = [
       [1, unscheduledByDepth[1]],
       [2, unscheduledByDepth[2]],
       [3, unscheduledByDepth[3]],
       [0, unscheduledByDepth[0]],
     ].filter(([, list]) => list.length > 0);
+    // Always mounted; open/close animates width (§22) and scroll position
+    // survives because nothing unmounts.
     return (
-      <aside className="cal-drawer" aria-label="Unscheduled tasks">
+      <aside
+        className={`cal-drawer${drawerOpen ? ' is-open' : ''}`}
+        aria-label="Unscheduled tasks"
+        aria-hidden={!drawerOpen}
+      >
+        <div className="cal-drawer-inner">
         <div className="cal-drawer-head">
           <span>Unscheduled</span>
           <span className="cal-drawer-count">{unscheduledCount}</span>
@@ -1238,6 +1418,7 @@ export default function CalendarView() {
             ))}
           </div>
         ))}
+        </div>
       </aside>
     );
   }
@@ -1297,15 +1478,6 @@ export default function CalendarView() {
           )}
           <button
             type="button"
-            className={`cal-nav-btn${showCapacity ? ' is-active' : ''}`}
-            aria-pressed={showCapacity}
-            title="Show designated depth-window time vs scheduled and completed work"
-            onClick={() => setShowCapacity((v) => !v)}
-          >
-            Depth
-          </button>
-          <button
-            type="button"
             className={`cal-nav-btn${hideCompleted ? ' is-active' : ''}`}
             aria-pressed={hideCompleted}
             title="Hide completed sessions (history is kept — this only filters the view)"
@@ -1324,30 +1496,6 @@ export default function CalendarView() {
         </div>
       </div>
 
-      {/* Capacity vs scheduled (§41/§42) — factual minutes, never a score. */}
-      {showCapacity && (
-        <div className="cal-capacity" aria-label="Depth capacity summary">
-          {[1, 2, 3].map((d) => {
-            const c = capacity[d];
-            if (!c.designated && !c.scheduled && !c.done) return null;
-            const beyond = c.designated > 0 ? c.scheduled - c.designated : 0;
-            return (
-              <span key={d} className={`cal-capacity-chip cal-capacity-chip--d${d}`}>
-                <strong>D{d}</strong>
-                {' '}windows {durationLabel(c.designated)}
-                {' '}· scheduled {durationLabel(c.scheduled)}
-                {' '}· completed {durationLabel(c.done)}
-                {beyond > 0 ? ` · ${durationLabel(beyond)} beyond windows` : ''}
-              </span>
-            );
-          })}
-          {![1, 2, 3].some((d) => capacity[d].designated || capacity[d].scheduled || capacity[d].done) && (
-            <span className="cal-capacity-empty">
-              No depth windows or depth-tagged sessions in view.
-            </span>
-          )}
-        </div>
-      )}
 
       <div className="cal-main">
         <div className="cal-scroll" ref={scrollRef}>
@@ -1384,7 +1532,7 @@ export default function CalendarView() {
               ))}
             </div>
             <div
-              className="cal-days"
+              className={`cal-days${viewMode === 'day' ? ' cal-days--day' : ''}`}
               ref={daysRef}
               onPointerDown={onGridPointerDown}
               onPointerMove={onGridPointerMove}
@@ -1547,6 +1695,32 @@ export default function CalendarView() {
           </div>
         </div>
       )}
+
+      {/* Calendar-native session editor (P13.1) — Grid-recurrence fields live
+          only in the full TaskModal behind "Open full task". */}
+      {editorSessionId && (() => {
+        const editorSession = sessions.find((x) => x.id === editorSessionId)
+          ?? recentSessions.find((x) => x.id === editorSessionId)
+          ?? upcomingSessions.find((x) => x.id === editorSessionId);
+        const editorTask = editorSession
+          ? tasks.find((t) => t.id === editorSession.task_id)
+          : null;
+        if (!editorSession || !editorTask) return null;
+        return (
+          <CalendarEditor
+            session={editorSession}
+            task={editorTask}
+            sectionSuggestions={sectionSuggestions}
+            onClose={() => setEditorSessionId(null)}
+            onOpenFullTask={() => {
+              setEditorSessionId(null);
+              setEditingTask(editorTask);
+            }}
+            onChanged={() => loadData()}
+            onCompleteSession={() => toggleComplete(editorSession)}
+          />
+        );
+      })()}
 
       {editingTask && (
         <TaskModal

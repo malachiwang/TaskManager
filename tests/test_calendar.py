@@ -512,6 +512,63 @@ class TestDepthWindowSkips:
         assert next(x for x in listed if x["id"] == w2["id"])["skips"] == []
 
 
+class TestSchedulingIntegrity:
+    """P13.1 (§33/§44) — scheduling through Calendar never duplicates tasks."""
+
+    def test_scheduling_existing_task_creates_session_only(self, client):
+        t = _make_task(client, name="Canonical", depth=1, estimated_minutes=120)
+        count_before = len(client.get("/tasks").json())
+        _make_session(client, t["id"])
+        assert len(client.get("/tasks").json()) == count_before
+        sessions = client.get("/sessions", params={"task_id": t["id"]}).json()
+        assert len(sessions) == 1
+        assert sessions[0]["task_id"] == t["id"]
+        assert sessions[0]["task_name"] == "Canonical"
+
+    def test_repeated_scheduling_never_duplicates(self, client):
+        t = _make_task(client, name="Multi", estimated_minutes=300)
+        for day in ("25", "26", "27"):
+            _make_session(client, t["id"],
+                          start=f"2026-08-{day}T09:00", end=f"2026-08-{day}T10:30")
+        tasks = client.get("/tasks").json()
+        assert [x["name"] for x in tasks].count("Multi") == 1
+        assert len(client.get("/sessions", params={"task_id": t["id"]}).json()) == 3
+
+    def test_session_edits_preserve_canonical_identity(self, client):
+        t = _make_task(client, name="Identity", section="School", depth=2)
+        s = _make_session(client, t["id"])
+        client.patch(f"/sessions/{s['id']}", json={
+            "planned_start": "2026-08-26T10:00", "planned_end": "2026-08-26T11:00",
+            "is_fixed": True,
+        })
+        got = client.get(f"/tasks/{t['id']}").json()
+        assert got["name"] == "Identity"
+        assert got["section"] == "School"
+        assert got["depth"] == 2
+
+    def test_deleting_session_never_deletes_task(self, client):
+        t = _make_task(client, name="Survivor")
+        s = _make_session(client, t["id"])
+        client.delete(f"/sessions/{s['id']}")
+        assert client.get(f"/tasks/{t['id']}").status_code == 200
+
+    def test_protected_window_persists_across_restart(self, tmp_path, monkeypatch):
+        import backend.database as db_module
+        from starlette.testclient import TestClient as _TC
+        test_db = tmp_path / "protected.db"
+        monkeypatch.setattr(db_module, "DB_PATH", test_db)
+        from backend.main import app as _app
+        with _TC(_app) as c:
+            c.post("/depth-windows", json={
+                "depth": 1, "weekday": 1, "start_minutes": 540,
+                "end_minutes": 690, "protected": True,
+            })
+        with _TC(_app) as c2:
+            listed = c2.get("/depth-windows").json()
+            assert listed[0]["protected"] == 1
+            assert listed[0]["weekday"] == 1
+
+
 class TestExistingBehaviorPreserved:
     def test_task_endpoints_unchanged_without_calendar_fields(self, client):
         # A task created the pre-calendar way still round-trips identically.
