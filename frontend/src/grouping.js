@@ -72,25 +72,58 @@ function groupMeta(tasks) {
 // Groups tasks by the given mode.
 // Returns GroupedSection[]:
 //   { key: string, label: string|null, tasks: Task[], pausedCount: number, avgUrgency: number|null }
+// SECTION-mode groups additionally carry sectionName — the backend section
+// string ('' for the blank group), for reorder/move API calls.
 //
 // label === null signals None mode — the render loop suppresses the divider row.
-export function groupTasks(tasks, groupMode) {
+//
+// options (SECTION mode only, P12.1):
+//   sectionOrder:         array of backend section names ('' = blank) in the
+//                         user's persisted order. Groups follow this order;
+//                         sections not in the list append in encounter order.
+//                         null → legacy encounter order.
+//   includeEmptySections: also emit zero-task groups for sectionOrder entries
+//                         with no (visible) tasks, so empty sections stay
+//                         rendered and droppable.
+export function groupTasks(tasks, groupMode, options = {}) {
   switch (groupMode) {
 
     case GROUP_MODES.SECTION: {
-      // Preserve current behavior exactly — encounter order, blank → '(no section)'.
+      const { sectionOrder = null, includeEmptySections = false } = options;
       const map = new Map();
       for (const task of tasks) {
         const key = task.section?.trim() || '(no section)';
         if (!map.has(key)) map.set(key, []);
         map.get(key).push(task);
       }
-      return Array.from(map.entries()).map(([key, group]) => ({
+      const toGroup = (key, sectionName, group) => ({
         key,
         label: key,
+        sectionName,
         tasks: group,
         ...groupMeta(group),
-      }));
+      });
+      if (!sectionOrder) {
+        return Array.from(map.entries()).map(([key, group]) =>
+          toGroup(key, key === '(no section)' ? '' : key, group));
+      }
+      const out = [];
+      for (const name of sectionOrder) {
+        const key = (name || '').trim() || '(no section)';
+        if (map.has(key)) {
+          out.push(toGroup(key, name, map.get(key)));
+          map.delete(key);
+        } else if (includeEmptySections) {
+          out.push(toGroup(key, name, []));
+        }
+      }
+      // Sections seen on tasks but not (yet) in the persisted order — e.g. a
+      // brand-new section before the next /sections refetch — append at the
+      // end, mirroring the backend's append-on-registration behavior.
+      for (const [key, group] of map.entries()) {
+        out.push(toGroup(key, key === '(no section)' ? '' : key, group));
+      }
+      return out;
     }
 
     case GROUP_MODES.CATEGORY: {

@@ -86,6 +86,27 @@ def _normalize_date_override(value: Optional[str]) -> Optional[str]:
     return None
 
 
+def _normalize_depth(value: Optional[int]) -> Optional[int]:
+    """Validate cognitive depth (P12.0). None/0 → NULL (no depth); 1–3 pass
+    through; anything else is a 422. 0 is the explicit "clear" sentinel so the
+    query-parameter interface can unset depth."""
+    if value is None or value == 0:
+        return None
+    if value not in (1, 2, 3):
+        raise HTTPException(status_code=422, detail="depth must be 1, 2, or 3")
+    return value
+
+
+def _normalize_estimate(value: Optional[int]) -> Optional[int]:
+    """Validate estimated_minutes (P12.0). None/0 → NULL; positive minutes pass
+    through; negatives are a 422."""
+    if value is None or value == 0:
+        return None
+    if value < 0:
+        raise HTTPException(status_code=422, detail="estimated_minutes must be >= 0")
+    return value
+
+
 # ---------------------------------------------------------------------------
 # Hiatus periods (P11.0)
 #
@@ -367,20 +388,32 @@ def create_task(
     status: str = "active",
     notes: str = "",
     manual_last_done_override: Optional[str] = None,
-    display_order: int = 0,
+    display_order: Optional[int] = None,
     active_from: Optional[str] = None,
     end_date: Optional[str] = None,
+    depth: Optional[int] = None,
+    estimated_minutes: Optional[int] = None,
 ):
     if not 1 <= priority <= 10:
         raise HTTPException(status_code=422, detail="Priority must be between 1 and 10")
     if interval_days < 1:
         raise HTTPException(status_code=422, detail="interval_days must be >= 1")
+    depth_val = _normalize_depth(depth)
+    estimate_val = _normalize_estimate(estimated_minutes)
 
     norm_status = _normalize_status(status)
     is_paused_val = 1 if norm_status == 'hiatus' else 0
     paused_at_val = datetime.now().isoformat() if is_paused_val else None
     conn = get_connection()
     today_str = date.today().isoformat()
+    # Append at the end by default (P12.1). The old default of 0 sorted every
+    # new task to the front of the global list, which also yanked its section
+    # to the top of the grid (section order was derived from task encounter
+    # order). New records must never rearrange what the user already placed.
+    if display_order is None:
+        display_order = conn.execute(
+            "SELECT COALESCE(MAX(display_order), -1) + 1 FROM tasks WHERE is_active = 1"
+        ).fetchone()[0]
     active_from_val = _normalize_date_override(active_from) or today_str
     manual_override_val = _normalize_date_override(manual_last_done_override)
     end_date_val = _normalize_date_override(end_date)
@@ -390,16 +423,19 @@ def create_task(
             INSERT INTO tasks (
                 name, section, category, subtask, priority, interval_days,
                 status, notes, created_at, is_active, is_paused, paused_at,
-                manual_last_done_override, display_order, active_from, end_date
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
+                manual_last_done_override, display_order, active_from, end_date,
+                depth, estimated_minutes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 name, section, category, subtask, priority, interval_days,
                 norm_status, notes, today_str, is_paused_val, paused_at_val,
                 manual_override_val, display_order, active_from_val, end_date_val,
+                depth_val, estimate_val,
             ),
         )
         task_id = cursor.lastrowid
+        _ensure_section_registered(conn, section)
         # A task created directly on hiatus starts an open interval today.
         if norm_status == 'hiatus':
             _open_hiatus_period(conn, task_id, today_str)
@@ -431,6 +467,8 @@ class TaskPatch(BaseModel):
     interval_days: Optional[int] = None
     active_from: Optional[str] = None
     end_date: Optional[str] = None
+    depth: Optional[int] = None
+    estimated_minutes: Optional[int] = None
 
 
 @app.patch("/tasks/{task_id}")
@@ -449,6 +487,8 @@ def update_task(
     interval_days: Optional[int] = None,
     active_from: Optional[str] = None,
     end_date: Optional[str] = None,
+    depth: Optional[int] = None,
+    estimated_minutes: Optional[int] = None,
     # ── optional JSON body (new; query params take priority when both present) ─
     body: Optional[TaskPatch] = Body(default=None),
 ):
@@ -480,6 +520,11 @@ def update_task(
             # null in JSON means "clear end_date".  Map to "" so the handler's
             # _normalize_date_override("") → None path fires and writes NULL.
             end_date = body.end_date if body.end_date is not None else ""
+        if depth is None and "depth" in bset:
+            # null in JSON means "clear depth" — 0 is the clear sentinel.
+            depth = body.depth if body.depth is not None else 0
+        if estimated_minutes is None and "estimated_minutes" in bset:
+            estimated_minutes = body.estimated_minutes if body.estimated_minutes is not None else 0
 
     conn = get_connection()
     existing = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
@@ -493,6 +538,12 @@ def update_task(
     if interval_days is not None and interval_days < 1:
         conn.close()
         raise HTTPException(status_code=422, detail="interval_days must be >= 1")
+    try:
+        depth_val = _normalize_depth(depth)
+        estimate_val = _normalize_estimate(estimated_minutes)
+    except HTTPException:
+        conn.close()
+        raise
 
     # Build update map with only the fields that were provided
     updates: dict = {}
@@ -527,6 +578,10 @@ def update_task(
         updates["interval_days"] = interval_days
     if active_from is not None:
         updates["active_from"] = _normalize_date_override(active_from)
+    if depth is not None:
+        updates["depth"] = depth_val
+    if estimated_minutes is not None:
+        updates["estimated_minutes"] = estimate_val
 
     # end_date: normalize and track the resolved value for completion cleanup.
     end_date_val: Optional[str] = None
@@ -540,6 +595,8 @@ def update_task(
         values = list(updates.values()) + [task_id]
         with conn:
             conn.execute(f"UPDATE tasks SET {set_clause} WHERE id = ?", values)
+            if "section" in updates:
+                _ensure_section_registered(conn, updates["section"])
             # When a non-null end_date is set, delete completions after it.
             # Completions on end_date are preserved (completion_date > end_date_val).
             if end_date is not None and end_date_val is not None:
@@ -592,22 +649,38 @@ def delete_task(task_id: int):
     return {"deleted": task_id}
 
 
+class SectionAssignment(BaseModel):
+    id: int
+    section: str
+
+
 class ReorderBody(BaseModel):
     order: list[int]
+    # Optional cross-section moves (P12.1) applied in the SAME transaction as
+    # the ordering write, so a drag that changes both a task's section and its
+    # position never persists a half-applied state.
+    section_updates: Optional[list[SectionAssignment]] = None
 
 
 @app.post("/tasks/reorder", status_code=200)
 def reorder_tasks(body: ReorderBody):
-    """Set display_order for tasks in bulk.
+    """Set display_order for tasks in bulk, optionally with section moves.
 
     Accepts an ordered list of task IDs.  Each task's display_order is set to
     its index in the list (0-based).  Tasks not included in the list are
-    unchanged.
+    unchanged.  section_updates entries reassign a task's section atomically
+    with the reorder (used by cross-section drag and drop).
     """
-    if not body.order:
+    if not body.order and not body.section_updates:
         return {"reordered": 0}
     conn = get_connection()
     with conn:
+        for su in body.section_updates or []:
+            conn.execute(
+                "UPDATE tasks SET section = ? WHERE id = ? AND is_active = 1",
+                (su.section.strip(), su.id),
+            )
+            _ensure_section_registered(conn, su.section)
         for i, task_id in enumerate(body.order):
             conn.execute(
                 "UPDATE tasks SET display_order = ? WHERE id = ? AND is_active = 1",
@@ -615,6 +688,179 @@ def reorder_tasks(body: ReorderBody):
             )
     conn.close()
     return {"reordered": len(body.order)}
+
+
+# ---------------------------------------------------------------------------
+# Sections (P12.1) — persisted manual section ordering
+#
+# Sections themselves are still strings on tasks (no section entity/foreign
+# key — additive change only). The section_order table records the user's
+# manual arrangement; it is the single authority for section display order.
+# Task mutations (create/complete/reorder/move) never touch it, so ordinary
+# actions can no longer make sections appear to move.
+# ---------------------------------------------------------------------------
+
+
+def _ensure_section_registered(conn, raw_name: Optional[str]) -> None:
+    """Give a section an ordering row the moment it first appears on a task
+    (create / edit / cross-section move), appended at the end. Eager
+    registration means a section keeps its place even if it is emptied before
+    any /sections read happens; _sync_section_order remains as self-heal for
+    pre-P12.1 data."""
+    name = (raw_name or "").strip()
+    if conn.execute("SELECT id FROM section_order WHERE name = ?", (name,)).fetchone():
+        return
+    next_pos = conn.execute(
+        "SELECT COALESCE(MAX(position), -1) + 1 FROM section_order"
+    ).fetchone()[0]
+    now = datetime.now().isoformat()
+    conn.execute(
+        "INSERT INTO section_order (name, position, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?)",
+        (name, next_pos, now, now),
+    )
+
+
+def _sync_section_order(conn) -> list[dict]:
+    """Self-healing read: every section present on an active task gets an
+    ordering row (appended at the end, encounter order). Existing rows are
+    never repositioned or pruned here — empty sections stay listed so they
+    remain valid drop targets across reloads."""
+    rows = conn.execute(
+        "SELECT * FROM section_order ORDER BY position, id"
+    ).fetchall()
+    known = {r["name"] for r in rows}
+    next_pos = max((r["position"] for r in rows), default=-1) + 1
+    task_rows = conn.execute(
+        "SELECT section FROM tasks WHERE is_active = 1 ORDER BY display_order, id"
+    ).fetchall()
+    now = datetime.now().isoformat()
+    added = False
+    for tr in task_rows:
+        name = (tr["section"] or "").strip()
+        if name in known:
+            continue
+        known.add(name)
+        conn.execute(
+            "INSERT INTO section_order (name, position, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?)",
+            (name, next_pos, now, now),
+        )
+        next_pos += 1
+        added = True
+    if added:
+        conn.commit()
+        rows = conn.execute(
+            "SELECT * FROM section_order ORDER BY position, id"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+class SectionReorderBody(BaseModel):
+    order: list[str]
+
+
+class SectionRenameBody(BaseModel):
+    old: str
+    new: str
+
+
+@app.get("/sections")
+def list_sections():
+    """Ordered section list. name '' is the blank/'(no section)' group."""
+    conn = get_connection()
+    out = _sync_section_order(conn)
+    conn.close()
+    return out
+
+
+@app.post("/sections/reorder", status_code=200)
+def reorder_sections(body: SectionReorderBody):
+    """Persist a manual section arrangement.
+
+    Listed names get positions 0..n-1 in the given order. Names not listed
+    (e.g. hidden by an active filter when the drag happened) keep their
+    previous relative order after the listed ones. Unknown names are ignored.
+    """
+    conn = get_connection()
+    rows = conn.execute("SELECT * FROM section_order ORDER BY position, id").fetchall()
+    by_name = {r["name"]: r for r in rows}
+    now = datetime.now().isoformat()
+    listed = []
+    seen = set()
+    for raw in body.order:
+        name = raw.strip()
+        if name in by_name and name not in seen:
+            seen.add(name)
+            listed.append(by_name[name])
+    trailing = [r for r in rows if r["name"] not in seen]
+    with conn:
+        for pos, r in enumerate(listed + trailing):
+            conn.execute(
+                "UPDATE section_order SET position = ?, updated_at = ? WHERE id = ?",
+                (pos, now, r["id"]),
+            )
+    out = conn.execute("SELECT * FROM section_order ORDER BY position, id").fetchall()
+    conn.close()
+    return [dict(r) for r in out]
+
+
+@app.post("/sections/rename", status_code=200)
+def rename_section(body: SectionRenameBody):
+    """Rename a section everywhere: ordering row + every task carrying it.
+
+    The section keeps its id and position — a renamed section is the same
+    section in the same place. Renaming onto an existing section is rejected
+    (merging is a separate, deliberate operation)."""
+    old = body.old.strip()
+    new = body.new.strip()
+    if not new:
+        raise HTTPException(status_code=422, detail="New section name must not be blank")
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM section_order WHERE name = ?", (old,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Section not found")
+    if new == old:
+        conn.close()
+        return dict(row)
+    if conn.execute("SELECT id FROM section_order WHERE name = ?", (new,)).fetchone():
+        conn.close()
+        raise HTTPException(status_code=409, detail="A section with that name already exists")
+    now = datetime.now().isoformat()
+    with conn:
+        conn.execute(
+            "UPDATE section_order SET name = ?, updated_at = ? WHERE id = ?",
+            (new, now, row["id"]),
+        )
+        conn.execute("UPDATE tasks SET section = ? WHERE TRIM(section) = ?", (new, old))
+    updated = conn.execute("SELECT * FROM section_order WHERE id = ?", (row["id"],)).fetchone()
+    conn.close()
+    return dict(updated)
+
+
+@app.delete("/sections")
+def delete_section_order(name: str):
+    """Drop an EMPTY section from the ordering list (name via query param so
+    names containing '/' work). Sections still referenced by an active task
+    are refused — removing a populated section is not a thing; move or delete
+    its tasks first."""
+    key = name.strip()
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM section_order WHERE name = ?", (key,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Section not found")
+    in_use = conn.execute(
+        "SELECT id FROM tasks WHERE TRIM(section) = ? AND is_active = 1 LIMIT 1", (key,)
+    ).fetchone()
+    if in_use:
+        conn.close()
+        raise HTTPException(status_code=409, detail="Section still has tasks")
+    with conn:
+        conn.execute("DELETE FROM section_order WHERE id = ?", (row["id"],))
+    conn.close()
+    return {"deleted": key}
 
 
 # ---------------------------------------------------------------------------
@@ -779,6 +1025,347 @@ def delete_task_hiatus_period(period_id: int):
         conn.execute("DELETE FROM task_hiatus_periods WHERE id = ?", (period_id,))
     conn.close()
     return {"deleted": period_id}
+
+
+# ---------------------------------------------------------------------------
+# Calendar (P12.0) — task sessions + depth windows
+#
+# Sessions are scheduled allocations of time toward a task ("one record,
+# multiple views"): the Calendar renders sessions, but the task itself stays
+# the single canonical record. Session completion is distinct from task
+# completion — completing a session never writes the completions table here;
+# the frontend pairs a session status change with the existing completion
+# endpoints so the grid's completion_count semantics stay untouched.
+#
+# Times are local-naive "YYYY-MM-DDTHH:MM" strings (no timezone — this is a
+# strictly local, single-machine app), so SQLite range filtering is plain
+# lexicographic comparison.
+# ---------------------------------------------------------------------------
+
+_SESSION_STATUSES = frozenset({"scheduled", "completed", "partial", "skipped"})
+
+
+def _validate_planned_time(value: str, field: str) -> str:
+    """Validate and normalize a planned time to 'YYYY-MM-DDTHH:MM'."""
+    try:
+        return datetime.fromisoformat(value).strftime("%Y-%m-%dT%H:%M")
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=422,
+            detail=f"{field} must be an ISO datetime (YYYY-MM-DDTHH:MM)",
+        )
+
+
+def _session_minutes(start_iso: str, end_iso: str) -> int:
+    delta = datetime.fromisoformat(end_iso) - datetime.fromisoformat(start_iso)
+    return int(delta.total_seconds() // 60)
+
+
+_SESSION_SELECT = """
+    SELECT s.*,
+           t.name              AS task_name,
+           t.section           AS task_section,
+           t.category          AS task_category,
+           t.priority          AS task_priority,
+           t.depth             AS task_depth,
+           t.estimated_minutes AS task_estimated_minutes,
+           t.status            AS task_status,
+           t.is_paused         AS task_is_paused
+    FROM task_sessions s
+    JOIN tasks t ON t.id = s.task_id
+    WHERE t.is_active = 1
+"""
+
+
+def _session_dict(row) -> dict:
+    s = dict(row)
+    s["planned_minutes"] = _session_minutes(s["planned_start"], s["planned_end"])
+    return s
+
+
+class SessionBody(BaseModel):
+    task_id: int
+    planned_start: str
+    planned_end: str
+    is_fixed: bool = False
+
+
+class SessionPatch(BaseModel):
+    planned_start: Optional[str] = None
+    planned_end: Optional[str] = None
+    status: Optional[str] = None
+    is_fixed: Optional[bool] = None
+    actual_start: Optional[str] = None
+    actual_end: Optional[str] = None
+    actual_minutes: Optional[int] = None
+
+
+@app.get("/sessions")
+def list_sessions(
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    task_id: Optional[int] = None,
+):
+    """List sessions overlapping [start, end] (ISO dates) and/or for one task.
+
+    Sessions on soft-deleted tasks are excluded — the JOIN keeps the calendar
+    consistent with the grid without hard-deleting session history.
+    """
+    if task_id is None and not (start and end):
+        raise HTTPException(status_code=422, detail="Provide task_id or start+end")
+    query = _SESSION_SELECT
+    params: list = []
+    if task_id is not None:
+        query += " AND s.task_id = ?"
+        params.append(task_id)
+    if start and end:
+        _validate_iso_date(start, "start")
+        _validate_iso_date(end, "end")
+        query += " AND s.planned_start <= ? AND s.planned_end >= ?"
+        params.extend([end + "T23:59", start + "T00:00"])
+    query += " ORDER BY s.planned_start, s.id"
+    conn = get_connection()
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return [_session_dict(r) for r in rows]
+
+
+@app.post("/sessions", status_code=201)
+def create_session(body: SessionBody):
+    start_iso = _validate_planned_time(body.planned_start, "planned_start")
+    end_iso = _validate_planned_time(body.planned_end, "planned_end")
+    if end_iso <= start_iso:
+        raise HTTPException(status_code=422, detail="planned_end must be after planned_start")
+    conn = get_connection()
+    task = conn.execute(
+        "SELECT id FROM tasks WHERE id = ? AND is_active = 1", (body.task_id,)
+    ).fetchone()
+    if not task:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Task not found")
+    now = datetime.now().isoformat()
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO task_sessions (task_id, planned_start, planned_end, is_fixed, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (body.task_id, start_iso, end_iso, int(body.is_fixed), now, now),
+        )
+        session_id = cur.lastrowid
+    row = conn.execute(_SESSION_SELECT + " AND s.id = ?", (session_id,)).fetchone()
+    conn.close()
+    return _session_dict(row)
+
+
+@app.patch("/sessions/{session_id}")
+def update_session(session_id: int, body: SessionPatch):
+    """Update a session. Rescheduling edits planned_*; reconciliation edits
+    status/actual_*. Planned history is never rewritten implicitly — only an
+    explicit planned_start/planned_end in the request changes it."""
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM task_sessions WHERE id = ?", (session_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Session not found")
+    session = dict(row)
+
+    updates: dict = {}
+    try:
+        new_start = session["planned_start"]
+        new_end = session["planned_end"]
+        if body.planned_start is not None:
+            new_start = _validate_planned_time(body.planned_start, "planned_start")
+            updates["planned_start"] = new_start
+        if body.planned_end is not None:
+            new_end = _validate_planned_time(body.planned_end, "planned_end")
+            updates["planned_end"] = new_end
+        if new_end <= new_start:
+            raise HTTPException(status_code=422, detail="planned_end must be after planned_start")
+        if body.status is not None:
+            if body.status not in _SESSION_STATUSES:
+                raise HTTPException(
+                    status_code=422,
+                    detail="status must be scheduled, completed, partial, or skipped",
+                )
+            updates["status"] = body.status
+        if body.is_fixed is not None:
+            updates["is_fixed"] = int(body.is_fixed)
+        # actual_* accept '' to clear back to NULL (mirrors end_date handling).
+        if body.actual_start is not None:
+            updates["actual_start"] = (
+                _validate_planned_time(body.actual_start, "actual_start")
+                if body.actual_start else None
+            )
+        if body.actual_end is not None:
+            updates["actual_end"] = (
+                _validate_planned_time(body.actual_end, "actual_end")
+                if body.actual_end else None
+            )
+        if body.actual_minutes is not None:
+            if body.actual_minutes < 0:
+                raise HTTPException(status_code=422, detail="actual_minutes must be >= 0")
+            updates["actual_minutes"] = body.actual_minutes or None
+    except HTTPException:
+        conn.close()
+        raise
+
+    if updates:
+        updates["updated_at"] = datetime.now().isoformat()
+        set_clause = ", ".join(f"{col} = ?" for col in updates)
+        with conn:
+            conn.execute(
+                f"UPDATE task_sessions SET {set_clause} WHERE id = ?",
+                list(updates.values()) + [session_id],
+            )
+    updated = conn.execute(_SESSION_SELECT + " AND s.id = ?", (session_id,)).fetchone()
+    conn.close()
+    if not updated:
+        # Task went inactive between the existence check and the re-read.
+        raise HTTPException(status_code=404, detail="Session not found")
+    return _session_dict(updated)
+
+
+@app.delete("/sessions/{session_id}")
+def delete_session(session_id: int):
+    """Remove a session. The underlying task and its completions are untouched."""
+    conn = get_connection()
+    row = conn.execute("SELECT id FROM task_sessions WHERE id = ?", (session_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Session not found")
+    with conn:
+        conn.execute("DELETE FROM task_sessions WHERE id = ?", (session_id,))
+    conn.close()
+    return {"deleted": session_id}
+
+
+class DepthWindowBody(BaseModel):
+    depth: int
+    start_minutes: int
+    end_minutes: int
+    date: Optional[str] = None
+    weekday: Optional[int] = None
+    protected: bool = False
+
+
+class DepthWindowPatch(BaseModel):
+    depth: Optional[int] = None
+    start_minutes: Optional[int] = None
+    end_minutes: Optional[int] = None
+    date: Optional[str] = None
+    weekday: Optional[int] = None
+    protected: Optional[bool] = None
+
+
+def _validate_window_fields(depth: int, start_minutes: int, end_minutes: int,
+                            date_iso: Optional[str], weekday: Optional[int]) -> None:
+    if depth not in (1, 2, 3):
+        raise HTTPException(status_code=422, detail="depth must be 1, 2, or 3")
+    if not (0 <= start_minutes < end_minutes <= 1440):
+        raise HTTPException(
+            status_code=422,
+            detail="start_minutes/end_minutes must satisfy 0 <= start < end <= 1440",
+        )
+    if (date_iso is None) == (weekday is None):
+        raise HTTPException(
+            status_code=422,
+            detail="Provide exactly one of date (one-off) or weekday (recurring)",
+        )
+    if date_iso is not None:
+        _validate_iso_date(date_iso, "date")
+    if weekday is not None and not 0 <= weekday <= 6:
+        raise HTTPException(status_code=422, detail="weekday must be 0 (Mon) … 6 (Sun)")
+
+
+@app.get("/depth-windows")
+def list_depth_windows():
+    """All depth windows — one-off (date set) and recurring (weekday set).
+
+    The frontend expands recurring windows onto concrete dates; the table is
+    small enough that range filtering server-side buys nothing.
+    """
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM depth_windows ORDER BY COALESCE(date, ''), weekday, start_minutes"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.post("/depth-windows", status_code=201)
+def create_depth_window(body: DepthWindowBody):
+    _validate_window_fields(body.depth, body.start_minutes, body.end_minutes,
+                            body.date, body.weekday)
+    now = datetime.now().isoformat()
+    conn = get_connection()
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO depth_windows (depth, date, weekday, start_minutes, end_minutes, protected, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (body.depth, body.date, body.weekday, body.start_minutes,
+             body.end_minutes, int(body.protected), now, now),
+        )
+        window_id = cur.lastrowid
+    row = conn.execute("SELECT * FROM depth_windows WHERE id = ?", (window_id,)).fetchone()
+    conn.close()
+    return dict(row)
+
+
+@app.patch("/depth-windows/{window_id}")
+def update_depth_window(window_id: int, body: DepthWindowPatch):
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM depth_windows WHERE id = ?", (window_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Depth window not found")
+    window = dict(row)
+
+    bset = body.model_fields_set
+    new_depth = body.depth if body.depth is not None else window["depth"]
+    new_start = body.start_minutes if body.start_minutes is not None else window["start_minutes"]
+    new_end = body.end_minutes if body.end_minutes is not None else window["end_minutes"]
+    # date/weekday: sending one switches the window's mode to it; '' clears a
+    # date only if a weekday is supplied in the same request (and vice versa),
+    # enforced by the exactly-one validation below.
+    new_date = window["date"]
+    new_weekday = window["weekday"]
+    if "date" in bset:
+        new_date = body.date or None
+    if "weekday" in bset:
+        new_weekday = body.weekday
+    if "date" in bset and body.date and "weekday" not in bset:
+        new_weekday = None
+    if "weekday" in bset and body.weekday is not None and "date" not in bset:
+        new_date = None
+    try:
+        _validate_window_fields(new_depth, new_start, new_end, new_date, new_weekday)
+    except HTTPException:
+        conn.close()
+        raise
+
+    with conn:
+        conn.execute(
+            "UPDATE depth_windows SET depth = ?, date = ?, weekday = ?, start_minutes = ?, "
+            "end_minutes = ?, protected = ?, updated_at = ? WHERE id = ?",
+            (new_depth, new_date, new_weekday, new_start, new_end,
+             int(body.protected if body.protected is not None else window["protected"]),
+             datetime.now().isoformat(), window_id),
+        )
+    updated = conn.execute("SELECT * FROM depth_windows WHERE id = ?", (window_id,)).fetchone()
+    conn.close()
+    return dict(updated)
+
+
+@app.delete("/depth-windows/{window_id}")
+def delete_depth_window(window_id: int):
+    conn = get_connection()
+    row = conn.execute("SELECT id FROM depth_windows WHERE id = ?", (window_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Depth window not found")
+    with conn:
+        conn.execute("DELETE FROM depth_windows WHERE id = ?", (window_id,))
+    conn.close()
+    return {"deleted": window_id}
 
 
 # ---------------------------------------------------------------------------

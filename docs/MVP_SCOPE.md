@@ -55,7 +55,8 @@ Do not use:
 - user accounts
 - AI APIs
 - Google Drive API
-- calendar APIs
+- external calendar APIs (Google Calendar sync, etc. — the built-in Calendar
+  view is in scope; see "Calendar View (P12)" below)
 - notifications
 - mobile app framework
 
@@ -199,7 +200,13 @@ Rules:
 - cursor or tooltip may indicate unavailable date
 - future cells should become active automatically when the date arrives or when the app reloads on that date
 
-Do not implement future planning in the MVP.
+These grid rules are permanent: completion cells never accept future dates.
+
+Future *planning* is now in scope, but it lives exclusively in the Calendar
+view as sessions (see "Calendar View (P12)" below) — planning a task for a
+future date never creates or modifies a completion record. The original MVP
+statement "do not implement future planning" is superseded by the approved
+Calendar tickets; the grid's own semantics are unchanged.
 
 ---
 
@@ -292,3 +299,79 @@ elif P >= 5:
     base = 0.35 + 0.15 * (P - 5)
 else:
     base = 0.05 + 0.1 * (P - 1)
+```
+
+Note: this V1 mapping has since been superseded by Pressure Scoring V2
+(`backend/logic.py: calculate_urgency`) — a logistic curve over the overdue
+ratio. The invariants above (backend owns the calculation, paused → 0, max 10)
+still hold.
+
+---
+
+## Calendar View (P12) — approved extension
+
+The original MVP statements "this is not a calendar app" and "do not implement
+future planning" are superseded by the approved Calendar tickets.
+
+The Calendar is:
+
+> an additive first-class scheduling/execution view over the canonical
+> TaskManager data model.
+
+It does **not** replace the Grid, and it does **not** change any existing
+completion semantics. All original non-negotiables remain in force:
+
+- Grid completion-count behavior (counts, not booleans)
+- future-cell behavior (grid completion cells never accept future dates)
+- urgency calculations
+- existing record semantics and data-integrity rules
+
+The data model distinguishes four concepts. Keep them distinct:
+
+### Task
+
+The canonical objective/record (`tasks` table). One task, many views —
+Grid rows and Calendar blocks are the same record.
+
+### Session
+
+A scheduled allocation of time toward a task (`task_sessions` table).
+A task may have many sessions; sessions may live in the future; completing a
+session is not the same as completing the task. Planned fields
+(`planned_start`/`planned_end`) are never overwritten by actual execution
+(`actual_*` fields).
+
+### Depth Window
+
+A user-declared cognitive-capacity region (`depth_windows` table): what kind
+of work a stretch of time is *for* (D1 deep / D2 focused / D3 shallow).
+One-off (date) or recurring (weekday). Not a task; never has completions.
+
+### External Calendar Commitment
+
+A future concept: classes, meetings, appointments — externally fixed time.
+Not yet implemented. When added, commitments are not tasks and are never
+auto-completed.
+
+External calendar *integration* (Google Calendar APIs, sync) remains out of
+scope for now.
+
+Reference: the approved Calendar MVP as verified —
+`docs/images/calendar-mvp.jpg`.
+
+---
+
+## Manual Ordering (P12.1)
+
+The user's manual arrangement is deliberate and authoritative:
+
+- Section order is explicit persisted state (`section_order` table), never
+  derived from task encounter order, creation time, or alphabetics.
+- Task order is explicit persisted state (`tasks.display_order`); new tasks
+  append at the end.
+- Ordinary task actions (create, complete, edit, delete, move, reload,
+  switching views) must never reorder sections or other tasks.
+- Every insertion position is reachable by drag and drop: top, between any
+  two rows, the true bottom of a section, and into empty sections.
+- Cross-section drag applies the section change and the new position in one
+  backend transaction (`POST /tasks/reorder` with `section_updates`).

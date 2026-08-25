@@ -371,6 +371,100 @@ export async function deleteHiatusPeriod(id) {
   return res.json();
 }
 
+// ---------------------------------------------------------------------------
+// Calendar (P12.0) — task sessions + depth windows.
+// Sessions are scheduled time allocations toward canonical task records; the
+// Calendar view renders and mutates them. Times are local-naive
+// "YYYY-MM-DDTHH:MM" strings throughout.
+// ---------------------------------------------------------------------------
+
+// Sessions overlapping [start, end] (ISO dates), joined with task info.
+export async function fetchSessions(start, end) {
+  return requestWithTimeout(`${BASE}/sessions?start=${start}&end=${end}`, undefined, {
+    timeoutMs: READ_TIMEOUT_MS,
+    label: 'Sessions request',
+    failureName: 'fetchSessions',
+  });
+}
+
+// fields: { task_id, planned_start, planned_end, is_fixed? }
+export async function createSession(fields) {
+  const res = await fetch(`${BASE}/sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) {
+    let detail = `createSession failed: ${res.status}`;
+    try { const b = await res.json(); if (b.detail) detail = b.detail; } catch {}
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+// fields: any of { planned_start, planned_end, status, is_fixed,
+// actual_start, actual_end, actual_minutes }
+export async function updateSession(id, fields) {
+  const res = await fetch(`${BASE}/sessions/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) {
+    let detail = `updateSession failed: ${res.status}`;
+    try { const b = await res.json(); if (b.detail) detail = b.detail; } catch {}
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+export async function deleteSession(id) {
+  const res = await fetch(`${BASE}/sessions/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`deleteSession failed: ${res.status}`);
+  return res.json();
+}
+
+// All depth windows (one-off + recurring); the frontend expands recurring
+// windows onto concrete dates.
+export async function fetchDepthWindows() {
+  return requestWithTimeout(`${BASE}/depth-windows`, undefined, {
+    timeoutMs: READ_TIMEOUT_MS,
+    label: 'Depth windows request',
+    failureName: 'fetchDepthWindows',
+  });
+}
+
+// fields: { depth, start_minutes, end_minutes, date? | weekday?, protected? }
+export async function createDepthWindow(fields) {
+  const res = await fetch(`${BASE}/depth-windows`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) {
+    let detail = `createDepthWindow failed: ${res.status}`;
+    try { const b = await res.json(); if (b.detail) detail = b.detail; } catch {}
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+export async function updateDepthWindow(id, fields) {
+  const res = await fetch(`${BASE}/depth-windows/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error(`updateDepthWindow failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteDepthWindow(id) {
+  const res = await fetch(`${BASE}/depth-windows/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`deleteDepthWindow failed: ${res.status}`);
+  return res.json();
+}
+
 export async function previewImport(file) {
   const formData = new FormData();
   formData.append('file', file);
@@ -379,13 +473,49 @@ export async function previewImport(file) {
   return res.json();
 }
 
-export async function reorderTasks(orderedIds) {
+// sectionUpdates (optional): [{ id, section }] — cross-section drag moves,
+// applied by the backend in the same transaction as the ordering write.
+export async function reorderTasks(orderedIds, sectionUpdates) {
+  const body = { order: orderedIds };
+  if (sectionUpdates?.length) body.section_updates = sectionUpdates;
   const res = await fetch(`${BASE}/tasks/reorder`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ order: orderedIds }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`reorderTasks failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Sections (P12.1) — persisted manual section ordering.
+// Section name '' is the blank/"(no section)" group.
+// ---------------------------------------------------------------------------
+
+export async function fetchSections() {
+  return requestWithTimeout(`${BASE}/sections`, undefined, {
+    timeoutMs: READ_TIMEOUT_MS,
+    label: 'Sections request',
+    failureName: 'fetchSections',
+  });
+}
+
+export async function reorderSections(orderedNames) {
+  const res = await fetch(`${BASE}/sections/reorder`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ order: orderedNames }),
+  });
+  if (!res.ok) throw new Error(`reorderSections failed: ${res.status}`);
+  return res.json();
+}
+
+// Remove an EMPTY section from the ordering list (409 if it still has tasks).
+export async function deleteSectionOrder(name) {
+  const res = await fetch(`${BASE}/sections?name=${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error(`deleteSectionOrder failed: ${res.status}`);
   return res.json();
 }
 

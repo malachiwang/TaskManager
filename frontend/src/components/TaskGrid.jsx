@@ -13,6 +13,9 @@ import {
   fetchNotes,
   upsertNote,
   reorderTasks,
+  fetchSections,
+  reorderSections,
+  deleteSectionOrder,
   fetchDateCellOverrides,
   upsertDateCellOverride,
   deleteDateCellOverride,
@@ -186,18 +189,67 @@ function resolveJump(raw, dates, tasks) {
   return { error: `No match for "${v}"` };
 }
 
-// Resolve the task id of the grid row under a screen point, skipping excludeId.
-// Uses closest('tr[data-task-id]') so a hit on a <td>/<span>/dc-box still resolves
-// its parent row. The drag clone's <tr> has no data-task-id, so it is never matched.
-function resolveRowIdAt(clientX, clientY, excludeId) {
+// Resolve the drop target under a screen point for a task drag (P12.1).
+// Task rows resolve to a before/after edge from the pointer's row half —
+// 'after' on a section's last row is what makes the true bottom reachable.
+// Section header rows and empty-section body rows (SECTION mode adds
+// data-section-key/data-section-drop) resolve to section targets: 'start'
+// inserts at the top of that section, 'into' drops into an empty section.
+// The drag clone's <tr> carries no data attributes, so it is never matched.
+function resolveDropTargetAt(clientX, clientY, excludeId) {
   const els = document.elementsFromPoint(clientX, clientY);
   for (const el of els) {
-    const tr = el.closest?.('tr[data-task-id]');
+    const tr = el.closest?.('tr[data-task-id], tr[data-section-key]');
     if (!tr) continue;
-    const id = parseInt(tr.dataset.taskId, 10);
-    if (!Number.isNaN(id) && id !== excludeId) return id;
+    if (tr.dataset.taskId !== undefined) {
+      const id = parseInt(tr.dataset.taskId, 10);
+      if (Number.isNaN(id)) continue;
+      if (id === excludeId) return null; // hovering the source row — no target
+      const rect = tr.getBoundingClientRect();
+      const edge = clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+      return { type: 'task', id, edge };
+    }
+    return {
+      type: 'section',
+      key: tr.dataset.sectionKey,
+      mode: tr.dataset.sectionDrop, // 'start' (header row) | 'into' (empty body)
+    };
   }
   return null;
+}
+
+function sameDropTarget(a, b) {
+  if (a === b) return true;
+  if (!a || !b || a.type !== b.type) return false;
+  if (a.type === 'task') return a.id === b.id && a.edge === b.edge;
+  return a.key === b.key && a.mode === b.mode;
+}
+
+// Edge-autoscroll loop for pointer drags (P12.1) — keeps the far end of a
+// long scrollable section reachable: holding the pointer near the top/bottom
+// edge of the grid viewport scrolls it. Returns a stop() function.
+// A timer (not requestAnimationFrame) on purpose: rAF is suspended when the
+// window is occluded, and this is input handling, not animation.
+function startEdgeAutoscroll(scrollEl, getPointerY, onScrollTick) {
+  const EDGE_PX = 48;
+  const MAX_STEP = 14;
+  const TICK_MS = 40;
+  const timer = setInterval(() => {
+    const rect = scrollEl.getBoundingClientRect();
+    const y = getPointerY();
+    let dy = 0;
+    if (y < rect.top + EDGE_PX) {
+      dy = -Math.ceil(((rect.top + EDGE_PX - y) / EDGE_PX) * MAX_STEP);
+    } else if (y > rect.bottom - EDGE_PX) {
+      dy = Math.ceil(((y - (rect.bottom - EDGE_PX)) / EDGE_PX) * MAX_STEP);
+    }
+    if (dy !== 0) {
+      const before = scrollEl.scrollTop;
+      scrollEl.scrollTop = before + dy;
+      if (scrollEl.scrollTop !== before) onScrollTick();
+    }
+  }, TICK_MS);
+  return () => clearInterval(timer);
 }
 
 export default function TaskGrid() {
@@ -323,13 +375,24 @@ export default function TaskGrid() {
 
   // Pointer-based row drag state.
   // dragStateRef holds drag geometry — mutated imperatively, no re-render on move.
-  // dragOverIdRef mirrors dragOverId for synchronous reads in event handlers.
+  // dragOverRef mirrors dragOverTarget for synchronous reads in event handlers.
   // ghostElRef holds the imperative full-row clone overlay DOM node (position:fixed).
   const dragStateRef = useRef({ active: false });
-  const dragOverIdRef = useRef(null);
+  const dragOverRef = useRef(null);
   const ghostElRef = useRef(null);
   const [dragSrcId, setDragSrcId] = useState(null);
-  const [dragOverId, setDragOverId] = useState(null);
+  const [dragOverTarget, setDragOverTarget] = useState(null);
+
+  // Section drag state (P12.1) — mirrors the task-drag architecture: refs for
+  // synchronous geometry, state only for the rendered indicator.
+  const sectionDragRef = useRef({ active: false });
+  const sectionDropRef = useRef(null);
+  const [sectionDragKey, setSectionDragKey] = useState(null);
+  const [sectionDropIdx, setSectionDropIdx] = useState(null);
+
+  // Persisted manual section order (P12.1) — loaded with the grid data; the
+  // single authority for SECTION-mode group order. Never derived from tasks.
+  const [sections, setSections] = useState([]);
 
   // Derive computed layout (widths + sticky offsets) from overrides.
   const colLayout = useMemo(() => computeColLayout(colWidths), [colWidths]);
@@ -368,16 +431,38 @@ export default function TaskGrid() {
     return result;
   }, [tasks, activeFilter, secondaryFilters, searchQuery, viewMonth.year, viewMonth.month]);
 
+  // Any filter/search hides tasks — empty sections are suppressed then, since
+  // a section that merely *looks* empty under a filter is a confusing target.
+  const hasActiveFilters =
+    activeFilter !== FILTERS.ALL || secondaryFilters.length > 0 || searchQuery.trim() !== '';
+
   // Group filtered tasks by the current groupMode.
-  // groupTasks() suppresses empty groups automatically and computes metadata.
+  // SECTION mode follows the persisted manual order (P12.1) and renders
+  // empty sections (drop targets) when nothing is filtered.
   const groupedTasks = useMemo(
-    () => groupTasks(filteredTasks, groupMode),
-    [filteredTasks, groupMode],
+    () => groupTasks(
+      filteredTasks,
+      groupMode,
+      groupMode === GROUP_MODES.SECTION && sections.length > 0
+        ? { sectionOrder: sections.map((s) => s.name), includeEmptySections: !hasActiveFilters }
+        : {},
+    ),
+    [filteredTasks, groupMode, sections, hasActiveFilters],
   );
 
-  // Existing section names (all tasks, not just the filtered view) — feeds the
-  // Section combobox suggestions in the Add/Edit Task modal.
-  const sectionSuggestions = useMemo(() => uniqueSections(tasks), [tasks]);
+  // Section names for the Add/Edit modal combobox — persisted order first,
+  // then any task-only stragglers not yet registered.
+  const sectionSuggestions = useMemo(() => {
+    const out = sections.map((s) => s.name).filter(Boolean);
+    const seen = new Set(out);
+    for (const n of uniqueSections(tasks)) {
+      if (!seen.has(n)) {
+        seen.add(n);
+        out.push(n);
+      }
+    }
+    return out;
+  }, [sections, tasks]);
 
   // Flat task list in visual render order — used for keyboard navigation.
   // CRITICAL: tasksRef.current must point here, not at filteredTasks.
@@ -479,9 +564,11 @@ export default function TaskGrid() {
     return Promise.all([
       fetchTasks(), fetchCompletions(start, end), fetchNotes(start, end),
       fetchDateCellOverrides(start, end), fetchHiatusPeriodsInRange(start, end),
+      fetchSections(),
     ])
-      .then(([taskList, compList, noteList, overrideList, hiatusList]) => {
+      .then(([taskList, compList, noteList, overrideList, hiatusList, sectionList]) => {
         setTasks(taskList);
+        setSections(sectionList);
         const map = {};
         for (const c of compList) {
           map[`${c.task_id}:${c.completion_date}`] = c.completion_count;
@@ -705,40 +792,68 @@ export default function TaskGrid() {
     clip.scrollLeft = scrollEl.scrollLeft;
 
     ghostElRef.current = clip;
-    dragStateRef.current = { active: true, taskId, pointerOffsetY: e.clientY - trRect.top };
-    dragOverIdRef.current = null;
+    dragStateRef.current = {
+      active: true, taskId,
+      pointerOffsetY: e.clientY - trRect.top,
+      lastX: e.clientX, lastY: e.clientY,
+    };
+    dragOverRef.current = null;
     setDragSrcId(taskId);
 
-    function onPointerMove(ev) {
-      if (!dragStateRef.current.active) return;
-      if (ghostElRef.current) {
-        ghostElRef.current.style.top = (ev.clientY - dragStateRef.current.pointerOffsetY) + 'px';
-      }
-      let newOverId = resolveRowIdAt(ev.clientX, ev.clientY, taskId);
-      // In grouped views, only show the insertion line on a same-group target so
-      // the indicator matches where a drop will actually land (cross-group no-ops).
-      if (newOverId != null && groupMode !== GROUP_MODES.NONE) {
+    // Accept a raw hit-test target only where a drop would actually land —
+    // the indicator and the drop share this rule, so the line never lies.
+    // Same rendered group: always. Cross-group: only SECTION mode (the drag
+    // becomes an atomic section move). Section header/empty targets: SECTION
+    // mode only. NONE mode is one flat list.
+    function validateDropTarget(target) {
+      if (!target) return null;
+      if (target.type === 'task') {
+        if (groupMode === GROUP_MODES.NONE) return target;
         const srcGroup = groupKeyById.get(taskId);
-        const tgtGroup = groupKeyById.get(newOverId);
-        if (srcGroup === undefined || tgtGroup === undefined || srcGroup !== tgtGroup) {
-          newOverId = null;
-        }
+        const tgtGroup = groupKeyById.get(target.id);
+        if (srcGroup !== undefined && srcGroup === tgtGroup) return target;
+        return groupMode === GROUP_MODES.SECTION ? target : null;
       }
-      if (newOverId !== dragOverIdRef.current) {
-        dragOverIdRef.current = newOverId;
-        setDragOverId(newOverId);
+      return groupMode === GROUP_MODES.SECTION ? target : null;
+    }
+
+    function updateIndicator(x, y) {
+      const valid = validateDropTarget(resolveDropTargetAt(x, y, taskId));
+      if (!sameDropTarget(valid, dragOverRef.current)) {
+        dragOverRef.current = valid;
+        setDragOverTarget(valid);
       }
     }
 
+    function onPointerMove(ev) {
+      if (!dragStateRef.current.active) return;
+      dragStateRef.current.lastX = ev.clientX;
+      dragStateRef.current.lastY = ev.clientY;
+      if (ghostElRef.current) {
+        ghostElRef.current.style.top = (ev.clientY - dragStateRef.current.pointerOffsetY) + 'px';
+      }
+      updateIndicator(ev.clientX, ev.clientY);
+    }
+
+    // Long sections: holding the pointer near the grid's top/bottom edge
+    // scrolls, and the indicator re-resolves against the rows that scrolled
+    // under the (stationary) pointer.
+    const stopAutoscroll = startEdgeAutoscroll(
+      scrollEl,
+      () => dragStateRef.current.lastY,
+      () => updateIndicator(dragStateRef.current.lastX, dragStateRef.current.lastY),
+    );
+
     function cleanup() {
       dragStateRef.current.active = false;
-      dragOverIdRef.current = null;
+      dragOverRef.current = null;
+      stopAutoscroll();
       if (ghostElRef.current) {
         ghostElRef.current.remove();
         ghostElRef.current = null;
       }
       setDragSrcId(null);
-      setDragOverId(null);
+      setDragOverTarget(null);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', cleanup);
@@ -748,36 +863,13 @@ export default function TaskGrid() {
 
     function onPointerUp(ev) {
       const srcId = dragStateRef.current.taskId;
-      // Re-resolve the row under the pointer at drop time; fall back to the last
-      // hovered id so a drop that lands between pointermove samples still counts.
-      const resolved = resolveRowIdAt(ev.clientX, ev.clientY, srcId);
-      const targetId = resolved ?? dragOverIdRef.current;
+      // Re-resolve at drop time; fall back to the last valid hover so a drop
+      // that lands between pointermove samples still counts.
+      const resolved = validateDropTarget(resolveDropTargetAt(ev.clientX, ev.clientY, srcId));
+      const target = resolved ?? dragOverRef.current;
       cleanup();
-      if (!srcId || !targetId || srcId === targetId) return;
-      const prev = tasks;
-      const src = prev.find((t) => t.id === srcId);
-      const tgt = prev.find((t) => t.id === targetId);
-      if (!src || !tgt) return;
-      // Grouped views: allow reorder only within the same rendered group; reject
-      // cross-group drops cleanly. Reorder never mutates task fields (section,
-      // category, status, urgency band, dates), so a task can never jump a semantic
-      // boundary — a cross-group drop simply no-ops. NONE mode has one group so
-      // free reorder applies; filtered/search flat views reorder among visible rows
-      // while the full-list move below preserves every hidden task's relative order.
-      if (groupMode !== GROUP_MODES.NONE) {
-        const srcGroup = groupKeyById.get(srcId);
-        const tgtGroup = groupKeyById.get(targetId);
-        if (srcGroup === undefined || tgtGroup === undefined || srcGroup !== tgtGroup) return;
-      }
-      // Insert source immediately before target — matches the black top insertion line.
-      const next = [...prev];
-      const srcIdx = next.findIndex((t) => t.id === srcId);
-      next.splice(srcIdx, 1);
-      const targetIdx = next.findIndex((t) => t.id === targetId);
-      if (targetIdx === -1) return;
-      next.splice(targetIdx, 0, src);
-      setTasks(next);
-      reorderTasks(next.map((t) => t.id)).catch(() => setTasks(prev));
+      if (!srcId || !target) return;
+      applyTaskDrop(srcId, target);
     }
 
     function onEscKey(ev) {
@@ -789,6 +881,194 @@ export default function TaskGrid() {
     window.addEventListener('pointercancel', cleanup);
     window.addEventListener('keydown', onEscKey);
     window.addEventListener('blur', cleanup);
+  }
+
+  // Apply a completed task drop: recompute the full ordered list (hidden/
+  // filtered tasks keep their relative order via anchored splices) and, for a
+  // cross-section drop in SECTION mode, the task's new section — sent to the
+  // backend in ONE request so position + container change atomically.
+  function applyTaskDrop(srcId, target) {
+    const prev = tasks;
+    const src = prev.find((t) => t.id === srcId);
+    if (!src) return;
+    const srcSection = src.section?.trim() || '';
+    let destSection = null; // non-null → section changes with this drop
+
+    const next = prev.filter((t) => t.id !== srcId);
+    if (target.type === 'task') {
+      const anchor = prev.find((t) => t.id === target.id);
+      if (!anchor) return;
+      const idx = next.findIndex((t) => t.id === target.id);
+      if (idx === -1) return;
+      next.splice(target.edge === 'before' ? idx : idx + 1, 0, src);
+      if (groupMode === GROUP_MODES.SECTION) {
+        const anchorSection = anchor.section?.trim() || '';
+        if (anchorSection !== srcSection) destSection = anchorSection;
+      }
+    } else {
+      const sectionName = target.key === '(no section)' ? '' : target.key;
+      if (target.mode === 'start') {
+        // Insert before the section's first task in the FULL list; a section
+        // with no tasks at all behaves like 'into'.
+        const idx = next.findIndex((t) => (t.section?.trim() || '(no section)') === target.key);
+        next.splice(idx === -1 ? next.length : idx, 0, src);
+      } else {
+        next.push(src);
+      }
+      if (sectionName !== srcSection) destSection = sectionName;
+    }
+
+    const optimistic = destSection !== null
+      ? next.map((t) => (t.id === srcId ? { ...t, section: destSection } : t))
+      : next;
+    setTasks(optimistic);
+    const sectionUpdates = destSection !== null
+      ? [{ id: srcId, section: destSection }]
+      : undefined;
+    reorderTasks(optimistic.map((t) => t.id), sectionUpdates)
+      .catch(() => setTasks(prev));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Section drag (P12.1) — same interaction grammar as task rows: grab the
+  // handle, an insertion line tracks the pointer, drop persists the order.
+  // Only meaningful in SECTION group mode.
+  // ---------------------------------------------------------------------------
+
+  function handleSectionPointerDown(e, group) {
+    if (groupMode !== GROUP_MODES.SECTION || e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const headerTr = e.target.closest('tr');
+    const scrollEl = headerTr?.closest('.grid-wrapper');
+    if (!scrollEl) return;
+
+    // Lightweight floating label — section rows span the whole sheet, so a
+    // full-row clone would just be a wide bar; the name chip reads better.
+    const ghost = document.createElement('div');
+    ghost.className = 'section-drag-ghost';
+    ghost.textContent = group.label;
+    ghost.style.left = (e.clientX + 14) + 'px';
+    ghost.style.top = (e.clientY - 12) + 'px';
+    document.body.appendChild(ghost);
+
+    sectionDragRef.current = {
+      active: true, key: group.key, sectionName: group.sectionName,
+      lastX: e.clientX, lastY: e.clientY,
+    };
+    sectionDropRef.current = null;
+    setSectionDragKey(group.key);
+
+    // Insertion index over the rendered section blocks: a block spans from
+    // its header's top to the next header's top (last block ends at the
+    // tbody's bottom). The pointer inserts after every block whose midpoint
+    // it has passed.
+    function updateIdx(y) {
+      const headers = Array.from(
+        scrollEl.querySelectorAll('tr.ws-section-row[data-section-key]'),
+      );
+      if (headers.length === 0) return;
+      const tbodyBottom = headers[0].closest('tbody').getBoundingClientRect().bottom;
+      let idx = 0;
+      for (let i = 0; i < headers.length; i++) {
+        const top = headers[i].getBoundingClientRect().top;
+        const bottom = i + 1 < headers.length
+          ? headers[i + 1].getBoundingClientRect().top
+          : tbodyBottom;
+        if (y > (top + bottom) / 2) idx = i + 1;
+      }
+      if (idx !== sectionDropRef.current) {
+        sectionDropRef.current = idx;
+        setSectionDropIdx(idx);
+      }
+    }
+    updateIdx(e.clientY);
+
+    function onPointerMove(ev) {
+      if (!sectionDragRef.current.active) return;
+      sectionDragRef.current.lastX = ev.clientX;
+      sectionDragRef.current.lastY = ev.clientY;
+      ghost.style.left = (ev.clientX + 14) + 'px';
+      ghost.style.top = (ev.clientY - 12) + 'px';
+      updateIdx(ev.clientY);
+    }
+
+    const stopAutoscroll = startEdgeAutoscroll(
+      scrollEl,
+      () => sectionDragRef.current.lastY,
+      () => updateIdx(sectionDragRef.current.lastY),
+    );
+
+    function cleanup() {
+      sectionDragRef.current.active = false;
+      stopAutoscroll();
+      ghost.remove();
+      setSectionDragKey(null);
+      setSectionDropIdx(null);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', cleanup);
+      window.removeEventListener('keydown', onEscKey);
+      window.removeEventListener('blur', cleanup);
+    }
+
+    function onPointerUp() {
+      const toIdx = sectionDropRef.current;
+      const dragged = sectionDragRef.current;
+      cleanup();
+      if (toIdx == null) return;
+      applySectionDrop(dragged.sectionName, toIdx);
+    }
+
+    function onEscKey(ev) {
+      if (ev.key === 'Escape') cleanup();
+    }
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', cleanup);
+    window.addEventListener('keydown', onEscKey);
+    window.addEventListener('blur', cleanup);
+  }
+
+  // toIdx is an insertion index over the DISPLAYED section blocks. The new
+  // order is applied to the FULL persisted list (sections hidden by filters
+  // keep their place) by inserting relative to the displayed neighbor.
+  function applySectionDrop(sectionName, toIdx) {
+    const displayed = groupedTasks.map((g) => g.sectionName);
+    const fromIdx = displayed.indexOf(sectionName);
+    if (fromIdx === -1) return;
+    if (toIdx === fromIdx || toIdx === fromIdx + 1) return; // dropped in place
+
+    const fullWithout = sections.map((s) => s.name).filter((n) => n !== sectionName);
+    let insertAt;
+    if (toIdx >= displayed.length) {
+      const lastDisplayed = displayed.filter((n) => n !== sectionName).pop();
+      insertAt = lastDisplayed === undefined ? fullWithout.length
+        : fullWithout.indexOf(lastDisplayed) + 1;
+    } else {
+      const anchorName = displayed[toIdx];
+      const anchorIdx = fullWithout.indexOf(anchorName);
+      insertAt = anchorIdx === -1 ? fullWithout.length : anchorIdx;
+    }
+    const newOrder = [...fullWithout];
+    newOrder.splice(insertAt, 0, sectionName);
+
+    const prevSections = sections;
+    const byName = new Map(sections.map((s) => [s.name, s]));
+    setSections(newOrder.map((n, i) => ({ ...(byName.get(n) ?? { name: n }), position: i })));
+    reorderSections(newOrder).catch(() => setSections(prevSections));
+  }
+
+  // Remove an EMPTY section's ordering row (the affordance lives on the
+  // empty-section body row; the backend refuses populated sections anyway).
+  async function handleRemoveSection(group) {
+    try {
+      await deleteSectionOrder(group.sectionName);
+      setSections((prev) => prev.filter((s) => s.name !== group.sectionName));
+    } catch (err) {
+      console.error('remove section failed:', err);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1901,14 +2181,33 @@ export default function TaskGrid() {
             </tr>
           </thead>
           <tbody>
-            {groupedTasks.map((group) => (
+            {groupedTasks.map((group, groupIdx) => (
               <Fragment key={group.key}>
                 {group.label !== null && (
-                  <tr className="ws-section-row">
+                  <tr
+                    className={[
+                      'ws-section-row',
+                      sectionDropIdx === groupIdx ? 'ws-section-drop-before' : '',
+                      sectionDragKey === group.key ? 'ws-section-drag-source' : '',
+                      dragOverTarget?.type === 'section'
+                        && dragOverTarget.mode === 'start'
+                        && dragOverTarget.key === group.key ? 'ws-drop-below' : '',
+                    ].filter(Boolean).join(' ')}
+                    {...(groupMode === GROUP_MODES.SECTION
+                      ? { 'data-section-key': group.key, 'data-section-drop': 'start' }
+                      : {})}
+                  >
                     {/* Frozen td: sticky left, spans all 8 frozen columns.
                         Uses the same position:sticky mechanism as TaskRow sticky cells —
                         directly on the <td>, not a child element. Avoids jank. */}
                     <td className="ws-section-frozen" colSpan={8}>
+                      {groupMode === GROUP_MODES.SECTION && (
+                        <span
+                          className="drag-handle section-drag-handle"
+                          title="Drag to reorder section"
+                          onPointerDown={(e) => handleSectionPointerDown(e, group)}
+                        >⠿</span>
+                      )}
                       <span className="ws-section-title">{group.label}</span>
                       <span className="ws-section-meta">
                         {group.tasks.length} task{group.tasks.length !== 1 ? 's' : ''}
@@ -1919,6 +2218,29 @@ export default function TaskGrid() {
                     {/* Overflow td: spans the 3 non-sticky meta cols + all date cols,
                         provides background colour across the full row width. */}
                     <td className="ws-section-overflow" colSpan={3 + dates.length}></td>
+                  </tr>
+                )}
+                {/* Empty section (P12.1) — stays rendered and droppable. */}
+                {groupMode === GROUP_MODES.SECTION && group.label !== null
+                  && group.tasks.length === 0 && (
+                  <tr
+                    className={`ws-section-empty-row${
+                      dragOverTarget?.type === 'section'
+                        && dragOverTarget.mode === 'into'
+                        && dragOverTarget.key === group.key ? ' ws-drop-into' : ''}`}
+                    data-section-key={group.key}
+                    data-section-drop="into"
+                  >
+                    <td className="ws-section-empty-frozen" colSpan={8}>
+                      <span className="ws-section-empty-note">No tasks — drag a task here</span>
+                      <button
+                        type="button"
+                        className="ws-section-empty-remove"
+                        title="Remove this empty section from the list"
+                        onClick={() => handleRemoveSection(group)}
+                      >Remove section</button>
+                    </td>
+                    <td className="ws-section-empty-overflow" colSpan={3 + dates.length}></td>
                   </tr>
                 )}
                 {group.tasks.map((task) => (
@@ -1938,7 +2260,8 @@ export default function TaskGrid() {
                     editingTextCell={editingTextCell}
                     rangeSelection={rangeSelection}
                     reorderEnabled={reorderEnabled}
-                    isDragOver={dragOverId === task.id}
+                    dragOverEdge={dragOverTarget?.type === 'task' && dragOverTarget.id === task.id
+                      ? dragOverTarget.edge : null}
                     isDragSource={dragSrcId === task.id}
                     onHandlePointerDown={handleHandlePointerDown}
                     onIncrement={handleIncrement}
@@ -1956,6 +2279,12 @@ export default function TaskGrid() {
                 ))}
               </Fragment>
             ))}
+            {/* Section-drag "after the last section" indicator (P12.1). */}
+            {sectionDropIdx != null && sectionDropIdx >= groupedTasks.length && (
+              <tr className="ws-section-end-indicator" aria-hidden="true">
+                <td colSpan={11 + dates.length}></td>
+              </tr>
+            )}
           </tbody>
         </table>
 

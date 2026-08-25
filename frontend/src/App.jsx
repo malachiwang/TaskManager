@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import TaskGrid from './components/TaskGrid.jsx';
+import CalendarView from './components/CalendarView.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import Archive from './components/Archive.jsx';
 import Settings from './components/Settings.jsx';
@@ -15,8 +16,9 @@ export default function App() {
   //   activeSheet — the primary spreadsheet surface (Tasks | Reading), chosen
   //     from the bottom worksheet-tab bar. Its value is preserved while a tool
   //     view is open, so returning from a tool lands back on the last sheet.
-  //   activeTool  — a supporting utility view (Dashboard | Archive | Settings)
-  //     opened from the top toolbar; null means "show the active sheet".
+  //   activeTool  — a supporting utility view (Calendar | Dashboard | Reports |
+  //     Archive | Settings) opened from the top toolbar; null means "show the
+  //     active sheet".
   const [activeSheet, setActiveSheet] = useState('tasks');
   const [activeTool, setActiveTool] = useState(null);
 
@@ -106,6 +108,7 @@ export default function App() {
           </div>
           {/* Utility/tool views — not primary sheets. */}
           <nav className="app-utility-nav" aria-label="Tools">
+            <button className={`tab${activeTool === 'calendar' ? ' active' : ''}`} onClick={() => setActiveTool('calendar')}>Calendar</button>
             <button className={`tab${activeTool === 'dashboard' ? ' active' : ''}`} onClick={() => setActiveTool('dashboard')}>Dashboard</button>
             <button className={`tab${activeTool === 'report' ? ' active' : ''}`} onClick={() => setActiveTool('report')}>Reports</button>
             <button className={`tab${activeTool === 'archive' ? ' active' : ''}`} onClick={() => setActiveTool('archive')}>Archive</button>
@@ -117,6 +120,7 @@ export default function App() {
       <main className="app-main" data-tab={showingTool ? activeTool : activeSheet}>
         {!showingTool && activeSheet === 'tasks' && <TaskGrid />}
         {!showingTool && activeSheet === 'reading' && <ReadingSheet />}
+        {activeTool === 'calendar' && <CalendarView />}
         {activeTool === 'dashboard' && <Dashboard onOpenReports={() => setActiveTool('report')} />}
         {activeTool === 'report' && <MonthlyReport onOpenDashboard={() => setActiveTool('dashboard')} />}
         {activeTool === 'archive' && <Archive />}

@@ -6925,3 +6925,707 @@ select.task-modal-input {
 .rd-buy-link:hover { color: var(--accent-blue-strong, var(--accent)); }
 .rd-buy-nolink { color: var(--muted-2); }
 .rd-col-buynotes { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+
+/* -------------------------------------------------------------------------
+   Calendar (P12.0) — week/day scheduling surface
+   Depth hues (restrained, edge + pill only — never full saturated blocks):
+     D1 deep = accent blue · D2 focused = green · D3 shallow = neutral gray
+   Hour row height is 48px (PX_PER_HOUR in calendarUtils.js) — the two
+   repeating-gradient backgrounds below hardcode 48/24px to match.
+   ---------------------------------------------------------------------- */
+
+.cal-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  font-family: var(--font-ui);
+}
+
+.cal-status {
+  margin: auto;
+  padding: 24px;
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.cal-status--error { color: var(--urg-crit); }
+
+/* ── Toolbar ── */
+.cal-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--rule);
+}
+.cal-toolbar-nav,
+.cal-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cal-nav-btn {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 3px 10px;
+  cursor: pointer;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  background: var(--bg-panel);
+  color: var(--ink-2);
+}
+.cal-nav-btn:hover { border-color: var(--accent); }
+.cal-nav-btn--today { font-size: 11px; }
+.cal-nav-btn.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.cal-range-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-left: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-seg {
+  display: inline-flex;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.cal-seg-btn {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 3px 12px;
+  cursor: pointer;
+  border: none;
+  background: var(--bg-panel);
+  color: var(--ink-2);
+}
+.cal-seg-btn + .cal-seg-btn { border-left: 1px solid var(--grid-border); }
+.cal-seg-btn:hover:not(.is-active) { background: var(--bg-hover); }
+.cal-seg-btn.is-active {
+  background: var(--ink);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* ── Main layout ── */
+.cal-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.cal-scroll {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* ── Sticky day headers ── */
+.cal-header-row {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--rule);
+}
+.cal-gutter-spacer { width: 56px; flex-shrink: 0; border-right: 1px solid var(--hair); }
+.cal-day-headers { flex: 1; display: flex; }
+.cal-day-header {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 4px;
+  font-family: inherit;
+  font-size: 11px;
+  border: none;
+  border-left: 1px solid var(--hair);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.cal-day-header:first-child { border-left: none; }
+.cal-day-header:hover { background: var(--bg-hover); color: var(--ink-2); }
+.cal-day-header-num {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.cal-day-header.is-today .cal-day-header-weekday { color: var(--accent); }
+.cal-day-header.is-today .cal-day-header-num {
+  color: #fff;
+  background: var(--accent);
+  border-radius: 999px;
+  min-width: 24px;
+  height: 24px;
+  line-height: 24px;
+  text-align: center;
+  padding: 0 4px;
+}
+
+/* ── Time grid ── */
+.cal-grid-row { display: flex; }
+.cal-gutter {
+  width: 56px;
+  flex-shrink: 0;
+  position: relative;
+  height: 1152px; /* 24 × 48px */
+  border-right: 1px solid var(--hair);
+}
+.cal-gutter-hour {
+  position: absolute;
+  right: 6px;
+  transform: translateY(-50%);
+  font-size: 10px;
+  color: var(--muted-2);
+  font-variant-numeric: tabular-nums;
+  background: var(--paper);
+  padding: 0 2px;
+}
+
+.cal-days {
+  flex: 1;
+  display: flex;
+  position: relative;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.cal-day-col {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  height: 1152px; /* 24 × 48px */
+  border-left: 1px solid var(--hair);
+  cursor: crosshair;
+  /* hour lines (strong) over half-hour lines (hair) */
+  background-image:
+    repeating-linear-gradient(to bottom, var(--grid-border) 0 1px, transparent 1px 48px),
+    repeating-linear-gradient(to bottom, var(--hair) 0 1px, transparent 1px 24px);
+}
+.cal-day-col:first-child { border-left: none; }
+.cal-day-col.is-weekend { background-color: var(--weekend-bg); }
+.cal-day-col.is-today { background-color: var(--today-bg); }
+
+/* ── Now indicator ── */
+.cal-now-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px solid var(--urg-crit);
+  z-index: 12;
+  pointer-events: none;
+}
+.cal-now-dot {
+  position: absolute;
+  left: -4px;
+  top: -5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--urg-crit);
+}
+
+/* ── Depth windows — quiet background regions ── */
+.cal-window {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  pointer-events: none;
+  border-left: 2px solid transparent;
+}
+.cal-window--d1 {
+  background: color-mix(in srgb, var(--accent-blue-strong, var(--accent)) 7%, transparent);
+  border-left-color: color-mix(in srgb, var(--accent-blue-strong, var(--accent)) 35%, transparent);
+}
+.cal-window--d2 {
+  background: color-mix(in srgb, var(--good) 8%, transparent);
+  border-left-color: color-mix(in srgb, var(--good) 35%, transparent);
+}
+.cal-window--d3 {
+  background: color-mix(in srgb, var(--muted-2) 10%, transparent);
+  border-left-color: color-mix(in srgb, var(--muted-2) 40%, transparent);
+}
+.cal-window-label {
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  opacity: 0.85;
+}
+.cal-window-del {
+  position: absolute;
+  top: 1px;
+  right: 3px;
+  pointer-events: auto;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 4px;
+  cursor: pointer;
+  opacity: 0.25;
+}
+.cal-window-del:hover { opacity: 1; color: var(--urg-crit); }
+
+/* ── Session blocks ── */
+.cal-block {
+  position: absolute;
+  z-index: 10;
+  box-sizing: border-box;
+  padding: 2px 5px 2px 6px;
+  border: 1px solid var(--grid-border);
+  border-left-width: 3px;
+  border-radius: 3px;
+  background: var(--bg-panel);
+  overflow: hidden;
+  cursor: grab;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.07);
+  font-size: 11px;
+  line-height: 1.25;
+}
+.cal-block:hover { border-color: var(--accent); border-left-width: 3px; z-index: 11; }
+.cal-block:active { cursor: grabbing; }
+.cal-block--d1 { border-left-color: var(--accent-blue-strong, var(--accent)); }
+.cal-block--d2 { border-left-color: var(--good); }
+.cal-block--d3 { border-left-color: var(--muted-2); }
+.cal-block--d0 { border-left-color: var(--grid-border); }
+.cal-block.is-done { opacity: 0.55; }
+.cal-block.is-fixed { border-style: dashed; border-left-style: solid; }
+.cal-block.is-drag-source { opacity: 0.35; }
+
+.cal-block-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.cal-block-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--ink);
+}
+.cal-block-meta {
+  color: var(--muted);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.cal-block-check {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  border: 1px solid var(--grid-border);
+  border-radius: 2px;
+  background: var(--paper);
+  color: #fff;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.cal-block-check:hover { border-color: var(--accent); }
+.cal-block-check.is-done {
+  background: var(--good);
+  border-color: var(--good);
+}
+.cal-depth-pill {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0 4px;
+  border-radius: 2px;
+  color: var(--ink-2);
+  background: color-mix(in srgb, var(--muted-2) 15%, transparent);
+}
+.cal-depth-pill--d1 {
+  color: var(--accent-blue-strong, var(--accent));
+  background: color-mix(in srgb, var(--accent-blue-strong, var(--accent)) 12%, transparent);
+}
+.cal-depth-pill--d2 {
+  color: var(--good);
+  background: color-mix(in srgb, var(--good) 12%, transparent);
+}
+.cal-block-resize {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+/* ── Drag ghosts / selection ── */
+.cal-ghost {
+  position: absolute;
+  left: 2px;
+  right: 3px;
+  z-index: 15;
+  border: 1px dashed var(--accent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  pointer-events: none;
+  padding: 2px 6px;
+  overflow: hidden;
+}
+.cal-ghost--window {
+  border-color: var(--muted);
+  background: color-mix(in srgb, var(--muted-2) 12%, transparent);
+}
+.cal-ghost--move { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.cal-ghost-time {
+  font-size: 10px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Inline quick-create (modifier + drag) */
+.cal-creator-inline { pointer-events: auto; }
+.cal-creator-inline-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  outline: none;
+  padding: 0;
+}
+.cal-creator-inline-input::placeholder { color: var(--muted); }
+.cal-creator-error {
+  display: block;
+  font-size: 10px;
+  color: var(--urg-crit);
+}
+
+/* ── Popovers (creation + session detail) ── */
+.cal-popover {
+  position: fixed;
+  z-index: 1000;
+  background: var(--bg-panel);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  font-size: 12px;
+}
+.cal-popover-kicker {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+.cal-popover-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cal-popover-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.cal-popover-close {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.cal-popover-close:hover { color: var(--ink); }
+.cal-popover-time {
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+.cal-popover-hint { font-size: 11px; color: var(--muted); line-height: 1.45; }
+.cal-popover-error { font-size: 11px; color: var(--urg-crit); }
+.cal-popover-checkline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.cal-popover-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+}
+.cal-popover-actions--spread { justify-content: space-between; align-items: center; }
+.cal-popover-actions-right { display: flex; gap: 8px; }
+
+.cal-complete-btn {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  background: var(--bg-panel);
+  color: var(--ink-2);
+}
+.cal-complete-btn:hover { border-color: var(--good); }
+.cal-complete-btn.is-done {
+  background: color-mix(in srgb, var(--good) 14%, transparent);
+  border-color: var(--good);
+  color: var(--good);
+  font-weight: 600;
+}
+.cal-danger-btn {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  background: var(--bg-panel);
+  color: var(--urg-crit);
+}
+.cal-danger-btn:hover { border-color: var(--urg-crit); }
+
+/* Depth segmented control (popovers) */
+.cal-depth-seg {
+  display: inline-flex;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  overflow: hidden;
+  align-self: flex-start;
+}
+.cal-depth-seg-btn {
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  cursor: pointer;
+  border: none;
+  background: var(--bg-panel);
+  color: var(--muted);
+}
+.cal-depth-seg-btn + .cal-depth-seg-btn { border-left: 1px solid var(--grid-border); }
+.cal-depth-seg-btn:hover:not(.is-active) { background: var(--bg-hover); color: var(--ink-2); }
+.cal-depth-seg-btn.is-active { background: var(--ink); color: #fff; }
+.cal-depth-seg-btn--d1.is-active { background: var(--accent-blue-strong, var(--accent)); }
+.cal-depth-seg-btn--d2.is-active { background: var(--good); }
+.cal-depth-seg-btn--d3.is-active { background: var(--muted-2); }
+
+/* ── Unscheduled drawer ── */
+.cal-drawer {
+  width: 250px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--rule);
+  background: var(--bg-panel);
+  overflow-y: auto;
+  padding-bottom: 16px;
+}
+.cal-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.cal-drawer-count {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-variant-numeric: tabular-nums;
+}
+.cal-drawer-hint {
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--hair);
+  line-height: 1.45;
+}
+.cal-drawer-empty { padding: 14px 12px; font-size: 12px; color: var(--muted); }
+.cal-drawer-group-title {
+  padding: 10px 12px 4px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+.cal-drawer-item {
+  margin: 3px 8px;
+  padding: 6px 8px 6px 10px;
+  border: 1px solid var(--grid-border);
+  border-left-width: 3px;
+  border-radius: 3px;
+  background: var(--paper);
+  cursor: grab;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cal-drawer-item:hover { border-color: var(--accent); border-left-width: 3px; }
+.cal-drawer-item:active { cursor: grabbing; }
+.cal-drawer-item--d1 { border-left-color: var(--accent-blue-strong, var(--accent)); }
+.cal-drawer-item--d2 { border-left-color: var(--good); }
+.cal-drawer-item--d3 { border-left-color: var(--muted-2); }
+.cal-drawer-item-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cal-drawer-item-meta {
+  font-size: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Dark mode — keep block/popover shadows readable */
+html[data-appearance="dark"] .cal-block { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45); }
+html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55); }
+
+/* -------------------------------------------------------------------------
+   Ordering (P12.1) — section drag + task drop-edge indicators.
+   Same grammar as task-row drag: 2px ink insertion lines, accent-soft source.
+   ---------------------------------------------------------------------- */
+
+/* Task drop below a row — the counterpart of .drag-over's top line; this is
+   what makes "after the last task in a section" a visible, reachable spot. */
+.task-row.drag-over-bottom > td {
+  box-shadow: inset 0 -2px 0 0 var(--ink);
+}
+
+.section-drag-handle {
+  margin-right: 8px;
+}
+
+/* Section-drag insertion line above a section block… */
+.ws-section-row.ws-section-drop-before td {
+  box-shadow: inset 0 2px 0 0 var(--ink);
+}
+/* …and the section being dragged. */
+.ws-section-row.ws-section-drag-source td {
+  background: var(--accent-soft);
+}
+/* Task dragged onto a section header — inserts at the top of that section,
+   so the line sits under the header. */
+.ws-section-row.ws-drop-below td {
+  box-shadow: inset 0 -2px 0 0 var(--ink);
+}
+
+/* Floating name chip that follows the pointer during a section drag. */
+.section-drag-ghost {
+  position: fixed;
+  z-index: 9000;
+  pointer-events: none;
+  padding: 4px 10px;
+  background: var(--ink);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border-radius: 3px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  opacity: 0.95;
+}
+
+/* "Insert after the last section" — zero-height rule at the very bottom. */
+.ws-section-end-indicator td {
+  height: 0;
+  padding: 0;
+  border: none;
+  border-top: 2px solid var(--ink);
+}
+
+/* Empty section body — persists as a visible, droppable region. */
+.ws-section-empty-frozen {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg-panel);
+  padding: 6px 12px 6px 36px;
+  white-space: nowrap;
+  border-right: 2px solid var(--ink-2);
+  border-bottom: 1px solid var(--hair);
+}
+.ws-section-empty-overflow {
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--hair);
+}
+.ws-section-empty-note {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--muted);
+}
+.ws-section-empty-remove {
+  margin-left: 12px;
+  font-family: inherit;
+  font-size: 10px;
+  padding: 1px 7px;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.ws-section-empty-remove:hover {
+  color: var(--urg-crit);
+  border-color: var(--urg-crit);
+}
+.ws-section-empty-row.ws-drop-into td {
+  box-shadow: inset 0 0 0 2px var(--ink);
+  background: var(--accent-soft);
+}
