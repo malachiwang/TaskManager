@@ -25,6 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
 from backend import database as db_config
+from backend import nl as nl_parser
 from backend.database import get_connection, init_db
 from backend.logic import (
     calculate_days_since,
@@ -2285,6 +2286,156 @@ def get_event_move_proposal(calendar_id: int, uid: str, now: Optional[str] = Non
         "fixed_count": fixed_count,
         "link_ids": [l["id"] for l in moved],
     }
+    conn.close()
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Natural-language scheduling (V5.2 Part III) + Calendar search (Part V).
+# Both are pure reads: /nl/parse only interprets (the client shows the
+# interpretation for confirmation — §10), and /search only finds.
+# ---------------------------------------------------------------------------
+
+@app.get("/nl/parse")
+def parse_natural_language(q: str, now: Optional[str] = None):
+    """Interpret a concise scheduling expression. Never creates anything."""
+    now_dt = datetime.fromisoformat(now) if now else datetime.now()
+    conn = get_connection()
+    contexts = [dict(r) for r in conn.execute("SELECT id, name FROM contexts").fetchall()]
+    tasks = [dict(r) for r in conn.execute(
+        "SELECT id, name FROM tasks WHERE is_active = 1 AND is_paused = 0"
+    ).fetchall()]
+    conn.close()
+    try:
+        return nl_parser.parse_nl(q, now_dt, contexts=contexts, tasks=tasks)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+_SEARCH_TYPES = frozenset({"task", "session", "entry", "event", "context"})
+
+
+@app.get("/search")
+def search_calendar(
+    q: str = "",
+    types: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    context_id: Optional[int] = None,
+    depth: Optional[int] = None,
+    status: Optional[str] = None,       # completed | incomplete (sessions)
+    calendar_id: Optional[int] = None,  # external source filter
+    limit: int = 30,
+):
+    """Search across tasks, sessions, calendar entries, external events, and
+    contexts (§15/§16). Historical and future records alike; substring match,
+    case-insensitive. Read-only."""
+    query = q.strip().lower()
+    if not query and context_id is None:
+        raise HTTPException(status_code=422, detail="Provide q or context_id")
+    if status is not None and status not in ("completed", "incomplete"):
+        raise HTTPException(status_code=422, detail="status must be completed or incomplete")
+    requested = _SEARCH_TYPES if not types else {
+        t.strip() for t in types.split(",") if t.strip() in _SEARCH_TYPES}
+    like = f"%{query}%"
+    limit = max(1, min(100, limit))
+    conn = get_connection()
+    out: dict = {"tasks": [], "sessions": [], "events": [], "contexts": []}
+
+    if "task" in requested:
+        sql = """
+            SELECT t.id, t.name, t.section, t.category, t.depth, t.due_date,
+                   t.is_paused, c.name AS context_name
+            FROM tasks t LEFT JOIN contexts c ON c.id = t.context_id
+            WHERE t.is_active = 1
+              AND (lower(t.name) LIKE ? OR lower(t.category) LIKE ? OR lower(t.section) LIKE ?)
+        """
+        params: list = [like, like, like]
+        if context_id is not None:
+            sql += " AND t.context_id = ?"
+            params.append(context_id)
+        if depth is not None:
+            sql += " AND t.depth = ?"
+            params.append(depth)
+        sql += " ORDER BY t.name LIMIT ?"
+        params.append(limit)
+        out["tasks"] = [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+    if requested & {"session", "entry"}:
+        sql = """
+            SELECT s.id, s.task_id, s.planned_start, s.planned_end, s.status,
+                   s.is_fixed,
+                   CASE WHEN s.task_id IS NULL THEN s.title ELSE t.name END AS name,
+                   CASE WHEN s.task_id IS NULL THEN s.depth ELSE t.depth END AS depth,
+                   CASE WHEN s.task_id IS NULL THEN cs.name ELSE ct.name END AS context_name
+            FROM task_sessions s
+            LEFT JOIN tasks t ON t.id = s.task_id
+            LEFT JOIN contexts cs ON cs.id = s.context_id
+            LEFT JOIN contexts ct ON ct.id = t.context_id
+            WHERE (s.task_id IS NULL OR t.is_active = 1)
+              AND lower(CASE WHEN s.task_id IS NULL THEN s.title ELSE t.name END) LIKE ?
+        """
+        params = [like]
+        if "session" not in requested:
+            sql += " AND s.task_id IS NULL"
+        if "entry" not in requested:
+            sql += " AND s.task_id IS NOT NULL"
+        if start:
+            sql += " AND s.planned_start >= ?"
+            params.append(start + "T00:00")
+        if end:
+            sql += " AND s.planned_start <= ?"
+            params.append(end + "T23:59")
+        if status == "completed":
+            sql += " AND s.status IN ('completed', 'partial')"
+        elif status == "incomplete":
+            sql += " AND s.status = 'scheduled'"
+        if depth is not None:
+            sql += " AND CASE WHEN s.task_id IS NULL THEN s.depth ELSE t.depth END = ?"
+            params.append(depth)
+        if context_id is not None:
+            sql += " AND CASE WHEN s.task_id IS NULL THEN s.context_id ELSE t.context_id END = ?"
+            params.append(context_id)
+        sql += " ORDER BY s.planned_start DESC LIMIT ?"
+        params.append(limit)
+        out["sessions"] = [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+    if "event" in requested:
+        sql = """
+            SELECT e.calendar_id, e.uid, e.title, e.start, e.end, e.all_day,
+                   c.name AS calendar_name, ctx.name AS context_name
+            FROM external_events e
+            JOIN external_calendars c ON c.id = e.calendar_id
+            LEFT JOIN context_event_links cel
+              ON cel.calendar_id = e.calendar_id AND cel.uid = e.uid
+            LEFT JOIN contexts ctx ON ctx.id = cel.context_id
+            WHERE lower(e.title) LIKE ?
+        """
+        params = [like]
+        if calendar_id is not None:
+            sql += " AND e.calendar_id = ?"
+            params.append(calendar_id)
+        if context_id is not None:
+            sql += " AND cel.context_id = ?"
+            params.append(context_id)
+        if start:
+            sql += " AND e.start >= ?"
+            params.append(start + "T00:00")
+        if end:
+            sql += " AND e.start <= ?"
+            params.append(end + "T23:59")
+        sql += " ORDER BY e.start DESC LIMIT ?"
+        params.append(limit)
+        out["events"] = [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+    if "context" in requested and query:
+        out["contexts"] = [dict(r) for r in conn.execute(
+            """
+            SELECT x.id, x.name,
+                   (SELECT COUNT(*) FROM tasks t WHERE t.context_id = x.id AND t.is_active = 1) AS task_count
+            FROM contexts x WHERE lower(x.name) LIKE ? ORDER BY x.name LIMIT ?
+            """, (like, limit)).fetchall()]
+
     conn.close()
     return out
 

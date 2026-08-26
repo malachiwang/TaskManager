@@ -674,6 +674,25 @@ export async function fetchSuggestions() {
   return res.json();
 }
 
+// Natural-language scheduling (V5.2) — interpretation only; the caller shows
+// the parsed proposal for confirmation before anything is created.
+export async function parseNaturalLanguage(q) {
+  const res = await fetch(`${BASE}/nl/parse?q=${encodeURIComponent(q)}`);
+  if (!res.ok) throw new Error(`parseNaturalLanguage failed: ${res.status}`);
+  return res.json();
+}
+
+// Calendar search (V5.2) — params: q, types, start, end, context_id, depth,
+// status, calendar_id. Read-only.
+export async function searchCalendar(params) {
+  const clean = Object.fromEntries(
+    Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ''),
+  );
+  const res = await fetch(`${BASE}/search?${new URLSearchParams(clean)}`);
+  if (!res.ok) throw new Error(`searchCalendar failed: ${res.status}`);
+  return res.json();
+}
+
 export async function fetchReminders() {
   const res = await fetch(`${BASE}/reminders`);
   if (!res.ok) throw new Error(`fetchReminders failed: ${res.status}`);

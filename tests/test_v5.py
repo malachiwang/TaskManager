@@ -260,3 +260,157 @@ class TestEventMoveProposal:
         _resync(client, monkeypatch, cal, _ics("20260828T150000", "20260828T160000"))
         rems = client.get("/reminders", params={"now": NOW}).json()
         assert not [r for r in rems if r["type"] == "event_moved"]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# V5.2 — natural-language scheduling (§60) and Calendar search (§61)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _parse(client, q, now=NOW):
+    res = client.get("/nl/parse", params={"q": q, "now": now})
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+class TestNaturalLanguage:
+    # NOW is Tuesday 2026-08-25 13:00.
+
+    def test_explicit_everything(self, client):
+        p = _parse(client, "research tomorrow 9am 90m d1")
+        assert p["title"] == "research"
+        assert p["date"] == "2026-08-26"
+        assert p["start_minutes"] == 9 * 60
+        assert p["end_minutes"] == 9 * 60 + 90
+        assert p["depth"] == 1
+        assert p["kind"] == "entry"          # §11 calendar-only default
+
+    def test_weekday_and_short_duration(self, client):
+        p = _parse(client, "email professor friday 4pm 20m d3")
+        assert p["date"] == "2026-08-28"     # next Friday
+        assert p["start_minutes"] == 16 * 60
+        assert p["duration_minutes"] == 20
+        assert p["depth"] == 3
+        assert p["title"] == "email professor"
+
+    def test_time_range(self, client):
+        p = _parse(client, "study group thursday 7-9pm d2")
+        assert p["date"] == "2026-08-27"
+        assert p["start_minutes"] == 19 * 60
+        assert p["end_minutes"] == 21 * 60
+        assert p["duration_minutes"] == 120
+        assert p["depth"] == 2
+        assert p["title"] == "study group"
+
+    def test_existing_task_reference(self, client):
+        _task(client, name="ISYE HW")
+        p = _parse(client, "schedule ISYE HW tomorrow morning for 2h")
+        assert p["task_name"] == "ISYE HW"
+        assert p["date"] == "2026-08-26"
+        assert p["start_minutes"] == 9 * 60   # morning
+        assert p["duration_minutes"] == 120
+        assert p["title"] == "ISYE HW"        # verb stripped
+
+    def test_missing_duration_defaults_with_note(self, client):
+        p = _parse(client, "ISYE tomorrow at 3")
+        assert p["start_minutes"] == 15 * 60  # bare 3 → PM
+        assert p["end_minutes"] == 16 * 60
+        assert any("1h" in n for n in p["notes"])
+        assert any("PM" in n for n in p["notes"])
+        assert p["kind"] == "entry"           # §10: shown for confirmation
+
+    def test_context_matched_without_eating_title(self, client):
+        ctx = _context(client, "ISYE 2027")
+        p = _parse(client, "ISYE review session tomorrow 2pm 45m")
+        assert p["context_id"] == ctx["id"]
+        assert "ISYE" in p["title"]           # context match is associative only
+
+    def test_fixed_keyword(self, client):
+        p = _parse(client, "advising appointment friday 10am 30m fixed")
+        assert p["is_fixed"] is True
+        assert "fixed" not in p["title"].lower()
+
+    def test_no_date_no_time_all_noted(self, client):
+        p = _parse(client, "reading notes")
+        assert p["date"] == "2026-08-25"
+        assert p["title"] == "reading notes"
+        assert len(p["notes"]) >= 2           # assumed today + assumed time
+
+    def test_malformed_inputs(self, client):
+        assert client.get("/nl/parse", params={"q": "   "}).status_code == 422
+        # nonsense parses safely into a title-only proposal
+        p = _parse(client, "zzz qqq 999xyz")
+        assert "zzz" in p["title"]
+
+    def test_parse_never_creates_anything(self, client):
+        before_tasks = len(client.get("/tasks").json())
+        _parse(client, "research tomorrow 9am 90m d1")
+        _parse(client, "schedule something friday")
+        assert len(client.get("/tasks").json()) == before_tasks
+        res = client.get("/sessions", params={"start": "2026-08-01", "end": "2026-12-31"})
+        assert res.json() == []
+
+
+class TestSearch:
+    def _seed(self, client, monkeypatch):
+        cal = _calendar(client, monkeypatch, text=(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"
+            "BEGIN:VEVENT\r\nUID:lec@v5\r\nSUMMARY:ISYE Lecture\r\n"
+            "DTSTART:20260827T110000\r\nDTEND:20260827T121500\r\nEND:VEVENT\r\n"
+            "END:VCALENDAR\r\n"))
+        ctx = _context(client, "ISYE 2027")
+        client.post("/context-event-links", json={
+            "context_id": ctx["id"], "calendar_id": cal["id"], "uid": "lec@v5"})
+        t = _task(client, name="ISYE Homework", context_id=ctx["id"], depth=2)
+        s = client.post("/sessions", json={
+            "task_id": t["id"], "planned_start": "2026-08-26T10:00",
+            "planned_end": "2026-08-26T11:00"}).json()
+        e = _entry(client, "ISYE study group", "2026-09-02T19:00", "2026-09-02T21:00")
+        return cal, ctx, t, s, e
+
+    def test_search_spans_all_types(self, client, monkeypatch):
+        self._seed(client, monkeypatch)
+        r = client.get("/search", params={"q": "isye"}).json()
+        assert [t["name"] for t in r["tasks"]] == ["ISYE Homework"]
+        names = [s["name"] for s in r["sessions"]]
+        assert "ISYE Homework" in names and "ISYE study group" in names
+        assert r["events"][0]["title"] == "ISYE Lecture"
+        assert r["contexts"][0]["name"] == "ISYE 2027"
+
+    def test_type_filter(self, client, monkeypatch):
+        self._seed(client, monkeypatch)
+        r = client.get("/search", params={"q": "isye", "types": "entry"}).json()
+        assert r["tasks"] == [] and r["events"] == []
+        assert [s["name"] for s in r["sessions"]] == ["ISYE study group"]
+        assert r["sessions"][0]["task_id"] is None
+
+    def test_date_range_filter(self, client, monkeypatch):
+        self._seed(client, monkeypatch)
+        r = client.get("/search", params={
+            "q": "isye", "types": "session,entry",
+            "start": "2026-09-01", "end": "2026-09-30"}).json()
+        assert [s["name"] for s in r["sessions"]] == ["ISYE study group"]
+
+    def test_status_filter(self, client, monkeypatch):
+        _, _, t, s, _ = self._seed(client, monkeypatch)
+        client.patch(f"/sessions/{s['id']}", json={"status": "completed"})
+        done = client.get("/search", params={"q": "isye", "status": "completed"}).json()
+        assert [x["name"] for x in done["sessions"]] == ["ISYE Homework"]
+        open_ = client.get("/search", params={"q": "isye", "status": "incomplete"}).json()
+        assert [x["name"] for x in open_["sessions"]] == ["ISYE study group"]
+
+    def test_context_filter_without_query(self, client, monkeypatch):
+        _, ctx, t, *_ = self._seed(client, monkeypatch)
+        other = _task(client, name="Unrelated chore")
+        r = client.get("/search", params={"q": "", "context_id": ctx["id"]}).json()
+        assert [x["name"] for x in r["tasks"]] == ["ISYE Homework"]
+        assert r["events"][0]["title"] == "ISYE Lecture"
+
+    def test_search_is_read_only(self, client, monkeypatch):
+        self._seed(client, monkeypatch)
+        before = client.get("/sessions", params={"start": "2026-08-01", "end": "2026-12-31"}).json()
+        client.get("/search", params={"q": "isye"})
+        after = client.get("/sessions", params={"start": "2026-08-01", "end": "2026-12-31"}).json()
+        assert before == after
+
+    def test_empty_query_without_context_rejected(self, client):
+        assert client.get("/search", params={"q": "  "}).status_code == 422

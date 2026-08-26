@@ -12,6 +12,7 @@ import {
   fetchTaskEventLinks, createTaskEventLink, deleteTaskEventLink,
   updateTaskEventLink, fetchEventMoveProposal,
   fetchSuggestions, fetchReminders,
+  parseNaturalLanguage, searchCalendar,
 } from '../api.js';
 import {
   SNAP_MINUTES, MIN_SESSION_MINUTES, DEFAULT_SESSION_MINUTES, DAY_MINUTES,
@@ -187,6 +188,15 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
   const [dupOpen, setDupOpen] = useState(false);
   const [dupDate, setDupDate] = useState('');
   const [newTaskOpen, setNewTaskOpen] = useState(false);
+
+  // Calendar search (V5.2 Part V) — server-side matching, read-only. The
+  // panel narrows by type/status/date and can pin a context taken from its
+  // own results (§16); selecting a dated result navigates the Calendar.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchFilters, setSearchFilters] = useState({ types: null, status: null, from: '', to: '' });
+  const [searchCtx, setSearchCtx] = useState(null); // pinned {id, name}
+  const [searchResults, setSearchResults] = useState(null);
   const [density, setDensity] = useState(() => {
     const saved = localStorage.getItem('taskos-cal-density');
     return DENSITY_SCALES[saved] ? saved : 'standard';
@@ -331,6 +341,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
   function closeTransients() {
     setPaletteOpen(false);
     setDupOpen(false);
+    setSearchOpen(false);
     setCreator(null);
     setQuickOpen(false);
     setConfirmAction(null);
@@ -409,7 +420,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
         const hadTransient = creator || quickOpen || confirmAction || windowMenu
           || partialEdit || reconcileOpen || calsOpen || shiftOpen || shiftPlan
           || insteadFor || placingTask || templatesOpen || templateMode
-          || remindersOpen || extDetail || dupOpen;
+          || remindersOpen || extDetail || dupOpen || searchOpen;
         if (hadTransient) closeTransients();
         else setSelected(null);
         return;
@@ -458,7 +469,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
   }, [editingTask, editorSessionId, selected, selectedSession, creator, quickOpen,
     confirmAction, windowMenu, partialEdit, reconcileOpen, calsOpen, shiftOpen,
     shiftPlan, insteadFor, placingTask, templatesOpen, templateMode, remindersOpen,
-    extDetail, paletteOpen, dupOpen, newTaskOpen,
+    extDetail, paletteOpen, dupOpen, newTaskOpen, searchOpen,
     goToday, shiftPeriod, updateDrag]);
 
   // ── Pointer → slot math ────────────────────────────────────────────────────
@@ -1252,6 +1263,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
       await createSession({
         title,
         depth: c.depth || null,
+        context_id: c.nlContextId || null, // NL-matched course (V5.2), if any
         planned_start: combinePlanned(c.dateIso, c.startMin),
         planned_end: combinePlannedEnd(c.dateIso, c.endMin),
         is_fixed: !!c.isFixed,
@@ -1531,6 +1543,84 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
     [tasks],
   );
 
+  // ── Natural-language creation + search (V5.2) ──────────────────────────────
+  // NL parse is interpretation only — the creator popover shows the parsed
+  // proposal (date, time, assumptions, matched task/context) and the user
+  // confirms or edits before anything exists (§10). Calendar-only default
+  // (§11) holds because confirmation goes through the ordinary entry tab.
+  async function nlCreate(q) {
+    try {
+      const p = await parseNaturalLanguage(q);
+      closeTransients();
+      setAnchorIso(p.date);
+      setCreator({
+        kind: 'task',
+        mode: 'popover',
+        tab: p.task_id ? 'existing' : 'new',
+        dateIso: p.date,
+        startMin: p.start_minutes,
+        endMin: Math.max(p.start_minutes + MIN_SESSION_MINUTES,
+          Math.min(DAY_MINUTES, p.end_minutes)),
+        title: p.title || q,
+        depth: p.depth ?? 0,
+        isFixed: !!p.is_fixed,
+        search: p.task_name || '',
+        nlNotes: p.notes || [],
+        nlContextId: p.context_id || null,
+        nlContextName: p.context_name || null,
+        saving: false,
+        error: '',
+      });
+    } catch (err) {
+      console.error('natural-language parse failed:', err);
+    }
+  }
+
+  function openSearch(q = '') {
+    closeTransients();
+    setSearchQuery(q);
+    setSearchCtx(null);
+    setSearchResults(null);
+    setSearchOpen(true);
+  }
+
+  useEffect(() => {
+    if (!searchOpen) return undefined;
+    const q = searchQuery.trim();
+    if (!q && !searchCtx) {
+      setSearchResults(null);
+      return undefined;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        setSearchResults(await searchCalendar({
+          q,
+          types: searchFilters.types ?? undefined,
+          status: searchFilters.status ?? undefined,
+          start: searchFilters.from || undefined,
+          end: searchFilters.to || undefined,
+          context_id: searchCtx?.id,
+        }));
+      } catch (err) {
+        console.error('search failed:', err);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchOpen, searchQuery, searchFilters, searchCtx]);
+
+  // §17 — a result is a place, not a text row: navigate there and select it.
+  function gotoSearchSession(r) {
+    setSearchOpen(false);
+    setAnchorIso(r.planned_start.slice(0, 10));
+    setSelected({ sessionId: r.id, rect: null });
+    setQuickOpen(false);
+  }
+
+  function gotoSearchEvent(r) {
+    setSearchOpen(false);
+    setAnchorIso(r.start.slice(0, 10));
+  }
+
   // ── Command palette (V5.1 Part II) ─────────────────────────────────────────
   // Every command dispatches to the exact handler its equivalent button uses.
   // Context-aware (§7): session-specific commands appear only with a session
@@ -1562,6 +1652,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
       { id: 'prev', label: `Previous ${periodNoun}`, hint: '←', keywords: 'back', run: () => shiftPeriod(-1) },
       { id: 'new-entry', label: 'New calendar entry…', keywords: 'create block session', run: openPaletteCreator },
       { id: 'new-task', label: 'New Grid task…', keywords: 'create canonical', run: () => { closeTransients(); setNewTaskOpen(true); } },
+      { id: 'search', label: 'Search Calendar…', keywords: 'find lookup history', run: () => openSearch('') },
       {
         id: 'drawer',
         label: drawerOpen ? 'Close unscheduled drawer' : 'Open unscheduled drawer',
@@ -1942,6 +2033,14 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
           endMin={creator.endMin}
           onChange={setTimes}
         />
+        {/* NL interpretation transparency (V5.2 §10) — what was matched and
+            what was assumed, shown BEFORE anything is created. */}
+        {creator.nlContextName && (
+          <div className="cal-popover-hint">Context: {creator.nlContextName}</div>
+        )}
+        {creator.nlNotes?.length > 0 && (
+          <div className="cal-popover-hint">Assumed: {creator.nlNotes.join(' · ')}</div>
+        )}
 
         {creator.tab === 'new' ? (
           <>
@@ -3063,6 +3162,134 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
         </div>
       )}
 
+      {/* Calendar search (V5.2 Part V) — read-only; results navigate. */}
+      {searchOpen && (
+        <div className="cal-popover cal-search" role="dialog" aria-label="Calendar search">
+          <div className="cal-popover-head">
+            <span className="cal-popover-kicker">Search Calendar</span>
+            <button type="button" className="cal-popover-close" aria-label="Close"
+              onClick={() => setSearchOpen(false)}>×</button>
+          </div>
+          <input
+            className="task-modal-input"
+            autoFocus
+            placeholder="Tasks, sessions, entries, events, courses…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setSearchOpen(false); }
+            }}
+          />
+          {searchCtx && (
+            <div className="cal-partial-row">
+              <span className="cal-reconcile-name">Filtered to {searchCtx.name}</span>
+              <button type="button" className="cal-flag-btn" onClick={() => setSearchCtx(null)}>×</button>
+            </div>
+          )}
+          <div className="cal-popover-actions cal-popover-actions--wrap">
+            {[['All', null], ['Tasks', 'task'], ['Sessions', 'session'], ['Entries', 'entry'], ['Events', 'event']]
+              .map(([label, val]) => (
+                <button key={label} type="button"
+                  className={`cal-flag-btn${searchFilters.types === val ? ' is-active' : ''}`}
+                  aria-pressed={searchFilters.types === val}
+                  onClick={() => setSearchFilters((f) => ({ ...f, types: val }))}>
+                  {label}
+                </button>
+              ))}
+          </div>
+          <div className="cal-popover-actions cal-popover-actions--wrap">
+            {[['Any status', null], ['Open', 'incomplete'], ['Done', 'completed']].map(([label, val]) => (
+              <button key={label} type="button"
+                className={`cal-flag-btn${searchFilters.status === val ? ' is-active' : ''}`}
+                aria-pressed={searchFilters.status === val}
+                onClick={() => setSearchFilters((f) => ({ ...f, status: val }))}>
+                {label}
+              </button>
+            ))}
+            <input type="date" className="task-modal-input cal-dup-date" aria-label="From date"
+              value={searchFilters.from}
+              onChange={(e) => setSearchFilters((f) => ({ ...f, from: e.target.value }))} />
+            <input type="date" className="task-modal-input cal-dup-date" aria-label="To date"
+              value={searchFilters.to}
+              onChange={(e) => setSearchFilters((f) => ({ ...f, to: e.target.value }))} />
+          </div>
+          {searchResults && (
+            <div className="cal-search-results">
+              {searchResults.contexts.length > 0 && (
+                <div className="cal-ext-links">
+                  <span className="cal-drawer-group-title">Courses / contexts</span>
+                  {searchResults.contexts.map((c) => (
+                    <button key={c.id} type="button" className="cal-task-picker-row"
+                      title="Filter results to this context"
+                      onClick={() => { setSearchCtx({ id: c.id, name: c.name }); setSearchQuery(''); }}>
+                      <span className="cal-task-picker-name">{c.name}</span>
+                      <span className="cal-task-picker-meta">{c.task_count} task{c.task_count !== 1 ? 's' : ''}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {searchResults.tasks.length > 0 && (
+                <div className="cal-ext-links">
+                  <span className="cal-drawer-group-title">Grid tasks</span>
+                  {searchResults.tasks.map((t) => (
+                    <button key={t.id} type="button" className="cal-task-picker-row"
+                      title="Open the full task record"
+                      onClick={() => {
+                        const full = tasks.find((x) => x.id === t.id);
+                        setSearchOpen(false);
+                        if (full) setEditingTask(full);
+                      }}>
+                      <span className="cal-task-picker-name">{displayTitle(t.name)}</span>
+                      <span className="cal-task-picker-meta">
+                        {t.context_name ?? (t.section !== 'General' ? t.section : '—')}
+                        {t.due_date ? ` · due ${t.due_date.slice(5)}` : ''}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {searchResults.sessions.length > 0 && (
+                <div className="cal-ext-links">
+                  <span className="cal-drawer-group-title">Sessions & entries</span>
+                  {searchResults.sessions.map((r) => (
+                    <button key={r.id} type="button" className="cal-task-picker-row"
+                      title="Go to this block on the Calendar"
+                      onClick={() => gotoSearchSession(r)}>
+                      <span className="cal-task-picker-name">
+                        {displayTitle(r.name)}
+                        {r.task_id == null ? ' ·▫' : ''}
+                      </span>
+                      <span className="cal-task-picker-meta">
+                        {r.planned_start.slice(5, 16).replace('T', ' ')} · {r.status}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {searchResults.events.length > 0 && (
+                <div className="cal-ext-links">
+                  <span className="cal-drawer-group-title">External commitments</span>
+                  {searchResults.events.map((r, i) => (
+                    <button key={`${r.uid}:${r.start}:${i}`} type="button" className="cal-task-picker-row"
+                      title="Go to this commitment on the Calendar"
+                      onClick={() => gotoSearchEvent(r)}>
+                      <span className="cal-task-picker-name">▸ {displayTitle(r.title)}</span>
+                      <span className="cal-task-picker-meta">
+                        {r.start.slice(5, 16).replace('T', ' ')} · {r.calendar_name}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {searchResults.tasks.length === 0 && searchResults.sessions.length === 0
+                && searchResults.events.length === 0 && searchResults.contexts.length === 0 && (
+                <div className="cal-popover-hint">No matches.</div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* External commitment detail (P16.0 §44/§45) — read-only event;
           local actions only (context, task links). No "edit event" illusion. */}
       {extDetail && (() => {
@@ -3299,7 +3526,21 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
         commands={buildPaletteCommands()}
-        placeholder="Type a command…"
+        placeholder="Type a command, or describe something to schedule…"
+        freeTextActions={[
+          {
+            id: 'nl-create',
+            hint: 'e.g. “research tomorrow 9am 90m d1”',
+            label: (q) => `Create: “${q}”`,
+            run: (q) => nlCreate(q),
+          },
+          {
+            id: 'search',
+            hint: 'search calendar',
+            label: (q) => `Search: “${q}”`,
+            run: (q) => openSearch(q),
+          },
+        ]}
       />
 
       {/* Protected-window override (§8) — always permits scheduling. */}
