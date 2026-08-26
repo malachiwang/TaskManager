@@ -252,7 +252,7 @@ function startEdgeAutoscroll(scrollEl, getPointerY, onScrollTick) {
   return () => clearInterval(timer);
 }
 
-export default function TaskGrid() {
+export default function TaskGrid({ onScheduleTask = null }) {
   // Real today — always fixed regardless of which month is displayed.
   const todayStr = toLocalDate(new Date());
 
@@ -2344,6 +2344,7 @@ export default function TaskGrid() {
           onDelete={handleDelete}
           onClose={closeModal}
           onHiatusChanged={loadData}
+          onSchedule={onScheduleTask ? (task) => { closeModal(); onScheduleTask(task); } : null}
         />
       )}
     </>

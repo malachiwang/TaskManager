@@ -8,6 +8,9 @@ import {
   fetchExternalCalendars, createExternalCalendar, updateExternalCalendar,
   deleteExternalCalendar, syncExternalCalendar, fetchExternalEvents,
   fetchWindowTemplates, createWindowTemplate, updateWindowTemplate, deleteWindowTemplate,
+  fetchContexts, createContext, linkEventToContext, unlinkEventFromContext,
+  fetchTaskEventLinks, createTaskEventLink, deleteTaskEventLink,
+  fetchSuggestions, fetchReminders,
 } from '../api.js';
 import {
   SNAP_MINUTES, MIN_SESSION_MINUTES, DEFAULT_SESSION_MINUTES, DAY_MINUTES,
@@ -79,7 +82,7 @@ function DepthSeg({ value, onChange, allowNone = true }) {
   );
 }
 
-export default function CalendarView() {
+export default function CalendarView({ placeRequest = null, onPlaceRequestConsumed = null }) {
   const [viewMode, setViewMode] = useState('week'); // 'week' | 'day'
   const [anchorIso, setAnchorIso] = useState(() => todayIso());
 
@@ -123,6 +126,35 @@ export default function CalendarView() {
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [templateMode, setTemplateMode] = useState(null); // {type:'apply',tpl} | {type:'save'} | {type:'update',tpl}
   const [templateRename, setTemplateRename] = useState(null); // { id, name }
+
+  // Contextual layer (P16.0): server-computed Good Fits + reminders,
+  // contexts, external-event detail panel, post-class review draft.
+  const [suggestData, setSuggestData] = useState(null); // { gap, current_window, suggestions }
+  const [reminders, setReminders] = useState([]);
+  const [remindersOpen, setRemindersOpen] = useState(false);
+  const [contexts, setContexts] = useState([]);
+  const [extDetail, setExtDetail] = useState(null); // { event, rect, links, linkPicker, ctxDraft }
+  const [reviewDraft, setReviewDraft] = useState(null); // { contextName } → TaskModal then place
+  const [reminderPrefs, setReminderPrefs] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('taskos-reminder-prefs') || '{}'); } catch { return {}; }
+  });
+  const [dismissedReminders, setDismissedReminders] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('taskos-reminders-dismissed') || '[]'); } catch { return []; }
+  });
+  useEffect(() => {
+    localStorage.setItem('taskos-reminder-prefs', JSON.stringify(reminderPrefs));
+  }, [reminderPrefs]);
+  useEffect(() => {
+    localStorage.setItem('taskos-reminders-dismissed', JSON.stringify(dismissedReminders.slice(-200)));
+  }, [dismissedReminders]);
+
+  // Schedule-from-Grid (§13/§15): consume the handed-off task into the
+  // existing placement mode. The Grid task carries its rollups already.
+  useEffect(() => {
+    if (!placeRequest) return;
+    setPlacingTask(placeRequest);
+    onPlaceRequestConsumed?.();
+  }, [placeRequest, onPlaceRequestConsumed]);
 
   // Interaction state. Drag is mirrored in a ref: pointer events can arrive
   // faster than React re-renders (a fast flick is pointerdown+move+up inside
@@ -225,7 +257,30 @@ export default function CalendarView() {
     } catch (err) {
       console.warn('window templates unavailable:', err);
     }
+    try {
+      const [sug, rem, ctxs] = await Promise.all([
+        fetchSuggestions(), fetchReminders(), fetchContexts(),
+      ]);
+      setSuggestData(sug);
+      setReminders(rem);
+      setContexts(ctxs);
+    } catch (err) {
+      console.warn('contextual data unavailable:', err);
+    }
   }, [rangeStart, rangeEnd]);
+
+  // Reminders + Good Fits track the clock: refresh with the 30s now-tick.
+  useEffect(() => {
+    if (loading) return;
+    let stale = false;
+    (async () => {
+      try {
+        const [sug, rem] = await Promise.all([fetchSuggestions(), fetchReminders()]);
+        if (!stale) { setSuggestData(sug); setReminders(rem); }
+      } catch { /* isolated */ }
+    })();
+    return () => { stale = true; };
+  }, [nowTick, loading]);
 
   useEffect(() => {
     loadData({ gate: !loadedOnce.current });
@@ -261,6 +316,8 @@ export default function CalendarView() {
     setTemplatesOpen(false);
     setTemplateMode(null);
     setTemplateRename(null);
+    setRemindersOpen(false);
+    setExtDetail(null);
   }
 
   // Auto-refresh stale external calendars once per mount — fire-and-forget,
@@ -312,7 +369,8 @@ export default function CalendarView() {
         updateDrag(null);
         const hadTransient = creator || quickOpen || confirmAction || windowMenu
           || partialEdit || reconcileOpen || calsOpen || shiftOpen || shiftPlan
-          || insteadFor || placingTask || templatesOpen || templateMode;
+          || insteadFor || placingTask || templatesOpen || templateMode
+          || remindersOpen || extDetail;
         if (hadTransient) closeTransients();
         else setSelected(null);
         return;
@@ -336,7 +394,7 @@ export default function CalendarView() {
     return () => window.removeEventListener('keydown', onKey);
   }, [editingTask, editorSessionId, selected, creator, quickOpen, confirmAction,
     windowMenu, partialEdit, reconcileOpen, calsOpen, shiftOpen, shiftPlan,
-    insteadFor, placingTask, templatesOpen, templateMode,
+    insteadFor, placingTask, templatesOpen, templateMode, remindersOpen, extDetail,
     goToday, shiftPeriod, updateDrag]);
 
   // ── Pointer → slot math ────────────────────────────────────────────────────
@@ -419,7 +477,8 @@ export default function CalendarView() {
       // click OR drag places another session of the SAME canonical task.
       if (placingTask && d.type === 'select') {
         const dur = Math.max(MIN_SESSION_MINUTES,
-          placingTask.remaining_unscheduled_minutes || placingTask.estimated_minutes || DEFAULT_SESSION_MINUTES);
+          placingTask.__suggested || placingTask.remaining_unscheduled_minutes
+          || placingTask.estimated_minutes || DEFAULT_SESSION_MINUTES);
         const startMin = d.moved ? d.startMin : d.anchorMin;
         const endMin = d.moved
           ? Math.max(d.endMin, startMin + MIN_SESSION_MINUTES)
@@ -870,6 +929,85 @@ export default function CalendarView() {
       console.error('save template failed:', err);
     }
   }
+
+  // ── External commitment detail (P16.0 §44) ─────────────────────────────────
+  async function openExtDetail(ev, rect) {
+    closeTransients();
+    let links = [];
+    try {
+      links = await fetchTaskEventLinks({ calendar_id: ev.calendar_id, uid: ev.uid });
+    } catch { /* isolated */ }
+    setExtDetail({ event: ev, rect, links, linkPicker: null, ctxDraft: '' });
+  }
+
+  async function refreshExtDetailLinks(ev) {
+    try {
+      const links = await fetchTaskEventLinks({ calendar_id: ev.calendar_id, uid: ev.uid });
+      setExtDetail((d) => (d && d.event.uid === ev.uid ? { ...d, links } : d));
+    } catch { /* isolated */ }
+  }
+
+  async function assignEventContext(ev, name) {
+    const trimmed = name.trim();
+    try {
+      if (!trimmed) {
+        await unlinkEventFromContext(ev.calendar_id, ev.uid);
+      } else {
+        const ctx = await createContext(trimmed);
+        await linkEventToContext(ctx.id, ev.calendar_id, ev.uid);
+        setContexts(await fetchContexts());
+      }
+      await refreshExternal();
+      setExtDetail((d) => (d ? {
+        ...d,
+        ctxDraft: '',
+        event: { ...d.event, context_name: trimmed || null },
+      } : d));
+    } catch (err) {
+      console.error('assign context failed:', err);
+    }
+  }
+
+  async function addEventTaskLink(ev, task, relation) {
+    try {
+      await createTaskEventLink({
+        task_id: task.id,
+        calendar_id: ev.calendar_id,
+        uid: ev.uid,
+        relation,
+        event_start: ev.start,
+      });
+      await refreshExtDetailLinks(ev);
+      setExtDetail((d) => (d ? { ...d, linkPicker: null } : d));
+    } catch (err) {
+      console.error('link task failed:', err);
+    }
+  }
+
+  // Post-class review (§41/§42): suggestion-driven only. If the context has
+  // an unfinished task with remaining effort, arm placement for it;
+  // otherwise open the canonical New Task modal prefilled, then place.
+  function scheduleReview(rem) {
+    closeTransients();
+    const ctxTask = tasks.find((t) => t.context_name === rem.context_name
+      && !t.is_paused && !t.is_ended
+      && /review/i.test(t.name)
+      && (t.remaining_unscheduled_minutes ?? 0) > 0);
+    if (ctxTask) {
+      setPlacingTask(ctxTask);
+    } else {
+      setReviewDraft({ contextName: rem.context_name });
+    }
+    dismissReminder(rem.key);
+  }
+
+  function dismissReminder(key) {
+    setDismissedReminders((prev) => (prev.includes(key) ? prev : [...prev, key]));
+  }
+
+  const visibleReminders = useMemo(() => (
+    reminders.filter((r) => reminderPrefs[r.type] !== false && !dismissedReminders.includes(r.key))
+  ), [reminders, reminderPrefs, dismissedReminders]);
 
   async function refreshExternal() {
     try {
@@ -1377,6 +1515,7 @@ export default function CalendarView() {
           width: `calc(${width}% - 3px)`,
         }}
         title={`${displayTitle(ev.title)} · ${formatTimeRange(item.startMin, item.endMin)} · ${ev.calendar_name} — external commitment (fixed)`}
+        onClick={(e) => openExtDetail(ev, e.currentTarget.getBoundingClientRect())}
       >
         <div className="cal-block-head">
           <span className="cal-ext-marker" aria-hidden="true">▸</span>
@@ -1812,6 +1951,43 @@ export default function CalendarView() {
           <span className="cal-drawer-count">{unscheduledCount}</span>
         </div>
         <div className="cal-drawer-hint">Drag a task onto the calendar to schedule it.</div>
+        {/* Good Fits Now (P16.0 §3) — optional, transparent, on TOP of the
+            manual drawer; every row explains itself and only arms placement. */}
+        {suggestData && suggestData.suggestions.length > 0 && (
+          <div className="cal-goodfits">
+            <div className="cal-drawer-group-title">Good fits now</div>
+            <div className="cal-goodfits-gap">
+              Available until {formatTimeOfDay(suggestData.gap.end_minutes)} ·{' '}
+              {durationLabel(suggestData.gap.minutes)}
+              {suggestData.gap.bounded_by !== 'end of day' ? ` · then ${displayTitle(suggestData.gap.bounded_by)}` : ''}
+              {suggestData.current_window
+                ? ` · D${suggestData.current_window.depth} window${suggestData.current_window.protected ? ' (protected)' : ''}`
+                : ''}
+            </div>
+            {suggestData.suggestions.map((s) => {
+              const task = tasks.find((t) => t.id === s.task_id);
+              return (
+                <div key={s.task_id} className={`cal-drawer-item${s.depth ? ` cal-drawer-item--d${s.depth}` : ''} cal-goodfits-item`}>
+                  <span className="cal-drawer-item-name">{displayTitle(s.name)}</span>
+                  <span className="cal-drawer-item-meta">{s.reasons.join(' · ')}</span>
+                  <button
+                    type="button"
+                    className="cal-flag-btn cal-goodfits-place"
+                    title="Arm placement for this task — you pick the interval"
+                    onClick={() => {
+                      if (!task) return;
+                      closeTransients();
+                      setDrawerOpen(true);
+                      setPlacingTask({ ...task, __suggested: s.suggested_minutes });
+                    }}
+                  >
+                    Place {durationLabel(s.suggested_minutes)}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
         {groups.length === 0 && (
           <div className="cal-drawer-empty">Every active task has an upcoming session.</div>
         )}
@@ -1844,6 +2020,12 @@ export default function CalendarView() {
                       : durationLabel(t.estimated_minutes))
                     : '—'}
                   {t.section && t.section !== 'General' ? ` · ${t.section}` : ''}
+                  {t.context_name ? ` · ${t.context_name}` : ''}
+                  {(t.remaining_unscheduled_before_due ?? 0) > 0 && (
+                    <span className="cal-coverage-warn">
+                      {' '}· {durationLabel(t.remaining_unscheduled_before_due)} unscheduled before {t.due_date.slice(5)}
+                    </span>
+                  )}
                 </span>
               </div>
             ))}
@@ -1896,6 +2078,17 @@ export default function CalendarView() {
               onClick={() => setViewMode('day')}
             >Day</button>
           </div>
+          {visibleReminders.length > 0 && (
+            <button
+              type="button"
+              className={`cal-nav-btn cal-review-btn${remindersOpen ? ' is-active' : ''}`}
+              aria-pressed={remindersOpen}
+              title="Reminders — upcoming sessions, commitments, prep and deadlines"
+              onClick={() => { const open = remindersOpen; closeTransients(); setRemindersOpen(!open); }}
+            >
+              ⚑ {visibleReminders.length}
+            </button>
+          )}
           <button
             type="button"
             className={`cal-nav-btn${calsOpen ? ' is-active' : ''}`}
@@ -1959,7 +2152,10 @@ export default function CalendarView() {
       {(placingTask || templateMode) && (
         <div className="cal-mode-banner" role="status">
           {placingTask
-            ? `Placing “${displayTitle(placingTask.name)}” — drag or click a time slot · Esc cancels`
+            ? `Placing “${displayTitle(placingTask.name)}”${
+              placingTask.remaining_unscheduled_minutes
+                ? ` · ${durationLabel(placingTask.remaining_unscheduled_minutes)} remaining${placingTask.due_date ? ` · due ${placingTask.due_date.slice(5)}` : ''}`
+                : ''} — drag or click a time slot · Esc cancels`
             : templateMode.type === 'apply'
               ? `Click a day header to apply “${templateMode.tpl.name}” · Esc cancels`
               : templateMode.type === 'update'
@@ -2440,6 +2636,197 @@ export default function CalendarView() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Reminders tray (P16.0 Part VI) — in-app, dismissible, per-type
+          toggles. Nothing fires actions without the user clicking. */}
+      {remindersOpen && (
+        <div className="cal-popover cal-reconcile" role="dialog" aria-label="Reminders">
+          <div className="cal-popover-head">
+            <span className="cal-popover-kicker">Reminders</span>
+            <button type="button" className="cal-popover-close" aria-label="Close"
+              onClick={() => setRemindersOpen(false)}>×</button>
+          </div>
+          {visibleReminders.length === 0 && (
+            <div className="cal-popover-time">Nothing needs attention right now.</div>
+          )}
+          {visibleReminders.map((r) => (
+            <div key={r.key} className="cal-reconcile-row">
+              <div className="cal-reconcile-info">
+                <span className="cal-reconcile-name">{displayTitle(r.title)}</span>
+                <span className="cal-reconcile-time">{r.detail}</span>
+              </div>
+              <div className="cal-reconcile-actions">
+                {r.type === 'class_review' && (
+                  <button type="button" title="Schedule review work — nothing is created until you decide"
+                    onClick={() => scheduleReview(r)}>Schedule…</button>
+                )}
+                {r.type === 'deadline' && (
+                  <button type="button" title="Arm placement for this task's remaining effort"
+                    onClick={() => {
+                      const t = tasks.find((x) => x.id === r.task_id);
+                      if (t) { closeTransients(); setPlacingTask(t); }
+                    }}>Schedule…</button>
+                )}
+                {r.type === 'reconcile' && (
+                  <button type="button" onClick={() => { closeTransients(); setReconcileOpen(true); }}>
+                    Review
+                  </button>
+                )}
+                <button type="button" title="Dismiss this reminder"
+                  onClick={() => dismissReminder(r.key)}>×</button>
+              </div>
+            </div>
+          ))}
+          <div className="cal-popover-hint">Reminder types — untick to silence:</div>
+          <div className="cal-popover-actions cal-popover-actions--wrap">
+            {[['session_soon', 'Sessions'], ['event_soon', 'Commitments'], ['prep', 'Prep'],
+              ['followup', 'Follow-ups'], ['reconcile', 'Review'], ['deadline', 'Deadlines'],
+              ['class_review', 'Post-class']].map(([type, label]) => (
+              <button
+                key={type}
+                type="button"
+                className={`cal-flag-btn${reminderPrefs[type] !== false ? ' is-active' : ''}`}
+                aria-pressed={reminderPrefs[type] !== false}
+                onClick={() => setReminderPrefs((p) => ({ ...p, [type]: p[type] === false }))}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* External commitment detail (P16.0 §44/§45) — read-only event;
+          local actions only (context, task links). No "edit event" illusion. */}
+      {extDetail && (() => {
+        const ev = extDetail.event;
+        const startMin = plannedMinutes(ev.start);
+        const endMin = plannedDate(ev.end) === plannedDate(ev.start)
+          ? plannedMinutes(ev.end) : DAY_MINUTES;
+        const style = popoverPosition(extDetail.rect, 340, 380);
+        const groups = { before: [], after: [], related: [] };
+        for (const l of extDetail.links) groups[l.relation]?.push(l);
+        return (
+          <div className="cal-popover" style={style} role="dialog" aria-label="External commitment">
+            <div className="cal-popover-head">
+              <span className="cal-popover-name">
+                <span className="cal-ext-marker" aria-hidden="true">▸ </span>
+                {displayTitle(ev.title)}
+              </span>
+              <button type="button" className="cal-popover-close" aria-label="Close"
+                onClick={() => setExtDetail(null)}>×</button>
+            </div>
+            <div className="cal-popover-time">
+              {fullDateLabel(plannedDate(ev.start))}
+              <br />
+              {ev.all_day ? 'All day' : formatTimeRange(startMin, endMin)} · {ev.calendar_name} · fixed
+              <br />
+              <span className="cal-popover-actual">Read-only external event — edit it in its source calendar.</span>
+            </div>
+            <div className="cal-ext-context">
+              <span className="cal-creator-field"><span>Context / course</span></span>
+              {ev.context_name ? (
+                <div className="cal-partial-row">
+                  <span className="cal-reconcile-name">{ev.context_name}</span>
+                  <button type="button" className="task-modal-cancel"
+                    title="Remove this association — the event and any tasks stay"
+                    onClick={() => assignEventContext(ev, '')}>Unlink</button>
+                </div>
+              ) : (
+                <div className="cal-partial-row">
+                  <input
+                    className="task-modal-input"
+                    list="cal-ctx-options"
+                    placeholder="e.g. ISYE 2027"
+                    value={extDetail.ctxDraft}
+                    onChange={(e) => setExtDetail((d) => (d ? { ...d, ctxDraft: e.target.value } : d))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); assignEventContext(ev, extDetail.ctxDraft); }
+                      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setExtDetail(null); }
+                    }}
+                  />
+                  <datalist id="cal-ctx-options">
+                    {contexts.map((c) => <option key={c.id} value={c.name} />)}
+                  </datalist>
+                  <button type="button" className="task-modal-save"
+                    onClick={() => assignEventContext(ev, extDetail.ctxDraft)}>Set</button>
+                </div>
+              )}
+            </div>
+            {['before', 'after', 'related'].map((rel) => groups[rel].length > 0 && (
+              <div key={rel} className="cal-ext-links">
+                <span className="cal-drawer-group-title">{rel === 'before' ? 'Before' : rel === 'after' ? 'After' : 'Related'}</span>
+                {groups[rel].map((l) => (
+                  <div key={l.id} className="cal-reconcile-row">
+                    <div className="cal-reconcile-info">
+                      <span className="cal-reconcile-name">
+                        {l.task_done ? '☑' : '□'} {displayTitle(l.task_name)}
+                      </span>
+                      {l.event_status !== 'ok' && (
+                        <span className="cal-reconcile-time cal-coverage-warn">
+                          {l.event_status === 'moved'
+                            ? `event moved → ${l.next_start ? l.next_start.slice(5, 16).replace('T', ' ') : '?'}`
+                            : 'related event was cancelled'}
+                        </span>
+                      )}
+                      {l.offset_minutes ? (
+                        <span className="cal-reconcile-time">{durationLabel(l.offset_minutes)} {l.relation} event</span>
+                      ) : null}
+                    </div>
+                    <div className="cal-reconcile-actions">
+                      <button type="button" title="Detach this relationship — the task survives"
+                        onClick={async () => { await deleteTaskEventLink(l.id); refreshExtDetailLinks(ev); }}>×</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
+            {extDetail.linkPicker ? (
+              <div className="cal-task-picker" role="listbox" aria-label="Choose a task to link">
+                {tasks.filter((t) => !t.is_paused && !t.is_ended).slice(0, 20).map((t) => (
+                  <button key={t.id} type="button" className="cal-task-picker-row"
+                    onClick={() => addEventTaskLink(ev, t, extDetail.linkPicker)}>
+                    <span className="cal-task-picker-name">{displayTitle(t.name)}</span>
+                    <span className="cal-task-picker-meta">{t.section !== 'General' ? t.section : '—'}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="cal-popover-actions cal-popover-actions--wrap">
+                {[['before', 'Link before…'], ['after', 'Link after…'], ['related', 'Link related…']].map(([rel, label]) => (
+                  <button key={rel} type="button" className="cal-flag-btn"
+                    onClick={() => setExtDetail((d) => (d ? { ...d, linkPicker: rel } : d))}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Post-class review draft (§42) — canonical New Task modal, prefilled;
+          created task is then armed for placement. */}
+      {reviewDraft && (
+        <TaskModal
+          task={null}
+          initialValues={{
+            name: `Review ${reviewDraft.contextName}`,
+            depth: 2,
+            estimated_minutes: 30,
+            context_name: reviewDraft.contextName,
+          }}
+          sectionSuggestions={sectionSuggestions}
+          onSave={async (payload) => {
+            const created = await createTask(payload);
+            setReviewDraft(null);
+            await loadData();
+            setPlacingTask(created);
+          }}
+          onDelete={() => {}}
+          onClose={() => setReviewDraft(null)}
+        />
       )}
 
       {/* Protected-window override (§8) — always permits scheduling. */}

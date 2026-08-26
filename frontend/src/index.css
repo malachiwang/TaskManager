@@ -8140,6 +8140,38 @@ html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-sc
   font-weight: 600;
 }
 
+/* -------------------------------------------------------------------------
+   Contextual layer (P16.0) — Good Fits Now, coverage warnings, event detail.
+   ---------------------------------------------------------------------- */
+
+.cal-goodfits {
+  border-bottom: 1px solid var(--hair);
+  padding-bottom: 8px;
+}
+.cal-goodfits-gap {
+  padding: 2px 12px 6px;
+  font-size: 11px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.cal-goodfits-item { cursor: default; }
+.cal-goodfits-place {
+  align-self: flex-start;
+  margin-top: 3px;
+}
+
+.cal-coverage-warn {
+  color: var(--caution-text, var(--urg-mid));
+}
+
+.cal-ext-context,
+.cal-ext-links {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cal-ext-links .cal-drawer-group-title { padding: 0; }
+
 /* Protected-window override confirm. */
 .cal-confirm-overlay {
   position: fixed;

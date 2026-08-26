@@ -275,6 +275,23 @@ def _attach_session_rollups(conn, tasks: list) -> list:
         """
     ).fetchall()
     agg = {r["task_id"]: (r["logged"] or 0, r["pending"] or 0) for r in rows}
+    # Deadline coverage (P16.0 §17/§18): pending scheduled minutes whose
+    # session ENDS on or before the task's due date. Skipped/completed/
+    # partial rows and calendar-only entries never count — only status
+    # 'scheduled' with a task_id, matching pending semantics above.
+    pending_rows = conn.execute(
+        """
+        SELECT task_id, planned_end,
+               CAST(ROUND((julianday(planned_end) - julianday(planned_start)) * 1440) AS INTEGER) AS minutes
+        FROM task_sessions
+        WHERE status = 'scheduled' AND task_id IS NOT NULL
+        """
+    ).fetchall()
+    pending_by_task: dict = {}
+    for r in pending_rows:
+        pending_by_task.setdefault(r["task_id"], []).append((r["planned_end"], r["minutes"] or 0))
+    ctx_rows = conn.execute("SELECT id, name FROM contexts").fetchall()
+    ctx_names = {r["id"]: r["name"] for r in ctx_rows}
     for t in tasks:
         logged, pending = agg.get(t["id"], (0, 0))
         t["logged_minutes"] = logged
@@ -282,6 +299,16 @@ def _attach_session_rollups(conn, tasks: list) -> list:
         est = t.get("estimated_minutes")
         t["remaining_minutes"] = max(0, est - logged) if est else None
         t["remaining_unscheduled_minutes"] = max(0, est - logged - pending) if est else None
+        t["context_name"] = ctx_names.get(t.get("context_id"))
+        due = t.get("due_date")
+        if est and due:
+            cutoff = due + "T23:59"
+            before = sum(m for (end, m) in pending_by_task.get(t["id"], []) if end <= cutoff)
+            t["scheduled_before_due_minutes"] = before
+            t["remaining_unscheduled_before_due"] = max(0, est - logged - before)
+        else:
+            t["scheduled_before_due_minutes"] = None
+            t["remaining_unscheduled_before_due"] = None
     return tasks
 
 
@@ -442,6 +469,8 @@ def create_task(
     end_date: Optional[str] = None,
     depth: Optional[int] = None,
     estimated_minutes: Optional[int] = None,
+    due_date: Optional[str] = None,
+    context_id: Optional[int] = None,
 ):
     if not 1 <= priority <= 10:
         raise HTTPException(status_code=422, detail="Priority must be between 1 and 10")
@@ -449,6 +478,8 @@ def create_task(
         raise HTTPException(status_code=422, detail="interval_days must be >= 1")
     depth_val = _normalize_depth(depth)
     estimate_val = _normalize_estimate(estimated_minutes)
+    due_val = _normalize_date_override(due_date)
+    context_val = context_id if context_id else None
 
     norm_status = _normalize_status(status)
     is_paused_val = 1 if norm_status == 'hiatus' else 0
@@ -466,6 +497,10 @@ def create_task(
     active_from_val = _normalize_date_override(active_from) or today_str
     manual_override_val = _normalize_date_override(manual_last_done_override)
     end_date_val = _normalize_date_override(end_date)
+    if context_val is not None and not conn.execute(
+            "SELECT id FROM contexts WHERE id = ?", (context_val,)).fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Context not found")
     with conn:
         cursor = conn.execute(
             """
@@ -473,14 +508,14 @@ def create_task(
                 name, section, category, subtask, priority, interval_days,
                 status, notes, created_at, is_active, is_paused, paused_at,
                 manual_last_done_override, display_order, active_from, end_date,
-                depth, estimated_minutes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
+                depth, estimated_minutes, due_date, context_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 name, section, category, subtask, priority, interval_days,
                 norm_status, notes, today_str, is_paused_val, paused_at_val,
                 manual_override_val, display_order, active_from_val, end_date_val,
-                depth_val, estimate_val,
+                depth_val, estimate_val, due_val, context_val,
             ),
         )
         task_id = cursor.lastrowid
@@ -519,6 +554,8 @@ class TaskPatch(BaseModel):
     end_date: Optional[str] = None
     depth: Optional[int] = None
     estimated_minutes: Optional[int] = None
+    due_date: Optional[str] = None
+    context_id: Optional[int] = None
 
 
 @app.patch("/tasks/{task_id}")
@@ -539,6 +576,8 @@ def update_task(
     end_date: Optional[str] = None,
     depth: Optional[int] = None,
     estimated_minutes: Optional[int] = None,
+    due_date: Optional[str] = None,
+    context_id: Optional[int] = None,
     # ── optional JSON body (new; query params take priority when both present) ─
     body: Optional[TaskPatch] = Body(default=None),
 ):
@@ -575,6 +614,10 @@ def update_task(
             depth = body.depth if body.depth is not None else 0
         if estimated_minutes is None and "estimated_minutes" in bset:
             estimated_minutes = body.estimated_minutes if body.estimated_minutes is not None else 0
+        if due_date is None and "due_date" in bset:
+            due_date = body.due_date if body.due_date is not None else ""
+        if context_id is None and "context_id" in bset:
+            context_id = body.context_id if body.context_id is not None else 0
 
     conn = get_connection()
     existing = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
@@ -632,6 +675,18 @@ def update_task(
         updates["depth"] = depth_val
     if estimated_minutes is not None:
         updates["estimated_minutes"] = estimate_val
+    if due_date is not None:
+        updates["due_date"] = _normalize_date_override(due_date)
+    if context_id is not None:
+        # 0 clears; otherwise the context must exist.
+        if context_id == 0:
+            updates["context_id"] = None
+        else:
+            ctx = conn.execute("SELECT id FROM contexts WHERE id = ?", (context_id,)).fetchone()
+            if not ctx:
+                conn.close()
+                raise HTTPException(status_code=404, detail="Context not found")
+            updates["context_id"] = context_id
 
     # end_date: normalize and track the resolved value for completion cleanup.
     end_date_val: Optional[str] = None
@@ -1571,12 +1626,14 @@ def _sync_calendar(conn, cal_row) -> int:
         window_end = datetime.now() + timedelta(days=SYNC_HORIZON_FUTURE_DAYS)
         occurrences = ics_module.expand_events(events, window_start, window_end)
     except Exception as exc:
+        # §46: never leak the secret feed URL through error text.
+        redacted = str(exc).replace(cal_row["url"], "<calendar url>")[:300]
         with conn:
             conn.execute(
                 "UPDATE external_calendars SET last_error = ?, updated_at = ? WHERE id = ?",
-                (str(exc)[:300], now_iso, cal_row["id"]),
+                (redacted, now_iso, cal_row["id"]),
             )
-        raise
+        raise RuntimeError(redacted) from None
     with conn:
         conn.execute("DELETE FROM external_events WHERE calendar_id = ?", (cal_row["id"],))
         conn.executemany(
@@ -1603,6 +1660,20 @@ class ExternalCalendarPatch(BaseModel):
     visible: Optional[bool] = None
 
 
+def _mask_calendar(row) -> dict:
+    """ICS secret handling (P16.0 §46): the feed URL behaves like a credential
+    (Google's 'secret address'). API responses never return it — only the
+    host — and it never renders in normal UI after setup."""
+    d = dict(row)
+    url = d.pop("url", "") or ""
+    try:
+        from urllib.parse import urlparse
+        d["url_host"] = urlparse(url).hostname or ""
+    except Exception:
+        d["url_host"] = ""
+    return d
+
+
 @app.get("/external-calendars")
 def list_external_calendars():
     conn = get_connection()
@@ -1613,7 +1684,7 @@ def list_external_calendars():
         """
     ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    return [_mask_calendar(r) for r in rows]
 
 
 @app.post("/external-calendars", status_code=201)
@@ -1642,7 +1713,7 @@ def create_external_calendar(body: ExternalCalendarBody):
         "FROM external_calendars c WHERE c.id = ?", (cal_id,)
     ).fetchone()
     conn.close()
-    return dict(out)
+    return _mask_calendar(out)
 
 
 @app.patch("/external-calendars/{cal_id}")
@@ -1669,7 +1740,7 @@ def update_external_calendar(cal_id: int, body: ExternalCalendarPatch):
             )
     out = conn.execute("SELECT * FROM external_calendars WHERE id = ?", (cal_id,)).fetchone()
     conn.close()
-    return dict(out)
+    return _mask_calendar(out)
 
 
 @app.delete("/external-calendars/{cal_id}")
@@ -1709,9 +1780,13 @@ def list_external_events(start: str, end: str):
     conn = get_connection()
     rows = conn.execute(
         """
-        SELECT e.*, c.name AS calendar_name
+        SELECT e.*, c.name AS calendar_name,
+               cel.context_id AS context_id, ctx.name AS context_name
         FROM external_events e
         JOIN external_calendars c ON c.id = e.calendar_id
+        LEFT JOIN context_event_links cel
+               ON cel.calendar_id = e.calendar_id AND cel.uid = e.uid
+        LEFT JOIN contexts ctx ON ctx.id = cel.context_id
         WHERE c.visible = 1 AND e.start <= ? AND e.end >= ?
         ORDER BY e.start, e.id
         """,
@@ -1830,6 +1905,627 @@ def delete_template(tpl_id: int):
         conn.execute("DELETE FROM depth_window_templates WHERE id = ?", (tpl_id,))
     conn.close()
     return {"deleted": tpl_id}
+
+
+# ---------------------------------------------------------------------------
+# Contexts (P16.0) — lightweight shared real-world contexts (courses,
+# projects, recruiting). Tasks link via tasks.context_id; external event
+# SERIES link via (calendar_id, uid) so associations survive sync's
+# replace-all. Removing a context or an association never deletes tasks or
+# events.
+# ---------------------------------------------------------------------------
+
+class ContextBody(BaseModel):
+    name: str
+
+
+@app.get("/contexts")
+def list_contexts():
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT x.*,
+               (SELECT COUNT(*) FROM tasks t WHERE t.context_id = x.id AND t.is_active = 1) AS task_count,
+               (SELECT COUNT(*) FROM context_event_links l WHERE l.context_id = x.id) AS event_link_count
+        FROM contexts x ORDER BY x.name, x.id
+        """
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.post("/contexts", status_code=201)
+def create_context(body: ContextBody):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="name is required")
+    now = datetime.now().isoformat()
+    conn = get_connection()
+    existing = conn.execute("SELECT * FROM contexts WHERE name = ?", (name,)).fetchone()
+    if existing:
+        conn.close()
+        return dict(existing)  # find-or-create by exact name
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO contexts (name, created_at, updated_at) VALUES (?, ?, ?)",
+            (name, now, now),
+        )
+        ctx_id = cur.lastrowid
+    row = conn.execute("SELECT * FROM contexts WHERE id = ?", (ctx_id,)).fetchone()
+    conn.close()
+    return dict(row)
+
+
+@app.patch("/contexts/{ctx_id}")
+def rename_context(ctx_id: int, body: ContextBody):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="name is required")
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM contexts WHERE id = ?", (ctx_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Context not found")
+    with conn:
+        conn.execute(
+            "UPDATE contexts SET name = ?, updated_at = ? WHERE id = ?",
+            (name, datetime.now().isoformat(), ctx_id),
+        )
+    out = conn.execute("SELECT * FROM contexts WHERE id = ?", (ctx_id,)).fetchone()
+    conn.close()
+    return dict(out)
+
+
+@app.delete("/contexts/{ctx_id}")
+def delete_context(ctx_id: int):
+    """Remove a context. Tasks keep existing (context_id → NULL via FK);
+    event associations cascade away; nothing else is touched."""
+    conn = get_connection()
+    row = conn.execute("SELECT id FROM contexts WHERE id = ?", (ctx_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Context not found")
+    with conn:
+        conn.execute("DELETE FROM contexts WHERE id = ?", (ctx_id,))
+    conn.close()
+    return {"deleted": ctx_id}
+
+
+class ContextEventLinkBody(BaseModel):
+    context_id: int
+    calendar_id: int
+    uid: str
+
+
+@app.post("/context-event-links", status_code=201)
+def link_event_to_context(body: ContextEventLinkBody):
+    """Associate an external event SERIES with a context (one context per
+    series — re-linking replaces the previous association)."""
+    uid = body.uid.strip()
+    if not uid:
+        raise HTTPException(status_code=422, detail="uid is required")
+    conn = get_connection()
+    if not conn.execute("SELECT id FROM contexts WHERE id = ?", (body.context_id,)).fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Context not found")
+    if not conn.execute("SELECT id FROM external_calendars WHERE id = ?", (body.calendar_id,)).fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Calendar not found")
+    now = datetime.now().isoformat()
+    with conn:
+        conn.execute(
+            "INSERT INTO context_event_links (context_id, calendar_id, uid, created_at) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(calendar_id, uid) DO UPDATE SET context_id = excluded.context_id",
+            (body.context_id, body.calendar_id, uid, now),
+        )
+    conn.close()
+    return {"context_id": body.context_id, "calendar_id": body.calendar_id, "uid": uid}
+
+
+@app.delete("/context-event-links")
+def unlink_event_from_context(calendar_id: int, uid: str):
+    conn = get_connection()
+    with conn:
+        cur = conn.execute(
+            "DELETE FROM context_event_links WHERE calendar_id = ? AND uid = ?",
+            (calendar_id, uid.strip()),
+        )
+    conn.close()
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Association not found")
+    return {"deleted": True}
+
+
+# ---------------------------------------------------------------------------
+# Task ↔ event relationships (P16.0 §29–§34) — Related / Before / After with
+# optional relative offsets. event_start pins the linked occurrence so moved
+# and cancelled events are detectable; tasks always survive both.
+# ---------------------------------------------------------------------------
+
+class TaskEventLinkBody(BaseModel):
+    task_id: int
+    calendar_id: int
+    uid: str
+    relation: str = "related"
+    offset_minutes: Optional[int] = None
+    event_start: Optional[str] = None
+
+
+class TaskEventLinkPatch(BaseModel):
+    relation: Optional[str] = None
+    offset_minutes: Optional[int] = None
+    event_start: Optional[str] = None
+
+
+_LINK_RELATIONS = frozenset({"related", "before", "after"})
+
+
+def _enrich_task_event_links(conn, rows, now_stamp: str) -> list[dict]:
+    out = []
+    for r in rows:
+        d = dict(r)
+        occ = [x["start"] for x in conn.execute(
+            "SELECT start FROM external_events WHERE calendar_id = ? AND uid = ? ORDER BY start",
+            (d["calendar_id"], d["uid"]),
+        ).fetchall()]
+        if not occ:
+            d["event_status"] = "cancelled"
+            d["next_start"] = None
+        else:
+            d["next_start"] = next((s for s in occ if s >= now_stamp), occ[-1])
+            if d["event_start"] and d["event_start"] not in occ:
+                d["event_status"] = "moved"
+            else:
+                d["event_status"] = "ok"
+        task = conn.execute(
+            """
+            SELECT t.name, t.is_active, t.end_date,
+                   (SELECT MAX(completion_date) FROM completions c WHERE c.task_id = t.id) AS latest_completion
+            FROM tasks t WHERE t.id = ?
+            """,
+            (d["task_id"],),
+        ).fetchone()
+        d["task_name"] = task["name"] if task else "(deleted)"
+        today = now_stamp[:10]
+        ended = bool(task and task["end_date"] and task["end_date"] <= today)
+        d["task_done"] = bool(task and (ended or task["latest_completion"] is not None))
+        out.append(d)
+    return out
+
+
+@app.get("/task-event-links")
+def list_task_event_links(
+    task_id: Optional[int] = None,
+    calendar_id: Optional[int] = None,
+    uid: Optional[str] = None,
+    now: Optional[str] = None,
+):
+    if task_id is None and not (calendar_id and uid):
+        raise HTTPException(status_code=422, detail="Provide task_id or calendar_id+uid")
+    now_stamp = (now or datetime.now().strftime("%Y-%m-%dT%H:%M"))
+    query = "SELECT * FROM task_event_links WHERE 1=1"
+    params: list = []
+    if task_id is not None:
+        query += " AND task_id = ?"
+        params.append(task_id)
+    if calendar_id and uid:
+        query += " AND calendar_id = ? AND uid = ?"
+        params.extend([calendar_id, uid.strip()])
+    conn = get_connection()
+    rows = conn.execute(query + " ORDER BY relation, id", params).fetchall()
+    out = _enrich_task_event_links(conn, rows, now_stamp)
+    conn.close()
+    return out
+
+
+@app.post("/task-event-links", status_code=201)
+def create_task_event_link(body: TaskEventLinkBody):
+    if body.relation not in _LINK_RELATIONS:
+        raise HTTPException(status_code=422, detail="relation must be related, before, or after")
+    if body.offset_minutes is not None and body.offset_minutes < 0:
+        raise HTTPException(status_code=422, detail="offset_minutes must be >= 0")
+    uid = body.uid.strip()
+    if not uid:
+        raise HTTPException(status_code=422, detail="uid is required")
+    conn = get_connection()
+    if not conn.execute("SELECT id FROM tasks WHERE id = ? AND is_active = 1", (body.task_id,)).fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Task not found")
+    if not conn.execute("SELECT id FROM external_calendars WHERE id = ?", (body.calendar_id,)).fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Calendar not found")
+    now = datetime.now().isoformat()
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO task_event_links (task_id, calendar_id, uid, relation, offset_minutes, event_start, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (body.task_id, body.calendar_id, uid, body.relation,
+             body.offset_minutes, body.event_start, now, now),
+        )
+        link_id = cur.lastrowid
+    row = conn.execute("SELECT * FROM task_event_links WHERE id = ?", (link_id,)).fetchone()
+    out = _enrich_task_event_links(conn, [row], datetime.now().strftime("%Y-%m-%dT%H:%M"))[0]
+    conn.close()
+    return out
+
+
+@app.patch("/task-event-links/{link_id}")
+def update_task_event_link(link_id: int, body: TaskEventLinkPatch):
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM task_event_links WHERE id = ?", (link_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Link not found")
+    updates = {}
+    if body.relation is not None:
+        if body.relation not in _LINK_RELATIONS:
+            conn.close()
+            raise HTTPException(status_code=422, detail="relation must be related, before, or after")
+        updates["relation"] = body.relation
+    if body.offset_minutes is not None:
+        if body.offset_minutes < 0:
+            conn.close()
+            raise HTTPException(status_code=422, detail="offset_minutes must be >= 0")
+        updates["offset_minutes"] = body.offset_minutes or None
+    if body.event_start is not None:
+        updates["event_start"] = body.event_start or None
+    if updates:
+        updates["updated_at"] = datetime.now().isoformat()
+        set_clause = ", ".join(f"{c} = ?" for c in updates)
+        with conn:
+            conn.execute(
+                f"UPDATE task_event_links SET {set_clause} WHERE id = ?",
+                list(updates.values()) + [link_id],
+            )
+    out_row = conn.execute("SELECT * FROM task_event_links WHERE id = ?", (link_id,)).fetchone()
+    out = _enrich_task_event_links(conn, [out_row], datetime.now().strftime("%Y-%m-%dT%H:%M"))[0]
+    conn.close()
+    return out
+
+
+@app.delete("/task-event-links/{link_id}")
+def delete_task_event_link(link_id: int):
+    """Detach a relationship — the task and the event both survive."""
+    conn = get_connection()
+    row = conn.execute("SELECT id FROM task_event_links WHERE id = ?", (link_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Link not found")
+    with conn:
+        conn.execute("DELETE FROM task_event_links WHERE id = ?", (link_id,))
+    conn.close()
+    return {"deleted": link_id}
+
+
+# ---------------------------------------------------------------------------
+# Contextual scheduling (P16.0 Part I) — gap detection + Good Fits Now.
+#
+# Server-side so the arithmetic is testable and identical everywhere. Every
+# suggestion carries plain-language reasons built from its constituent facts;
+# there is no composite score, no fabricated capacity, and nothing here ever
+# schedules anything by itself — the user places work.
+# ---------------------------------------------------------------------------
+
+def _fmt_minutes(m: int) -> str:
+    m = int(m)
+    if m < 60:
+        return f"{m}m"
+    h, rem = divmod(m, 60)
+    return f"{h}h" if rem == 0 else f"{h}h {rem}m"
+
+
+def _current_gap(conn, now_dt: datetime):
+    """Free interval from now until the next FIXED boundary today: fixed task
+    sessions/entries and external commitments. Flexible scheduled work never
+    defines the boundary (§6)."""
+    today = now_dt.date().isoformat()
+    now_min = now_dt.hour * 60 + now_dt.minute
+    obstacles = []
+    for r in conn.execute(
+        """
+        SELECT s.planned_start, s.planned_end,
+               CASE WHEN s.task_id IS NULL THEN s.title ELSE
+                    (SELECT name FROM tasks t WHERE t.id = s.task_id) END AS label
+        FROM task_sessions s
+        WHERE s.is_fixed = 1 AND s.status = 'scheduled'
+          AND s.planned_start LIKE ?
+        """, (today + "%",)
+    ).fetchall():
+        sm = int(r["planned_start"][11:13]) * 60 + int(r["planned_start"][14:16])
+        em = int(r["planned_end"][11:13]) * 60 + int(r["planned_end"][14:16]) \
+            if r["planned_end"].startswith(today) else 1440
+        obstacles.append((sm, em, r["label"] or "fixed block"))
+    for r in conn.execute(
+        """
+        SELECT e.start, e.end, e.title FROM external_events e
+        JOIN external_calendars c ON c.id = e.calendar_id
+        WHERE c.visible = 1 AND e.all_day = 0 AND e.start LIKE ?
+        """, (today + "%",)
+    ).fetchall():
+        sm = int(r["start"][11:13]) * 60 + int(r["start"][14:16])
+        em = int(r["end"][11:13]) * 60 + int(r["end"][14:16]) \
+            if r["end"].startswith(today) else 1440
+        obstacles.append((sm, em, r["title"] or "event"))
+    obstacles.sort()
+    # If now sits inside a fixed obstacle, the gap starts when it ends.
+    start = now_min
+    changed = True
+    while changed:
+        changed = False
+        for sm, em, _ in obstacles:
+            if sm <= start < em:
+                start = em
+                changed = True
+    nxt = next(((sm, em, lb) for sm, em, lb in obstacles if sm > start), None)
+    end = nxt[0] if nxt else 1440
+    return {
+        "start_minutes": start,
+        "end_minutes": end,
+        "minutes": max(0, end - start),
+        "bounded_by": nxt[2] if nxt else "end of day",
+    }
+
+
+def _windows_at(conn, day_iso: str, minute: int):
+    """Depth windows covering a given minute of a given day (skips honored)."""
+    weekday = date.fromisoformat(day_iso).weekday()
+    rows = conn.execute(
+        """
+        SELECT w.* FROM depth_windows w
+        WHERE (w.date = ?) OR (w.date IS NULL AND w.weekday = ? AND NOT EXISTS (
+            SELECT 1 FROM depth_window_skips s WHERE s.window_id = w.id AND s.date = ?))
+        """, (day_iso, weekday, day_iso)
+    ).fetchall()
+    return [dict(r) for r in rows if r["start_minutes"] <= minute < r["end_minutes"]]
+
+
+@app.get("/suggestions")
+def get_suggestions(now: Optional[str] = None):
+    """Good Fits Now (§3–§12): tasks that reasonably fit the current gap,
+    each with transparent reasons. `now` override exists for tests."""
+    now_dt = datetime.fromisoformat(now) if now else datetime.now()
+    today = now_dt.date()
+    conn = get_connection()
+    gap = _current_gap(conn, now_dt)
+    windows_now = _windows_at(conn, today.isoformat(), gap["start_minutes"])
+    current_window = windows_now[0] if windows_now else None
+
+    rows = conn.execute(
+        """
+        SELECT t.*,
+               (SELECT MAX(completion_date) FROM completions c WHERE c.task_id = t.id) AS latest_completion
+        FROM tasks t WHERE t.is_active = 1 AND t.is_paused = 0
+        """
+    ).fetchall()
+    tasks = _attach_session_rollups(conn, [_enrich_task(dict(r), today) for r in rows])
+    conn.close()
+
+    MIN_SPLIT_GAP = 30
+    suggestions = []
+    for t in tasks:
+        if t["is_ended"] or t["is_scheduled"]:
+            continue
+        est = t.get("estimated_minutes")
+        if not est:
+            continue  # §21: never fabricate a workload for unestimated tasks
+        need = t["remaining_unscheduled_minutes"]
+        if need is None or need <= 0:
+            continue
+        reasons = []
+        if need <= gap["minutes"]:
+            suggested = need
+            reasons.append(f"{_fmt_minutes(need)} remaining fits the {_fmt_minutes(gap['minutes'])} gap")
+        elif gap["minutes"] >= MIN_SPLIT_GAP:
+            suggested = gap["minutes"]
+            reasons.append(f"{_fmt_minutes(need)} remaining · supports split sessions")
+            reasons.append(f"possible {_fmt_minutes(gap['minutes'])} session")
+        else:
+            continue  # §8: nothing misleading for tiny gaps
+
+        due = t.get("due_date")
+        due_days = None
+        if due:
+            due_days = (date.fromisoformat(due) - today).days
+            if due_days < 0:
+                reasons.append("past due")
+            elif due_days == 0:
+                reasons.append("due today")
+            elif due_days == 1:
+                reasons.append("due tomorrow")
+            elif due_days <= 3:
+                reasons.append(f"due in {due_days} days")
+
+        depth_match = current_window is not None and t.get("depth") == current_window["depth"]
+        urgent = due_days is not None and due_days <= 1
+        if current_window is not None:
+            if depth_match:
+                reasons.append(f"D{t['depth']} matches the current window")
+            elif current_window["protected"] and not urgent:
+                # §10: suggestions generally avoid mismatches into protected
+                # windows — but urgent work still surfaces, and the user can
+                # always schedule anything manually.
+                continue
+        if (t.get("priority") or 0) >= 8:
+            reasons.append(f"priority {t['priority']}")
+
+        suggestions.append({
+            "task_id": t["id"],
+            "name": t["name"],
+            "depth": t.get("depth"),
+            "due_date": due,
+            "remaining_minutes": need,
+            "suggested_minutes": suggested,
+            "reasons": reasons,
+            "_rank": (
+                due_days if (due_days is not None and due_days <= 3) else 99,
+                0 if depth_match else 1,
+                0 if need <= gap["minutes"] else 1,
+                -(t.get("priority") or 0),
+            ),
+        })
+    suggestions.sort(key=lambda s: s["_rank"])
+    for s in suggestions:
+        del s["_rank"]
+    return {
+        "gap": gap,
+        "current_window": (
+            {"depth": current_window["depth"], "protected": bool(current_window["protected"])}
+            if current_window else None
+        ),
+        "suggestions": suggestions[:6],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Reminders (P16.0 Part VI) — actionable, computed on demand, in-app.
+# Each reminder has a stable key so the client can throttle/dismiss without
+# repeats. Nothing here mutates state or fires without the UI showing it.
+# ---------------------------------------------------------------------------
+
+REMINDER_SOON_MINUTES = 15
+FOLLOWUP_DEFAULT_OFFSET = 30
+
+
+@app.get("/reminders")
+def get_reminders(now: Optional[str] = None):
+    now_dt = datetime.fromisoformat(now) if now else datetime.now()
+    now_stamp = now_dt.strftime("%Y-%m-%dT%H:%M")
+    soon_stamp = (now_dt + timedelta(minutes=REMINDER_SOON_MINUTES)).strftime("%Y-%m-%dT%H:%M")
+    today = now_dt.date()
+    out = []
+    conn = get_connection()
+
+    # Sessions/entries starting soon.
+    for r in conn.execute(
+        """
+        SELECT s.id, s.planned_start,
+               CASE WHEN s.task_id IS NULL THEN s.title
+                    ELSE (SELECT name FROM tasks t WHERE t.id = s.task_id) END AS label
+        FROM task_sessions s
+        WHERE s.status = 'scheduled' AND s.planned_start > ? AND s.planned_start <= ?
+        """, (now_stamp, soon_stamp)
+    ).fetchall():
+        out.append({
+            "type": "session_soon",
+            "key": f"session_soon:{r['id']}:{r['planned_start']}",
+            "title": f"{r['label']} starts at {r['planned_start'][11:16]}",
+            "detail": "Scheduled session begins soon",
+        })
+
+    # External commitments starting soon.
+    for r in conn.execute(
+        """
+        SELECT e.id, e.start, e.title, c.name AS cal FROM external_events e
+        JOIN external_calendars c ON c.id = e.calendar_id
+        WHERE c.visible = 1 AND e.all_day = 0 AND e.start > ? AND e.start <= ?
+        """, (now_stamp, soon_stamp)
+    ).fetchall():
+        out.append({
+            "type": "event_soon",
+            "key": f"event_soon:{r['id']}:{r['start']}",
+            "title": f"{r['title']} at {r['start'][11:16]}",
+            "detail": f"{r['cal']} commitment begins soon",
+        })
+
+    # Unreconciled past sessions (one aggregate reminder).
+    cutoff = (now_dt - timedelta(days=14)).strftime("%Y-%m-%dT%H:%M")
+    unresolved = conn.execute(
+        "SELECT COUNT(*) FROM task_sessions WHERE status = 'scheduled' "
+        "AND planned_end < ? AND planned_end > ?",
+        (now_stamp, cutoff),
+    ).fetchone()[0]
+    if unresolved:
+        out.append({
+            "type": "reconcile",
+            "key": f"reconcile:{today.isoformat()}:{unresolved}",
+            "title": f"{unresolved} session{'s' if unresolved != 1 else ''} need review",
+            "detail": "Planned time passed without being resolved",
+        })
+
+    # Preparation incomplete before a linked event (§38) / follow-up after (§39).
+    link_rows = conn.execute("SELECT * FROM task_event_links").fetchall()
+    links = _enrich_task_event_links(conn, link_rows, now_stamp)
+    day_ahead = (now_dt + timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M")
+    for l in links:
+        if l["task_done"] or l["event_status"] == "cancelled" or not l["next_start"]:
+            continue
+        if l["relation"] == "before" and now_stamp < l["next_start"] <= day_ahead:
+            offset = f" ({_fmt_minutes(l['offset_minutes'])} before)" if l["offset_minutes"] else ""
+            out.append({
+                "type": "prep",
+                "key": f"prep:{l['id']}:{l['next_start']}",
+                "title": f"Prep incomplete: {l['task_name']}",
+                "detail": f"Linked event at {l['next_start'][11:16]}{offset}",
+            })
+        if l["relation"] == "after":
+            # Most recent occurrence that already ended.
+            past = conn.execute(
+                "SELECT end FROM external_events WHERE calendar_id = ? AND uid = ? "
+                "AND end <= ? ORDER BY end DESC LIMIT 1",
+                (l["calendar_id"], l["uid"], now_stamp),
+            ).fetchone()
+            if past:
+                offset_min = l["offset_minutes"] or FOLLOWUP_DEFAULT_OFFSET
+                fire_at = (datetime.strptime(past["end"], "%Y-%m-%dT%H:%M")
+                           + timedelta(minutes=offset_min)).strftime("%Y-%m-%dT%H:%M")
+                day_back = (now_dt - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M")
+                if day_back <= fire_at <= now_stamp:
+                    out.append({
+                        "type": "followup",
+                        "key": f"followup:{l['id']}:{past['end']}",
+                        "title": f"Follow-up pending: {l['task_name']}",
+                        "detail": f"Linked event ended at {past['end'][11:16]}",
+                    })
+
+    # Deadlines approaching with unscheduled remaining effort (§19).
+    task_rows = conn.execute(
+        """
+        SELECT t.*, (SELECT MAX(completion_date) FROM completions c WHERE c.task_id = t.id) AS latest_completion
+        FROM tasks t
+        WHERE t.is_active = 1 AND t.is_paused = 0 AND t.due_date IS NOT NULL
+          AND t.estimated_minutes IS NOT NULL
+        """
+    ).fetchall()
+    dl_tasks = _attach_session_rollups(conn, [_enrich_task(dict(r), today) for r in task_rows])
+    horizon = (today + timedelta(days=2)).isoformat()
+    for t in dl_tasks:
+        gap_min = t.get("remaining_unscheduled_before_due")
+        if t["is_ended"] or not gap_min:
+            continue
+        if today.isoformat() <= t["due_date"] <= horizon:
+            out.append({
+                "type": "deadline",
+                "key": f"deadline:{t['id']}:{t['due_date']}",
+                "title": f"{t['name']}: {_fmt_minutes(gap_min)} unscheduled before {t['due_date'][5:]}",
+                "detail": "Remaining effort has no session before the deadline",
+                "task_id": t["id"],
+            })
+
+    # Post-class review suggestion (§41/§42): a context-linked commitment
+    # ended within the last hour. Suggestion only — nothing is created.
+    hour_ago = (now_dt - timedelta(minutes=60)).strftime("%Y-%m-%dT%H:%M")
+    for r in conn.execute(
+        """
+        SELECT e.id, e.title, e.end, ctx.id AS context_id, ctx.name AS context_name
+        FROM external_events e
+        JOIN external_calendars c ON c.id = e.calendar_id
+        JOIN context_event_links cel ON cel.calendar_id = e.calendar_id AND cel.uid = e.uid
+        JOIN contexts ctx ON ctx.id = cel.context_id
+        WHERE c.visible = 1 AND e.all_day = 0 AND e.end > ? AND e.end <= ?
+        """, (hour_ago, now_stamp)
+    ).fetchall():
+        out.append({
+            "type": "class_review",
+            "key": f"class_review:{r['id']}:{r['end']}",
+            "title": f"{r['title']} ended — schedule review?",
+            "detail": f"{r['context_name']} · review while it's fresh",
+            "context_id": r["context_id"],
+            "context_name": r["context_name"],
+        })
+
+    conn.close()
+    return out
 
 
 # ---------------------------------------------------------------------------

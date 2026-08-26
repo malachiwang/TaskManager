@@ -569,6 +569,96 @@ export async function deleteWindowTemplate(id) {
   return res.json();
 }
 
+// ---------------------------------------------------------------------------
+// Contexts + contextual scheduling (P16.0)
+// ---------------------------------------------------------------------------
+
+export async function fetchContexts() {
+  const res = await fetch(`${BASE}/contexts`);
+  if (!res.ok) throw new Error(`fetchContexts failed: ${res.status}`);
+  return res.json();
+}
+
+// Find-or-create by exact name.
+export async function createContext(name) {
+  const res = await fetch(`${BASE}/contexts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error(`createContext failed: ${res.status}`);
+  return res.json();
+}
+
+export async function renameContext(id, name) {
+  const res = await fetch(`${BASE}/contexts/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error(`renameContext failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteContext(id) {
+  const res = await fetch(`${BASE}/contexts/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`deleteContext failed: ${res.status}`);
+  return res.json();
+}
+
+export async function linkEventToContext(contextId, calendarId, uid) {
+  const res = await fetch(`${BASE}/context-event-links`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ context_id: contextId, calendar_id: calendarId, uid }),
+  });
+  if (!res.ok) throw new Error(`linkEventToContext failed: ${res.status}`);
+  return res.json();
+}
+
+export async function unlinkEventFromContext(calendarId, uid) {
+  const res = await fetch(
+    `${BASE}/context-event-links?calendar_id=${calendarId}&uid=${encodeURIComponent(uid)}`,
+    { method: 'DELETE' },
+  );
+  if (!res.ok && res.status !== 404) throw new Error(`unlinkEventFromContext failed: ${res.status}`);
+}
+
+export async function fetchTaskEventLinks(params) {
+  const q = new URLSearchParams(params).toString();
+  const res = await fetch(`${BASE}/task-event-links?${q}`);
+  if (!res.ok) throw new Error(`fetchTaskEventLinks failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createTaskEventLink(fields) {
+  const res = await fetch(`${BASE}/task-event-links`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error(`createTaskEventLink failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteTaskEventLink(id) {
+  const res = await fetch(`${BASE}/task-event-links/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`deleteTaskEventLink failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchSuggestions() {
+  const res = await fetch(`${BASE}/suggestions`);
+  if (!res.ok) throw new Error(`fetchSuggestions failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchReminders() {
+  const res = await fetch(`${BASE}/reminders`);
+  if (!res.ok) throw new Error(`fetchReminders failed: ${res.status}`);
+  return res.json();
+}
+
 export async function previewImport(file) {
   const formData = new FormData();
   formData.append('file', file);

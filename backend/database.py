@@ -602,4 +602,61 @@ def init_db() -> None:
     """)
     conn.commit()
 
+    # ── Migration 17: contexts, due dates, event relationships (P16.0) ───────
+    # contexts: lightweight shared real-world context (course, project,
+    # recruiting process). Tasks reference it via context_id (SET NULL on
+    # delete — removing a context never deletes tasks). External event
+    # associations key on (calendar_id, uid) because occurrences are replaced
+    # wholesale on every sync; the uid is the stable series identity.
+    # task_event_links: explicit task ↔ external-event relationships
+    # (related / before / after) with optional relative offset; event_start
+    # remembers the occurrence the user linked so moved/cancelled events are
+    # detectable. tasks.due_date is a DEADLINE (distinct from end_date, which
+    # is lifecycle/finish semantics).
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS contexts (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT    NOT NULL,
+            created_at TEXT    NOT NULL,
+            updated_at TEXT    NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS context_event_links (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            context_id  INTEGER NOT NULL REFERENCES contexts(id) ON DELETE CASCADE,
+            calendar_id INTEGER NOT NULL REFERENCES external_calendars(id) ON DELETE CASCADE,
+            uid         TEXT    NOT NULL,
+            created_at  TEXT    NOT NULL,
+            UNIQUE (calendar_id, uid)
+        );
+
+        CREATE TABLE IF NOT EXISTS task_event_links (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id        INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            calendar_id    INTEGER NOT NULL REFERENCES external_calendars(id) ON DELETE CASCADE,
+            uid            TEXT    NOT NULL,
+            relation       TEXT    NOT NULL DEFAULT 'related',
+            offset_minutes INTEGER          DEFAULT NULL,
+            event_start    TEXT             DEFAULT NULL,
+            created_at     TEXT    NOT NULL,
+            updated_at     TEXT    NOT NULL,
+            CHECK (relation IN ('related', 'before', 'after'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_tel_task ON task_event_links(task_id);
+        CREATE INDEX IF NOT EXISTS idx_tel_event ON task_event_links(calendar_id, uid);
+    """)
+    conn.commit()
+
+    for ddl in (
+        "ALTER TABLE tasks ADD COLUMN due_date TEXT DEFAULT NULL",
+        "ALTER TABLE tasks ADD COLUMN context_id INTEGER DEFAULT NULL "
+        "REFERENCES contexts(id) ON DELETE SET NULL",
+    ):
+        try:
+            conn.execute(ddl)
+            conn.commit()
+        except Exception:
+            pass  # Column already exists.
+
     conn.close()

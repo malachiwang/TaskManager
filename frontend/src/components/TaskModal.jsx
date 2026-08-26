@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { urgencyLabel, urgencyReason } from '../urgency.js';
 import { extractLinks, normalizeSafeUrl, spliceMarkdownLink } from '../linkUtils.js';
 import { handleSafeLinkClick } from '../openExternalLink.js';
-import { fetchHiatusPeriodsForTask, updateHiatusPeriod, deleteHiatusPeriod } from '../api.js';
+import { fetchHiatusPeriodsForTask, updateHiatusPeriod, deleteHiatusPeriod, fetchContexts, createContext } from '../api.js';
 import LinkifiedText from './LinkifiedText.jsx';
 import SectionCombobox from './SectionCombobox.jsx';
 import TaskDatePicker, { getLocalTodayIso } from './TaskDatePicker.jsx';
@@ -65,8 +65,15 @@ function stopLinkUiPropagation(e) {
 // initialValues (P14.0): optional prefill for ADD mode — used when promoting
 // a calendar-only entry to a Grid task, so name/depth/estimate carry over.
 // Ignored entirely in edit mode.
-export default function TaskModal({ task, sectionSuggestions = [], initialValues = null, onSave, onDelete, onClose, onHiatusChanged }) {
+export default function TaskModal({ task, sectionSuggestions = [], initialValues = null, onSave, onDelete, onClose, onHiatusChanged, onSchedule = null }) {
   const isEdit = task != null;
+
+  // Contexts (P16.0) — course/project affiliation. Typed names find-or-create
+  // on save; the list only feeds the datalist suggestions.
+  const [contexts, setContexts] = useState([]);
+  useEffect(() => {
+    fetchContexts().then(setContexts).catch(() => setContexts([]));
+  }, []);
 
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -183,6 +190,9 @@ export default function TaskModal({ task, sectionSuggestions = [], initialValues
       // Calendar (P12.0): 0 = no depth (stored as NULL); '' = no estimate.
       depth:                     task?.depth                     ?? d.depth ?? 0,
       estimated_minutes:         task?.estimated_minutes         ?? d.estimated_minutes ?? '',
+      // P16.0: deadline (distinct from End date) + context name.
+      due_date:                  task?.due_date                  ?? d.due_date ?? '',
+      context_name:              task?.context_name              ?? d.context_name ?? '',
     };
   });
 
@@ -234,6 +244,15 @@ export default function TaskModal({ task, sectionSuggestions = [], initialValues
       // sentinel the backend maps to NULL for both depth and the estimate.
       payload.depth = form.depth || 0;
       payload.estimated_minutes = form.estimated_minutes === '' ? 0 : Number(form.estimated_minutes);
+      // Context name → id (find-or-create); blank clears.
+      delete payload.context_name;
+      const ctxName = form.context_name.trim();
+      if (ctxName) {
+        const ctx = await createContext(ctxName);
+        payload.context_id = ctx.id;
+      } else {
+        payload.context_id = 0;
+      }
       if (statusChoice === 'finished') {
         // Finished must actually finish even if the End date was hand-cleared
         // after selecting it. Status is sent unchanged from the stored value so
@@ -506,6 +525,26 @@ export default function TaskModal({ task, sectionSuggestions = [], initialValues
               </div>
             </div>
 
+            {/* Context / Course (P16.0) — shared real-world context. */}
+            <div className="task-modal-field task-modal-field--full">
+              <label className="task-modal-label" htmlFor="tm-context">Context / Course</label>
+              <input
+                id="tm-context"
+                className="task-modal-input"
+                list="tm-context-options"
+                placeholder="e.g. ISYE 2027"
+                value={form.context_name}
+                onChange={(e) => set('context_name', e.target.value)}
+              />
+              <datalist id="tm-context-options">
+                {contexts.map((c) => <option key={c.id} value={c.name} />)}
+              </datalist>
+              <div className="task-modal-field-hint">
+                Links this task to a course/project context. New names create the
+                context; blank removes the link.
+              </div>
+            </div>
+
             {/* Status — segmented buttons (Active / Hiatus / Finished) */}
             <div className="task-modal-field task-modal-field--full">
               <label className="task-modal-label">Status</label>
@@ -707,6 +746,17 @@ export default function TaskModal({ task, sectionSuggestions = [], initialValues
                 <div className="task-modal-field-hint">MM/DD/YYYY</div>
               </div>
               <div className="task-modal-field">
+                <label className="task-modal-label" htmlFor="tm-due-date">Due date</label>
+                <TaskDatePicker
+                  id="tm-due-date"
+                  value={form.due_date}
+                  onChange={(v) => set('due_date', v)}
+                />
+                <div className="task-modal-field-hint">
+                  Deadline for Calendar coverage math — distinct from End date.
+                </div>
+              </div>
+              <div className="task-modal-field">
                 <label className="task-modal-label" htmlFor="tm-end-date">End date</label>
                 <TaskDatePicker
                   id="tm-end-date"
@@ -794,6 +844,16 @@ export default function TaskModal({ task, sectionSuggestions = [], initialValues
                     onClick={() => setConfirmDelete(true)}
                   >
                     Delete Task
+                  </button>
+                )}
+                {isEdit && onSchedule && (
+                  <button
+                    type="button"
+                    className="task-modal-cancel"
+                    title="Open the Calendar with this task armed for placement — never duplicates the task"
+                    onClick={() => onSchedule(task)}
+                  >
+                    Schedule on Calendar
                   </button>
                 )}
                 {!isEdit && (

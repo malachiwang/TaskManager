@@ -22,6 +22,10 @@ export default function App() {
   const [activeSheet, setActiveSheet] = useState('tasks');
   const [activeTool, setActiveTool] = useState(null);
 
+  // Schedule-from-Grid (P16.0 §13/§15): a Grid task handed to the Calendar,
+  // which arms its placement mode and then consumes the request.
+  const [calendarPlaceTask, setCalendarPlaceTask] = useState(null);
+
   // Boot gate (P8.0B) — the surfaces (TaskGrid, ReadingSheet, …) each own their
   // inline data loading, so there is no global data store to wait on. What is
   // worth waiting on is the backend actually being reachable: in the packaged
@@ -118,9 +122,21 @@ export default function App() {
       </header>
 
       <main className="app-main" data-tab={showingTool ? activeTool : activeSheet}>
-        {!showingTool && activeSheet === 'tasks' && <TaskGrid />}
+        {!showingTool && activeSheet === 'tasks' && (
+          <TaskGrid
+            onScheduleTask={(task) => {
+              setCalendarPlaceTask(task);
+              setActiveTool('calendar');
+            }}
+          />
+        )}
         {!showingTool && activeSheet === 'reading' && <ReadingSheet />}
-        {activeTool === 'calendar' && <CalendarView />}
+        {activeTool === 'calendar' && (
+          <CalendarView
+            placeRequest={calendarPlaceTask}
+            onPlaceRequestConsumed={() => setCalendarPlaceTask(null)}
+          />
+        )}
         {activeTool === 'dashboard' && <Dashboard onOpenReports={() => setActiveTool('report')} />}
         {activeTool === 'report' && <MonthlyReport onOpenDashboard={() => setActiveTool('dashboard')} />}
         {activeTool === 'archive' && <Archive />}
