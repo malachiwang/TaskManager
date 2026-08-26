@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { fetchTasks, fetchCompletions, fetchSnapshotPressure, fetchReadingBooks, fetchHiatusPeriodsInRange } from '../api.js';
+import ExecutionReport from './ExecutionReport.jsx';
 import { urgencyClass, urgencyLabel } from '../urgency.js';
 import { displayTitle } from '../linkUtils.js';
 import {
@@ -39,6 +40,9 @@ export default function MonthlyReport({ onOpenDashboard }) {
   const now = new Date();
   // Period = mode (week/month/quarter/year) + an anchor date inside it (P10.0).
   const [period, setPeriod] = useState({ mode: 'month', anchor: now });
+  // View: 'history' = the pressure/completions report below; 'execution' =
+  // planned-vs-actual + calibration + forecast (V5.5). Same period selector.
+  const [view, setView] = useState('history');
   const [tasks, setTasks] = useState(null);
   const [tasksError, setTasksError] = useState(null);
   const [completions, setCompletions] = useState(null);
@@ -173,6 +177,23 @@ export default function MonthlyReport({ onOpenDashboard }) {
           </div>
         </div>
         <div className="report-period">
+          <div className="report-period-modes" role="group" aria-label="Report view">
+            <button
+              className={`report-mode-btn${view === 'history' ? ' report-mode-btn--active' : ''}`}
+              aria-pressed={view === 'history'}
+              onClick={() => setView('history')}
+            >
+              History
+            </button>
+            <button
+              className={`report-mode-btn${view === 'execution' ? ' report-mode-btn--active' : ''}`}
+              aria-pressed={view === 'execution'}
+              onClick={() => setView('execution')}
+              title="Planned vs actual, estimate accuracy, execution patterns, and the upcoming-load forecast"
+            >
+              Execution
+            </button>
+          </div>
           <div className="report-period-modes" role="group" aria-label="Report period">
             {PERIOD_MODES.map((m) => (
               <button
@@ -194,7 +215,9 @@ export default function MonthlyReport({ onOpenDashboard }) {
         </div>
       </div>
 
-      <div className="report-body">
+      {view === 'execution' && <ExecutionReport start={start} end={end} />}
+
+      <div className="report-body" style={view === 'execution' ? { display: 'none' } : undefined}>
 
         {/* Summary tiles */}
         <div className="report-summary">

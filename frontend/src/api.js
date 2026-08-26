@@ -735,6 +735,34 @@ export async function bulkAcademicCandidates(body) {
   return res.json();
 }
 
+// Execution analytics (V5.4) — read-only facts: planned vs actual, estimate
+// accuracy, behavioral patterns, and forward load. No scores.
+export async function fetchExecutionReport(start, end, includeEntries = false) {
+  const res = await fetch(
+    `${BASE}/reports/execution?start=${start}&end=${end}&include_entries=${includeEntries}`,
+  );
+  if (!res.ok) throw new Error(`fetchExecutionReport failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchEstimateReport() {
+  const res = await fetch(`${BASE}/reports/estimates`);
+  if (!res.ok) throw new Error(`fetchEstimateReport failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchPatternsReport() {
+  const res = await fetch(`${BASE}/reports/patterns`);
+  if (!res.ok) throw new Error(`fetchPatternsReport failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchForecast(weeks = 8) {
+  const res = await fetch(`${BASE}/forecast?weeks=${weeks}`);
+  if (!res.ok) throw new Error(`fetchForecast failed: ${res.status}`);
+  return res.json();
+}
+
 // Natural-language scheduling (V5.2) — interpretation only; the caller shows
 // the parsed proposal for confirmation before anything is created.
 export async function parseNaturalLanguage(q) {

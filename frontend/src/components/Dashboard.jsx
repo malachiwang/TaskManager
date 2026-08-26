@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { fetchDashboard, fetchSnapshotPressure, fetchTasks } from '../api.js';
+import SemesterSignals from './SemesterSignals.jsx';
 import { urgencyClass, urgencyReason, urgencyLabel, URGENCY_BANDS } from '../urgency.js';
 import { displayTitle } from '../linkUtils.js';
 import {
@@ -702,6 +703,10 @@ export default function Dashboard({ onOpenReports }) {
       </div>{/* /dashboard-command-panel */}
 
       <div className="ws-panels">
+        {/* ── Semester signals (V5.5 §49) — forward-looking, actionable only;
+            renders nothing when there is nothing worth attention. ── */}
+        <SemesterSignals tasks={tasks} />
+
         {/* ── Do Now (primary) ── */}
         <div className={`ws-frame ws-frame--full dashboard-donow${hidden('doNow') ? ' dashboard-hidden' : ''}`}>
           <div className="ws-frame-header">
