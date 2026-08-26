@@ -414,3 +414,169 @@ class TestSearch:
 
     def test_empty_query_without_context_rejected(self, client):
         assert client.get("/search", params={"q": "  "}).status_code == 422
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# V5.3 — academic importer (§62)
+# ═══════════════════════════════════════════════════════════════════════════
+
+SYLLABUS = """ISYE 2027 — Fall 2026 Syllabus
+Lecture: TR 11:00-12:15pm
+Office Hours: Wednesday 2-3pm
+Homework 1 due September 3
+Homework 2 due September 10
+Quiz 1: September 8
+Reading: Chapter 4 by Sep 10
+Midterm Exam: Thursday, September 24, 11:00am-12:15pm
+Final Project due Dec 4
+Grading is based on participation and effort.
+"""
+
+
+def _import(client, text=SYLLABUS, **extra):
+    body = {"text": text, "context_name": "ISYE 2027", "today": NOW[:10]}
+    body.update(extra)
+    res = client.post("/academic/import", json=body)
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+class TestAcademicImport:
+    def test_extraction(self, client):
+        batch = _import(client)
+        by_title = {c["title"]: c for c in batch["candidates"]}
+        assert by_title["Homework 1"]["kind"] == "homework"
+        assert by_title["Homework 1"]["date"] == "2026-09-03"
+        assert by_title["Quiz 1"]["date"] == "2026-09-08"
+        assert by_title["Midterm Exam"]["kind"] == "exam"
+        assert by_title["Midterm Exam"]["date"] == "2026-09-24"
+        assert by_title["Midterm Exam"]["start_minutes"] == 11 * 60
+        assert by_title["Final Project"]["kind"] == "project"   # not an exam
+        assert by_title["Final Project"]["date"] == "2026-12-04"
+        assert by_title["Lecture"]["weekdays"] == [1, 3]        # TR
+        assert by_title["Office Hours"]["weekdays"] == [2]
+        # prose line produced nothing
+        assert not any("participation" in c["title"] for c in batch["candidates"])
+
+    def test_source_evidence_preserved(self, client):
+        batch = _import(client)
+        exam = next(c for c in batch["candidates"] if c["kind"] == "exam")
+        assert exam["source_text"] == "Midterm Exam: Thursday, September 24, 11:00am-12:15pm"
+
+    def test_candidates_are_not_canonical(self, client):
+        _import(client)
+        assert client.get("/tasks").json() == []
+        assert client.get("/sessions", params={"start": "2026-08-01", "end": "2026-12-31"}).json() == []
+
+    def test_reject_creates_nothing(self, client):
+        batch = _import(client)
+        for c in batch["candidates"]:
+            res = client.post(f"/academic/candidates/{c['id']}/reject")
+            assert res.status_code == 200
+            assert res.json()["status"] == "rejected"
+        assert client.get("/tasks").json() == []
+        assert client.get("/sessions", params={"start": "2026-08-01", "end": "2026-12-31"}).json() == []
+
+    def test_approve_assignment_creates_task_with_due_date(self, client):
+        batch = _import(client)
+        hw = next(c for c in batch["candidates"] if c["title"] == "Homework 1")
+        out = client.post(f"/academic/candidates/{hw['id']}/approve")
+        assert out.status_code == 200, out.text
+        assert out.json()["created_record"].startswith("task:")
+        tasks = client.get("/tasks").json()
+        assert len(tasks) == 1
+        t = tasks[0]
+        assert t["name"] == "Homework 1"
+        assert t["due_date"] == "2026-09-03"
+        assert t["context_name"] == "ISYE 2027"
+        assert t["section"] == "ISYE 2027"
+
+    def test_approve_timed_exam_creates_fixed_entry(self, client):
+        batch = _import(client)
+        exam = next(c for c in batch["candidates"] if c["kind"] == "exam")
+        out = client.post(f"/academic/candidates/{exam['id']}/approve").json()
+        assert out["created_record"].startswith("entry:")
+        sess = client.get("/sessions", params={"start": "2026-09-24", "end": "2026-09-24"}).json()
+        assert len(sess) == 1
+        assert sess[0]["task_id"] is None
+        assert sess[0]["is_fixed"] == 1
+        assert sess[0]["planned_start"] == "2026-09-24T11:00"
+        assert sess[0]["planned_end"] == "2026-09-24T12:15"
+        assert sess[0]["context_name"] == "ISYE 2027"
+        assert client.get("/tasks").json() == []   # no task pollution
+
+    def test_recurring_requires_horizon_then_expands(self, client):
+        batch = _import(client)
+        lec = next(c for c in batch["candidates"] if c["title"] == "Lecture")
+        res = client.post(f"/academic/candidates/{lec['id']}/approve")
+        assert res.status_code == 422               # no silent unbounded expansion
+        out = client.post(f"/academic/candidates/{lec['id']}/approve", json={
+            "until": "2026-09-08", "from_date": "2026-08-25"}).json()
+        assert out["created_record"] == "entries:5"  # Tu 25, Th 27, Tu 1, Th 3, Tu 8
+        sess = client.get("/sessions", params={"start": "2026-08-25", "end": "2026-09-08"}).json()
+        assert len(sess) == 5
+        assert all(s["is_fixed"] == 1 and s["task_id"] is None for s in sess)
+        assert sess[0]["planned_start"] == "2026-08-25T11:00"
+
+    def test_duplicate_detection_against_existing_task(self, client):
+        ctx = _context(client, "ISYE 2027")
+        _task(client, name="Homework 1", context_id=ctx["id"], due_date="2026-09-03")
+        batch = _import(client)
+        hw = next(c for c in batch["candidates"] if c["title"] == "Homework 1")
+        assert hw["duplicate_of"].startswith("task:")
+        assert hw["date_conflict"] is None          # same date → duplicate, no change
+
+    def test_changed_date_detected_and_updatable(self, client):
+        ctx = _context(client, "ISYE 2027")
+        t = _task(client, name="Homework 3", context_id=ctx["id"], due_date="2026-09-18")
+        batch = _import(client, text="Homework 3 due September 20\n")
+        hw = batch["candidates"][0]
+        assert hw["duplicate_of"] == f"task:{t['id']}"
+        assert hw["date_conflict"] == "2026-09-18"  # §31: Sep 18 → Sep 20
+        out = client.post(f"/academic/candidates/{hw['id']}/approve",
+                          json={"mode": "update_existing"}).json()
+        assert out["created_record"] == f"task:{t['id']}:due_date"
+        assert client.get(f"/tasks/{t['id']}").json()["due_date"] == "2026-09-20"
+        assert len(client.get("/tasks").json()) == 1  # updated, not duplicated
+
+    def test_reimport_flags_prior_candidates(self, client):
+        first = _import(client)
+        second = _import(client)
+        hw = next(c for c in second["candidates"] if c["title"] == "Homework 1")
+        assert hw["duplicate_of"] is not None
+
+    def test_edit_candidate_before_approval(self, client):
+        batch = _import(client, text="Homework 9 due September 3\n")
+        c = batch["candidates"][0]
+        edited = client.patch(f"/academic/candidates/{c['id']}", json={
+            "title": "HW 9 (revised)", "date": "2026-09-05"}).json()
+        assert edited["title"] == "HW 9 (revised)"
+        out = client.post(f"/academic/candidates/{c['id']}/approve").json()
+        t = client.get("/tasks").json()[0]
+        assert t["name"] == "HW 9 (revised)"
+        assert t["due_date"] == "2026-09-05"
+
+    def test_bulk_isolation(self, client):
+        batch = _import(client)
+        ids = [c["id"] for c in batch["candidates"]]
+        res = client.post("/academic/candidates/bulk", json={
+            "ids": ids, "action": "approve"}).json()
+        by_id = {r["id"]: r for r in res["results"]}
+        lec = next(c for c in batch["candidates"] if c["title"] == "Lecture")
+        hw = next(c for c in batch["candidates"] if c["title"] == "Homework 1")
+        assert by_id[lec["id"]]["ok"] is False       # recurring needs a horizon
+        assert by_id[hw["id"]]["ok"] is True          # …but others proceeded
+        assert len(client.get("/tasks").json()) >= 4
+
+    def test_batch_delete_keeps_created_records(self, client):
+        batch = _import(client, text="Homework 1 due September 3\n")
+        c = batch["candidates"][0]
+        client.post(f"/academic/candidates/{c['id']}/approve")
+        client.delete(f"/academic/batches/{batch['batch_id']}")
+        assert client.get("/academic/candidates").json() == []
+        assert len(client.get("/tasks").json()) == 1  # canonical record survives
+
+    def test_malformed_import_isolated(self, client):
+        assert client.post("/academic/import", json={"text": "   "}).status_code == 422
+        batch = _import(client, text="??? \x01 garbage\nHomework 1 due September 3\n")
+        assert len(batch["candidates"]) == 1          # bad line skipped, good line kept

@@ -151,10 +151,16 @@ def parse_nl(q, now_dt, contexts=None, tasks=None):
         m = search_once(
             r"\b(\d{1,2}):(\d{2})\s*(am|pm)?\s*[-–—]\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b")
     if m:
-        # A missing first meridiem inherits the second ("7-9pm" → 7pm).
-        first_mer = m.group(3) or m.group(6)
-        start_min = _clock(m.group(1), m.group(2), first_mer, notes, bare_note=False)
         end_min = _clock(m.group(4), m.group(5), m.group(6), notes, bare_note=False)
+        if m.group(3):
+            start_min = _clock(m.group(1), m.group(2), m.group(3), notes, bare_note=False)
+        else:
+            # A first hour without its own meridiem takes whichever AM/PM
+            # form lands closest below the end ("7-9pm" → 7 PM,
+            # "11-12:15pm" → 11 AM).
+            base = int(m.group(1)) % 12 * 60 + int(m.group(2) or 0)
+            candidates = [s for s in (base, base + 12 * 60) if s < end_min]
+            start_min = max(candidates) if candidates else base
         if end_min <= start_min:
             end_min = min(24 * 60 - 1, end_min + 12 * 60)
         consume(m.span())

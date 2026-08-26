@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
+from backend import academic
 from backend import database as db_config
 from backend import nl as nl_parser
 from backend.database import get_connection, init_db
@@ -2438,6 +2439,405 @@ def search_calendar(
 
     conn.close()
     return out
+
+
+# ---------------------------------------------------------------------------
+# Academic importer (V5.3 Part VIII) — candidate pipeline.
+#
+# Source → parser → candidate rows → REVIEW → approved canonical records.
+# Candidates are isolated (§55): importing and rejecting write only to the
+# academic_* tables; a canonical task or calendar entry appears exclusively
+# through an explicit approval. Every candidate keeps its source line (§27).
+# ---------------------------------------------------------------------------
+
+class AcademicImportBody(BaseModel):
+    text: str
+    context_id: Optional[int] = None
+    context_name: Optional[str] = None
+    source_name: Optional[str] = None
+    today: Optional[str] = None  # test override
+
+
+class CandidatePatch(BaseModel):
+    title: Optional[str] = None
+    date: Optional[str] = None
+    kind: Optional[str] = None
+    start_minutes: Optional[int] = None
+    end_minutes: Optional[int] = None
+
+
+class CandidateApproveBody(BaseModel):
+    # mode 'create' makes a new record; 'update_existing' applies a detected
+    # date change (§31) to the already-existing task instead.
+    mode: str = "create"
+    until: Optional[str] = None      # expansion horizon for recurring rows
+    from_date: Optional[str] = None  # expansion start (defaults to today)
+
+
+class CandidateBulkBody(BaseModel):
+    ids: list[int]
+    action: str  # approve | reject
+    until: Optional[str] = None
+    from_date: Optional[str] = None
+
+
+_CANDIDATE_KINDS = academic.TASK_KINDS | academic.EVENT_KINDS
+
+
+def _candidate_dict(row) -> dict:
+    d = dict(row)
+    d["weekdays"] = json.loads(d.get("weekdays") or "[]")
+    return d
+
+
+def _detect_candidate_duplicates(conn, cand: dict, context_id: Optional[int]):
+    """§30/§31 — mark suspected duplicates; the user decides at review."""
+    norm = academic.normalize_title(cand["title"])
+    if not norm:
+        return None, None
+    for t in conn.execute(
+        "SELECT id, name, due_date, context_id FROM tasks WHERE is_active = 1"
+    ).fetchall():
+        if academic.normalize_title(t["name"]) != norm:
+            continue
+        if context_id is not None and t["context_id"] is not None \
+                and t["context_id"] != context_id:
+            continue
+        conflict = None
+        if cand["date"] and t["due_date"] and t["due_date"] != cand["date"]:
+            conflict = t["due_date"]
+        return f"task:{t['id']}", conflict
+    prev = conn.execute(
+        "SELECT id, title, kind, date FROM academic_candidates "
+        "WHERE status != 'rejected' AND (context_id IS ? OR context_id = ?)",
+        (context_id, context_id),
+    ).fetchall()
+    for p in prev:
+        if p["kind"] == cand["kind"] and academic.normalize_title(p["title"]) == norm:
+            conflict = None
+            if cand["date"] and p["date"] and p["date"] != cand["date"]:
+                conflict = p["date"]
+            return f"candidate:{p['id']}", conflict
+    return None, None
+
+
+@app.post("/academic/import", status_code=201)
+def academic_import(body: AcademicImportBody):
+    """Parse pasted syllabus/schedule text into PENDING candidates. Never
+    writes to canonical tables — approval is a separate explicit step."""
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="No text to import")
+    today = date.fromisoformat(body.today) if body.today else date.today()
+    parsed = academic.parse_academic_text(text, today)
+
+    conn = get_connection()
+    context_id = body.context_id
+    if context_id is None and body.context_name and body.context_name.strip():
+        name = body.context_name.strip()
+        row = conn.execute(
+            "SELECT id FROM contexts WHERE lower(name) = lower(?)", (name,)
+        ).fetchone()
+        if row:
+            context_id = row["id"]
+        else:
+            now = datetime.now().isoformat()
+            with conn:
+                cur = conn.execute(
+                    "INSERT INTO contexts (name, created_at, updated_at) VALUES (?, ?, ?)",
+                    (name, now, now))
+            context_id = cur.lastrowid
+    elif context_id is not None and not conn.execute(
+            "SELECT id FROM contexts WHERE id = ?", (context_id,)).fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Context not found")
+
+    now = datetime.now().isoformat()
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO academic_batches (context_id, source_name, created_at) VALUES (?, ?, ?)",
+            (context_id, (body.source_name or "").strip(), now))
+        batch_id = cur.lastrowid
+        for cand in parsed:
+            dup, conflict = _detect_candidate_duplicates(conn, cand, context_id)
+            conn.execute(
+                """
+                INSERT INTO academic_candidates (
+                    batch_id, context_id, kind, title, date, start_minutes,
+                    end_minutes, weekdays, source_text, status, duplicate_of,
+                    date_conflict, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
+                """,
+                (batch_id, context_id, cand["kind"], cand["title"], cand["date"],
+                 cand["start_minutes"], cand["end_minutes"],
+                 json.dumps(cand["weekdays"]), cand["source_text"],
+                 dup, conflict, now, now))
+    rows = conn.execute(
+        "SELECT * FROM academic_candidates WHERE batch_id = ? ORDER BY id", (batch_id,)
+    ).fetchall()
+    conn.close()
+    return {"batch_id": batch_id, "context_id": context_id,
+            "candidates": [_candidate_dict(r) for r in rows]}
+
+
+@app.get("/academic/batches")
+def list_academic_batches():
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT b.*, c.name AS context_name,
+               (SELECT COUNT(*) FROM academic_candidates a WHERE a.batch_id = b.id) AS candidate_count,
+               (SELECT COUNT(*) FROM academic_candidates a WHERE a.batch_id = b.id AND a.status = 'pending') AS pending_count
+        FROM academic_batches b LEFT JOIN contexts c ON c.id = b.context_id
+        ORDER BY b.id DESC
+        """).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.get("/academic/candidates")
+def list_academic_candidates(batch_id: Optional[int] = None, status: Optional[str] = None):
+    query = """
+        SELECT a.*, c.name AS context_name FROM academic_candidates a
+        LEFT JOIN contexts c ON c.id = a.context_id WHERE 1=1
+    """
+    params: list = []
+    if batch_id is not None:
+        query += " AND a.batch_id = ?"
+        params.append(batch_id)
+    if status is not None:
+        query += " AND a.status = ?"
+        params.append(status)
+    conn = get_connection()
+    rows = conn.execute(query + " ORDER BY a.id", params).fetchall()
+    conn.close()
+    return [_candidate_dict(r) for r in rows]
+
+
+@app.patch("/academic/candidates/{cand_id}")
+def update_academic_candidate(cand_id: int, body: CandidatePatch):
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM academic_candidates WHERE id = ?", (cand_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    if row["status"] != "pending":
+        conn.close()
+        raise HTTPException(status_code=409, detail="Only pending candidates can be edited")
+    updates: dict = {}
+    if body.title is not None:
+        if not body.title.strip():
+            conn.close()
+            raise HTTPException(status_code=422, detail="title must not be blank")
+        updates["title"] = body.title.strip()
+    if body.date is not None:
+        if body.date == "":
+            updates["date"] = None
+        else:
+            try:
+                date.fromisoformat(body.date)
+            except ValueError:
+                conn.close()
+                raise HTTPException(status_code=422, detail="date must be YYYY-MM-DD")
+            updates["date"] = body.date
+    if body.kind is not None:
+        if body.kind not in _CANDIDATE_KINDS and body.kind != "deadline":
+            conn.close()
+            raise HTTPException(status_code=422, detail="Unknown kind")
+        updates["kind"] = body.kind
+    if body.start_minutes is not None:
+        updates["start_minutes"] = body.start_minutes or None
+    if body.end_minutes is not None:
+        updates["end_minutes"] = body.end_minutes or None
+    if updates:
+        updates["updated_at"] = datetime.now().isoformat()
+        set_clause = ", ".join(f"{c} = ?" for c in updates)
+        with conn:
+            conn.execute(
+                f"UPDATE academic_candidates SET {set_clause} WHERE id = ?",
+                list(updates.values()) + [cand_id])
+    out = conn.execute(
+        "SELECT a.*, c.name AS context_name FROM academic_candidates a "
+        "LEFT JOIN contexts c ON c.id = a.context_id WHERE a.id = ?", (cand_id,)).fetchone()
+    conn.close()
+    return _candidate_dict(out)
+
+
+def _approve_academic_candidate(conn, cand: dict, *, mode: str, until: Optional[str],
+                                from_date: Optional[str]) -> str:
+    """Create the canonical record for one candidate (§29). Returns a
+    created_record tag. Raises HTTPException when the candidate cannot be
+    approved as-is (missing date, recurring without horizon, …)."""
+    ctx_id = cand["context_id"]
+    ctx_name = None
+    if ctx_id:
+        r = conn.execute("SELECT name FROM contexts WHERE id = ?", (ctx_id,)).fetchone()
+        ctx_name = r["name"] if r else None
+    now = datetime.now().isoformat()
+    weekdays = cand["weekdays"]
+
+    if mode == "update_existing":
+        # §31 — accept a detected date change on the already-existing task.
+        dup = cand.get("duplicate_of") or ""
+        if not dup.startswith("task:"):
+            raise HTTPException(status_code=422, detail="No existing task to update")
+        if not cand["date"]:
+            raise HTTPException(status_code=422, detail="Candidate has no date")
+        task_id = int(dup.split(":")[1])
+        with conn:
+            conn.execute("UPDATE tasks SET due_date = ? WHERE id = ?",
+                         (cand["date"], task_id))
+        return f"task:{task_id}:due_date"
+
+    if weekdays and cand["start_minutes"] is not None:
+        # Recurring class/office hours → fixed calendar entries, expanded
+        # only through the user-chosen horizon. Never silently unbounded.
+        if not until:
+            raise HTTPException(
+                status_code=422,
+                detail="Recurring times need an 'until' date to expand")
+        start_d = date.fromisoformat(from_date) if from_date else date.today()
+        end_d = date.fromisoformat(until)
+        if end_d < start_d or (end_d - start_d).days > 200:
+            raise HTTPException(status_code=422, detail="Unreasonable expansion range")
+        sm = cand["start_minutes"]
+        em = min(1439, cand["end_minutes"] or sm + 60)
+        count = 0
+        d = start_d
+        with conn:
+            while d <= end_d:
+                if d.weekday() in weekdays:
+                    conn.execute(
+                        "INSERT INTO task_sessions (task_id, title, depth, context_id, "
+                        "planned_start, planned_end, is_fixed, created_at, updated_at) "
+                        "VALUES (NULL, ?, NULL, ?, ?, ?, 1, ?, ?)",
+                        (cand["title"], ctx_id,
+                         f"{d.isoformat()}T{sm // 60:02d}:{sm % 60:02d}",
+                         f"{d.isoformat()}T{em // 60:02d}:{em % 60:02d}",
+                         now, now))
+                    count += 1
+                d += timedelta(days=1)
+        return f"entries:{count}"
+
+    if cand["kind"] in academic.EVENT_KINDS and cand["date"] and cand["start_minutes"] is not None:
+        # Timed one-off commitment (exam with a time slot) → fixed entry.
+        sm = cand["start_minutes"]
+        em = min(1439, cand["end_minutes"] or sm + 60)
+        with conn:
+            cur = conn.execute(
+                "INSERT INTO task_sessions (task_id, title, depth, context_id, "
+                "planned_start, planned_end, is_fixed, created_at, updated_at) "
+                "VALUES (NULL, ?, NULL, ?, ?, ?, 1, ?, ?)",
+                (cand["title"], ctx_id,
+                 f"{cand['date']}T{sm // 60:02d}:{sm % 60:02d}",
+                 f"{cand['date']}T{em // 60:02d}:{em % 60:02d}",
+                 now, now))
+        return f"entry:{cur.lastrowid}"
+
+    # Everything else is an obligation → Grid task with a deadline (§29).
+    if not cand["date"]:
+        raise HTTPException(
+            status_code=422, detail="Candidate has no date — edit it before approving")
+    task = create_task(
+        name=cand["title"],
+        section=ctx_name or "General",
+        due_date=cand["date"],
+        context_id=ctx_id,
+    )
+    return f"task:{task['id']}"
+
+
+def _do_approve(conn, cand_id: int, body_mode: str, until, from_date) -> dict:
+    row = conn.execute("SELECT * FROM academic_candidates WHERE id = ?", (cand_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    if row["status"] != "pending":
+        raise HTTPException(status_code=409, detail=f"Candidate is already {row['status']}")
+    cand = _candidate_dict(row)
+    created = _approve_academic_candidate(
+        conn, cand, mode=body_mode, until=until, from_date=from_date)
+    with conn:
+        conn.execute(
+            "UPDATE academic_candidates SET status = 'approved', created_record = ?, "
+            "updated_at = ? WHERE id = ?",
+            (created, datetime.now().isoformat(), cand_id))
+    out = conn.execute("SELECT * FROM academic_candidates WHERE id = ?", (cand_id,)).fetchone()
+    return _candidate_dict(out)
+
+
+@app.post("/academic/candidates/{cand_id}/approve")
+def approve_academic_candidate(cand_id: int, body: Optional[CandidateApproveBody] = None):
+    body = body or CandidateApproveBody()
+    if body.mode not in ("create", "update_existing"):
+        raise HTTPException(status_code=422, detail="mode must be create or update_existing")
+    conn = get_connection()
+    try:
+        return _do_approve(conn, cand_id, body.mode, body.until, body.from_date)
+    finally:
+        conn.close()
+
+
+@app.post("/academic/candidates/{cand_id}/reject")
+def reject_academic_candidate(cand_id: int):
+    """Rejecting creates nothing and touches nothing canonical (§26)."""
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM academic_candidates WHERE id = ?", (cand_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    with conn:
+        conn.execute(
+            "UPDATE academic_candidates SET status = 'rejected', updated_at = ? WHERE id = ?",
+            (datetime.now().isoformat(), cand_id))
+    out = conn.execute("SELECT * FROM academic_candidates WHERE id = ?", (cand_id,)).fetchone()
+    conn.close()
+    return _candidate_dict(out)
+
+
+@app.post("/academic/candidates/bulk")
+def bulk_academic_candidates(body: CandidateBulkBody):
+    """Bulk approve/reject. Per-item isolation: one failing candidate (e.g. a
+    recurring row without an 'until') never blocks the rest."""
+    if body.action not in ("approve", "reject"):
+        raise HTTPException(status_code=422, detail="action must be approve or reject")
+    conn = get_connection()
+    results = []
+    for cand_id in body.ids[:200]:
+        try:
+            if body.action == "approve":
+                out = _do_approve(conn, cand_id, "create", body.until, body.from_date)
+            else:
+                row = conn.execute(
+                    "SELECT status FROM academic_candidates WHERE id = ?", (cand_id,)).fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="Candidate not found")
+                with conn:
+                    conn.execute(
+                        "UPDATE academic_candidates SET status = 'rejected', updated_at = ? "
+                        "WHERE id = ? AND status = 'pending'",
+                        (datetime.now().isoformat(), cand_id))
+                out = _candidate_dict(conn.execute(
+                    "SELECT * FROM academic_candidates WHERE id = ?", (cand_id,)).fetchone())
+            results.append({"id": cand_id, "ok": True, "candidate": out})
+        except HTTPException as exc:
+            results.append({"id": cand_id, "ok": False, "error": exc.detail})
+    conn.close()
+    return {"results": results}
+
+
+@app.delete("/academic/batches/{batch_id}")
+def delete_academic_batch(batch_id: int):
+    """Remove a batch and its candidates. Records already created by
+    approvals are canonical and survive (§55)."""
+    conn = get_connection()
+    row = conn.execute("SELECT id FROM academic_batches WHERE id = ?", (batch_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Batch not found")
+    with conn:
+        conn.execute("DELETE FROM academic_batches WHERE id = ?", (batch_id,))
+    conn.close()
+    return {"deleted": batch_id}
 
 
 # ---------------------------------------------------------------------------

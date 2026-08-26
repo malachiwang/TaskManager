@@ -8288,3 +8288,91 @@ html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-sc
   flex-direction: column;
   gap: 8px;
 }
+
+/* ── Academic importer (V5.3 Part VIII) ── */
+.acad-shell { width: min(760px, calc(100vw - 40px)); }
+.acad-textarea {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  resize: vertical;
+}
+.acad-bulkbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.acad-until {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: auto;
+}
+.acad-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 46vh;
+  overflow-y: auto;
+  padding-top: 6px;
+}
+.acad-row {
+  border: 1px solid var(--hair);
+  border-radius: 4px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.acad-row--approved { opacity: 0.72; }
+.acad-row--rejected { opacity: 0.45; }
+.acad-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.acad-status-mark { width: 14px; text-align: center; }
+.acad-kind {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  flex-shrink: 0;
+}
+.acad-title {
+  font-size: 13px;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: help;
+}
+.acad-when {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.acad-edit-title { flex: 1; }
+.acad-warn {
+  font-size: 12px;
+  color: var(--urg-mid);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.acad-created { font-size: 11px; color: var(--muted-2); }
+.acad-row-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}

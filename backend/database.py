@@ -674,4 +674,45 @@ def init_db() -> None:
     except Exception:
         pass  # Column already exists.
 
+    # ── Migration 19: academic importer candidates (V5.3 Part VIII) ──────────
+    # Candidate records extracted from pasted syllabi/schedules. Deliberately
+    # ISOLATED from canonical tables (§23/§55): a candidate becomes a task or
+    # calendar entry only through an explicit approval, and rejecting or
+    # deleting candidates never touches anything canonical. source_text keeps
+    # the exact line that produced each candidate (§27). weekdays is a JSON
+    # array for recurring class/office-hour rows. duplicate_of/date_conflict
+    # record what dedup found at import time (§30/§31).
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS academic_batches (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            context_id  INTEGER          REFERENCES contexts(id) ON DELETE SET NULL,
+            source_name TEXT    NOT NULL DEFAULT '',
+            created_at  TEXT    NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS academic_candidates (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id       INTEGER NOT NULL REFERENCES academic_batches(id) ON DELETE CASCADE,
+            context_id     INTEGER          REFERENCES contexts(id) ON DELETE SET NULL,
+            kind           TEXT    NOT NULL,
+            title          TEXT    NOT NULL,
+            date           TEXT             DEFAULT NULL,
+            start_minutes  INTEGER          DEFAULT NULL,
+            end_minutes    INTEGER          DEFAULT NULL,
+            weekdays       TEXT    NOT NULL DEFAULT '[]',
+            source_text    TEXT    NOT NULL DEFAULT '',
+            status         TEXT    NOT NULL DEFAULT 'pending',
+            duplicate_of   TEXT             DEFAULT NULL,
+            date_conflict  TEXT             DEFAULT NULL,
+            created_record TEXT             DEFAULT NULL,
+            created_at     TEXT    NOT NULL,
+            updated_at     TEXT    NOT NULL,
+            CHECK (status IN ('pending', 'approved', 'rejected'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_acand_batch
+            ON academic_candidates(batch_id);
+    """)
+    conn.commit()
+
     conn.close()

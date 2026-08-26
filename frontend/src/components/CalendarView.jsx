@@ -28,6 +28,7 @@ import {
 import TaskModal from './TaskModal.jsx';
 import CalendarEditor, { TimeRangeFields } from './CalendarEditor.jsx';
 import CommandPalette from './CommandPalette.jsx';
+import AcademicImport from './AcademicImport.jsx';
 import { displayTitle } from '../linkUtils.js';
 
 // Pointer capture keeps a drag alive when the cursor leaves the grid. It is
@@ -188,6 +189,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
   const [dupOpen, setDupOpen] = useState(false);
   const [dupDate, setDupDate] = useState('');
   const [newTaskOpen, setNewTaskOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false); // academic importer (V5.3)
 
   // Calendar search (V5.2 Part V) — server-side matching, read-only. The
   // panel narrows by type/status/date and can pin a context taken from its
@@ -413,7 +415,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
       if (paletteOpen) return; // the palette owns its own keys (incl. Escape)
       const tag = e.target.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable) return;
-      if (editingTask || editorSessionId || newTaskOpen) return;
+      if (editingTask || editorSessionId || newTaskOpen || importOpen) return;
       if (e.key === 'Escape') {
         // Staged dismissal (§4): transient UI first, selection second.
         updateDrag(null);
@@ -469,7 +471,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
   }, [editingTask, editorSessionId, selected, selectedSession, creator, quickOpen,
     confirmAction, windowMenu, partialEdit, reconcileOpen, calsOpen, shiftOpen,
     shiftPlan, insteadFor, placingTask, templatesOpen, templateMode, remindersOpen,
-    extDetail, paletteOpen, dupOpen, newTaskOpen, searchOpen,
+    extDetail, paletteOpen, dupOpen, newTaskOpen, searchOpen, importOpen,
     goToday, shiftPeriod, updateDrag]);
 
   // ── Pointer → slot math ────────────────────────────────────────────────────
@@ -1653,6 +1655,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
       { id: 'new-entry', label: 'New calendar entry…', keywords: 'create block session', run: openPaletteCreator },
       { id: 'new-task', label: 'New Grid task…', keywords: 'create canonical', run: () => { closeTransients(); setNewTaskOpen(true); } },
       { id: 'search', label: 'Search Calendar…', keywords: 'find lookup history', run: () => openSearch('') },
+      { id: 'academic', label: 'Academic import…', keywords: 'syllabus course schedule paste', run: () => { closeTransients(); setImportOpen(true); } },
       {
         id: 'drawer',
         label: drawerOpen ? 'Close unscheduled drawer' : 'Open unscheduled drawer',
@@ -2554,6 +2557,14 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
             onClick={() => { const open = calsOpen; closeTransients(); setCalsOpen(!open); }}
           >
             Calendars{externalCalendars.length ? ` · ${externalCalendars.length}` : ''}
+          </button>
+          <button
+            type="button"
+            className="cal-nav-btn"
+            title="Academic import — paste a syllabus/schedule, review candidates, approve what's real"
+            onClick={() => { closeTransients(); setImportOpen(true); }}
+          >
+            Import
           </button>
           <button
             type="button"
@@ -3517,6 +3528,18 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
           }}
           onDelete={() => {}}
           onClose={() => setNewTaskOpen(false)}
+        />
+      )}
+
+      {/* Academic importer (V5.3) — candidates stay isolated until approved. */}
+      {importOpen && (
+        <AcademicImport
+          contexts={contexts}
+          onClose={async () => {
+            setImportOpen(false);
+            setContexts(await fetchContexts().catch(() => contexts));
+          }}
+          onChanged={() => loadData()}
         />
       )}
 

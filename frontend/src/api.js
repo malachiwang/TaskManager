@@ -674,6 +674,67 @@ export async function fetchSuggestions() {
   return res.json();
 }
 
+// Academic importer (V5.3) — candidate pipeline. Importing only parses;
+// canonical records appear exclusively through explicit approvals.
+export async function academicImport(body) {
+  const res = await fetch(`${BASE}/academic/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`academicImport failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchAcademicCandidates(params = {}) {
+  const q = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v != null)),
+  ).toString();
+  const res = await fetch(`${BASE}/academic/candidates${q ? `?${q}` : ''}`);
+  if (!res.ok) throw new Error(`fetchAcademicCandidates failed: ${res.status}`);
+  return res.json();
+}
+
+export async function updateAcademicCandidate(id, fields) {
+  const res = await fetch(`${BASE}/academic/candidates/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error(`updateAcademicCandidate failed: ${res.status}`);
+  return res.json();
+}
+
+export async function approveAcademicCandidate(id, body = {}) {
+  const res = await fetch(`${BASE}/academic/candidates/${id}/approve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = `approveAcademicCandidate failed: ${res.status}`;
+    try { detail = (await res.json()).detail ?? detail; } catch { /* keep default */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+export async function rejectAcademicCandidate(id) {
+  const res = await fetch(`${BASE}/academic/candidates/${id}/reject`, { method: 'POST' });
+  if (!res.ok) throw new Error(`rejectAcademicCandidate failed: ${res.status}`);
+  return res.json();
+}
+
+export async function bulkAcademicCandidates(body) {
+  const res = await fetch(`${BASE}/academic/candidates/bulk`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`bulkAcademicCandidates failed: ${res.status}`);
+  return res.json();
+}
+
 // Natural-language scheduling (V5.2) — interpretation only; the caller shows
 // the parsed proposal for confirmation before anything is created.
 export async function parseNaturalLanguage(q) {
