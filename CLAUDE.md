@@ -46,7 +46,9 @@ Must not include:
 - cloud sync
 - AI APIs
 - Google Drive
-- external calendar APIs / sync (the built-in Calendar view is in scope)
+- external calendar WRITE access / OAuth API integrations (read-only ICS
+  feed subscriptions ARE in scope as of P15.0 — external commitments render
+  as fixed, distinct objects and never become tasks)
 - notifications
 - mobile app
 - public deployment

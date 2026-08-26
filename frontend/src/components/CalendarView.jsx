@@ -5,6 +5,9 @@ import {
   createSession, updateSession, deleteSession,
   createDepthWindow, deleteDepthWindow, skipDepthWindowDay,
   upsertCompletion, setCompletionCount,
+  fetchExternalCalendars, createExternalCalendar, updateExternalCalendar,
+  deleteExternalCalendar, syncExternalCalendar, fetchExternalEvents,
+  fetchWindowTemplates, createWindowTemplate, updateWindowTemplate, deleteWindowTemplate,
 } from '../api.js';
 import {
   SNAP_MINUTES, MIN_SESSION_MINUTES, DEFAULT_SESSION_MINUTES, DAY_MINUTES,
@@ -12,7 +15,7 @@ import {
   plannedDate, plannedMinutes, combinePlanned, combinePlannedEnd,
   shiftPlannedDays, plannedDiffMinutes,
   snapMinutes, clampDayMinutes, sessionSegmentOnDate,
-  formatHourLabel, formatTimeRange, durationLabel,
+  formatHourLabel, formatTimeRange, formatTimeOfDay, durationLabel,
   dayHeaderLabel, fullDateLabel, rangeLabel,
   windowsOnDate, layoutBlocks, minutesToPx, pxToMinutes,
 } from '../calendarUtils.js';
@@ -103,6 +106,24 @@ export default function CalendarView() {
   const [confirmAction, setConfirmAction] = useState(null); // { message, onConfirm }
   const [windowMenu, setWindowMenu] = useState(null); // { windowId, dateIso }
 
+  // External commitments (P15.0) — read-only ICS calendars. Their load and
+  // sync failures never touch core surfaces (§12).
+  const [externalCalendars, setExternalCalendars] = useState([]);
+  const [externalEvents, setExternalEvents] = useState([]);
+  const [calsOpen, setCalsOpen] = useState(false);
+  const [calDraft, setCalDraft] = useState({ name: '', url: '', busy: false, error: '' });
+
+  // Replanning (P15.0): Shift Remaining Day plan, Did This Instead dialog,
+  // Schedule Remaining placement, and depth-window template modes.
+  const [shiftOpen, setShiftOpen] = useState(false);
+  const [shiftPlan, setShiftPlan] = useState(null);   // { minutes, proposed: [...] }
+  const [insteadFor, setInsteadFor] = useState(null); // { session, title, startMin, endMin, error }
+  const [placingTask, setPlacingTask] = useState(null); // canonical task awaiting an interval
+  const [templates, setTemplates] = useState([]);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [templateMode, setTemplateMode] = useState(null); // {type:'apply',tpl} | {type:'save'} | {type:'update',tpl}
+  const [templateRename, setTemplateRename] = useState(null); // { id, name }
+
   // Interaction state. Drag is mirrored in a ref: pointer events can arrive
   // faster than React re-renders (a fast flick is pointerdown+move+up inside
   // one frame), so handlers read/write dragRef synchronously and the state
@@ -114,7 +135,12 @@ export default function CalendarView() {
     setDrag(next);
   }, []);
   const [creator, setCreator] = useState(null);
+  // Selection is independent of the quick popover (P15.0 §4): a block can be
+  // selected (ring + keyboard target) with the popover closed — e.g. right
+  // after the full editor closes. The popover and the full editor are
+  // mutually exclusive by construction.
   const [selected, setSelected] = useState(null); // { sessionId, rect }
+  const [quickOpen, setQuickOpen] = useState(false);
   const [editorSessionId, setEditorSessionId] = useState(null); // Calendar session editor (P13.1)
   const [editingTask, setEditingTask] = useState(null); // full canonical TaskModal
   // Promotion (P14.0): "Add to main Grid…" — the standard New Task modal,
@@ -181,6 +207,24 @@ export default function CalendarView() {
     } finally {
       if (gate) setLoading(false);
     }
+    // External calendars + templates load in ISOLATION (§12): a broken feed
+    // or endpoint failure leaves the core calendar fully functional, keeping
+    // whatever external data we already had.
+    try {
+      const [cals, evs] = await Promise.all([
+        fetchExternalCalendars(),
+        fetchExternalEvents(rangeStart, rangeEnd),
+      ]);
+      setExternalCalendars(cals);
+      setExternalEvents(evs);
+    } catch (err) {
+      console.warn('external calendars unavailable:', err);
+    }
+    try {
+      setTemplates(await fetchWindowTemplates());
+    } catch (err) {
+      console.warn('window templates unavailable:', err);
+    }
   }, [rangeStart, rangeEnd]);
 
   useEffect(() => {
@@ -200,13 +244,50 @@ export default function CalendarView() {
     // the creator and must not yank focus back into the title/search input.
   }, [creator?.dateIso, creator?.kind, creator?.tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function closeOverlays() {
+  // Transient surfaces only — deliberately does NOT clear block selection;
+  // Escape clears selection as its own final step (§4).
+  function closeTransients() {
     setCreator(null);
-    setSelected(null);
+    setQuickOpen(false);
     setConfirmAction(null);
     setWindowMenu(null);
     setPartialEdit(null);
     setReconcileOpen(false);
+    setCalsOpen(false);
+    setShiftOpen(false);
+    setShiftPlan(null);
+    setInsteadFor(null);
+    setPlacingTask(null);
+    setTemplatesOpen(false);
+    setTemplateMode(null);
+    setTemplateRename(null);
+  }
+
+  // Auto-refresh stale external calendars once per mount — fire-and-forget,
+  // then re-read events. Sync failures stay silent here (last_error shows in
+  // the Calendars manager).
+  const autoSyncedRef = useRef(false);
+  useEffect(() => {
+    if (loading || autoSyncedRef.current || externalCalendars.length === 0) return;
+    autoSyncedRef.current = true;
+    const STALE_MS = 15 * 60 * 1000;
+    const stale = externalCalendars.filter((c) =>
+      !c.last_synced_at || (Date.now() - new Date(c.last_synced_at).getTime()) > STALE_MS);
+    if (stale.length === 0) return;
+    (async () => {
+      for (const c of stale) {
+        try { await syncExternalCalendar(c.id); } catch { /* recorded server-side */ }
+      }
+      try {
+        setExternalCalendars(await fetchExternalCalendars());
+        setExternalEvents(await fetchExternalEvents(rangeStart, rangeEnd));
+      } catch { /* isolated */ }
+    })();
+  }, [loading, externalCalendars, rangeStart, rangeEnd]);
+
+  function closeOverlays() {
+    closeTransients();
+    setSelected(null);
   }
 
   // ── Navigation ─────────────────────────────────────────────────────────────
@@ -227,8 +308,13 @@ export default function CalendarView() {
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable) return;
       if (editingTask || editorSessionId) return;
       if (e.key === 'Escape') {
+        // Staged dismissal (§4): transient UI first, selection second.
         updateDrag(null);
-        closeOverlays();
+        const hadTransient = creator || quickOpen || confirmAction || windowMenu
+          || partialEdit || reconcileOpen || calsOpen || shiftOpen || shiftPlan
+          || insteadFor || placingTask || templatesOpen || templateMode;
+        if (hadTransient) closeTransients();
+        else setSelected(null);
         return;
       }
       if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
@@ -237,7 +323,9 @@ export default function CalendarView() {
       else if (k === 'w') setViewMode('week');
       else if (k === 'd') setViewMode('day');
       else if (k === 'e' && selected) {
-        // §14 — E edits the selected session in the Calendar editor.
+        // §14 — E edits the selected session; the quick popover closes FIRST
+        // so the two transient editors never render together (§4).
+        setQuickOpen(false);
         setEditorSessionId(selected.sessionId);
       } else if (e.key === 'ArrowLeft') shiftPeriod(-1);
       else if (e.key === 'ArrowRight') shiftPeriod(1);
@@ -246,7 +334,10 @@ export default function CalendarView() {
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [editingTask, editorSessionId, selected, goToday, shiftPeriod, updateDrag]);
+  }, [editingTask, editorSessionId, selected, creator, quickOpen, confirmAction,
+    windowMenu, partialEdit, reconcileOpen, calsOpen, shiftOpen, shiftPlan,
+    insteadFor, placingTask, templatesOpen, templateMode,
+    goToday, shiftPeriod, updateDrag]);
 
   // ── Pointer → slot math ────────────────────────────────────────────────────
   const pointToSlot = useCallback((clientX, clientY) => {
@@ -324,6 +415,34 @@ export default function CalendarView() {
     if (!d) return;
     updateDrag(null);
     if (d.type === 'select' || d.type === 'window') {
+      // Schedule Remaining placement (P15.0 §24): while a task is armed,
+      // click OR drag places another session of the SAME canonical task.
+      if (placingTask && d.type === 'select') {
+        const dur = Math.max(MIN_SESSION_MINUTES,
+          placingTask.remaining_unscheduled_minutes || placingTask.estimated_minutes || DEFAULT_SESSION_MINUTES);
+        const startMin = d.moved ? d.startMin : d.anchorMin;
+        const endMin = d.moved
+          ? Math.max(d.endMin, startMin + MIN_SESSION_MINUTES)
+          : Math.min(DAY_MINUTES, startMin + dur);
+        const task = placingTask;
+        setPlacingTask(null);
+        const commit = async () => {
+          try {
+            await createSession({
+              task_id: task.id,
+              planned_start: combinePlanned(d.dateIso, startMin),
+              planned_end: combinePlannedEnd(d.dateIso, endMin),
+            });
+          } catch (err) {
+            console.error('schedule remaining failed:', err);
+          }
+          loadData();
+        };
+        const conflict = protectedConflictAt(d.dateIso, startMin, endMin, task.depth);
+        if (conflict) confirmProtected(conflict, task.depth, task.name, commit);
+        else commit();
+        return;
+      }
       // §2 — a plain click on empty space never opens creation; creating a
       // scheduled block requires an intentional drag gesture.
       if (!d.moved) return;
@@ -459,6 +578,7 @@ export default function CalendarView() {
   function openSessionPopover(session, rect) {
     setCreator(null);
     setSelected({ sessionId: session.id, rect });
+    setQuickOpen(true);
   }
 
   // ── Completion — session status + real completion record ──────────────────
@@ -578,6 +698,203 @@ export default function CalendarView() {
       console.error('skip session failed:', err);
     }
     loadData();
+  }
+
+  // ── Shift Remaining Day (P15.0 §14–§17) ────────────────────────────────────
+  // Moves today's remaining FLEXIBLE scheduled work later by N minutes.
+  // Fixed sessions, external commitments, and depth windows stay put; any
+  // resulting overlap with a fixed obstacle is surfaced for the user to
+  // resolve — never silently overlapped, shortened, or discarded.
+
+  function todayFixedObstacles() {
+    const today = todayIso();
+    const out = [];
+    for (const s of sessions) {
+      if (!s.is_fixed || s.status !== 'scheduled') continue;
+      if (plannedDate(s.planned_start) !== today) continue;
+      const startMin = plannedMinutes(s.planned_start);
+      out.push({ startMin, endMin: Math.min(DAY_MINUTES, startMin + s.planned_minutes),
+        label: displayTitle(s.task_name) });
+    }
+    for (const ev of externalEvents) {
+      if (ev.all_day || plannedDate(ev.start) !== today) continue;
+      const startMin = plannedMinutes(ev.start);
+      const endMin = plannedDate(ev.end) === today ? plannedMinutes(ev.end) : DAY_MINUTES;
+      out.push({ startMin, endMin, label: `${displayTitle(ev.title)} (${ev.calendar_name})` });
+    }
+    return out;
+  }
+
+  function buildShiftPlan(minutes) {
+    const today = todayIso();
+    const obstacles = todayFixedObstacles();
+    const proposed = sessions
+      .filter((s) => s.status === 'scheduled' && !s.is_fixed
+        && plannedDate(s.planned_start) === today && s.planned_start >= nowStamp)
+      .map((s) => {
+        const dur = Math.min(s.planned_minutes, DAY_MINUTES);
+        let newStartMin = plannedMinutes(s.planned_start) + minutes;
+        let newEndMin = newStartMin + dur;
+        if (newEndMin > DAY_MINUTES) { newEndMin = DAY_MINUTES; newStartMin = Math.max(0, DAY_MINUTES - dur); }
+        const conflict = obstacles.find((o) => o.startMin < newEndMin && o.endMin > newStartMin) ?? null;
+        return { session: s, newStartMin, newEndMin, conflict, resolution: conflict ? 'keep' : null };
+      })
+      .sort((a, b) => a.newStartMin - b.newStartMin);
+    setShiftOpen(false);
+    setShiftPlan({ minutes, proposed });
+  }
+
+  // Resolved [start, end] for one proposed move given its conflict choice.
+  function resolvedShiftTimes(p) {
+    const dur = p.newEndMin - p.newStartMin;
+    if (!p.conflict || p.resolution === 'keep') return [p.newStartMin, p.newEndMin];
+    if (p.resolution === 'after') {
+      const s = p.conflict.endMin;
+      return [s, Math.min(DAY_MINUTES, s + dur)];
+    }
+    if (p.resolution === 'shorten') {
+      return [p.newStartMin, Math.max(p.newStartMin + MIN_SESSION_MINUTES, p.conflict.startMin)];
+    }
+    return [p.newStartMin, p.newEndMin];
+  }
+
+  async function applyShiftPlan() {
+    const plan = shiftPlan;
+    if (!plan) return;
+    setShiftPlan(null);
+    const today = todayIso();
+    try {
+      for (const p of plan.proposed) {
+        if (p.resolution === 'unschedule') {
+          await updateSession(p.session.id, { status: 'skipped' });
+          continue;
+        }
+        const [sm, em] = resolvedShiftTimes(p);
+        await updateSession(p.session.id, {
+          planned_start: combinePlanned(today, sm),
+          planned_end: combinePlannedEnd(today, em),
+        });
+      }
+    } catch (err) {
+      console.error('shift remaining failed:', err);
+    }
+    loadData();
+  }
+
+  // ── Did This Instead (P15.0 §18–§22) ───────────────────────────────────────
+  // Preserves both facts: the original block keeps its planned times and
+  // becomes displaced (skipped — linked-task effort returns to the backlog);
+  // what actually happened lands as a COMPLETED calendar-only entry over the
+  // actual interval. No Grid obligation is created for the replacement.
+  async function recordInstead() {
+    const d = insteadFor;
+    if (!d) return;
+    const title = d.title.trim();
+    if (!title) {
+      setInsteadFor((x) => (x ? { ...x, error: 'What did you do instead?' } : x));
+      return;
+    }
+    const dateIso = plannedDate(d.session.planned_start);
+    setInsteadFor(null);
+    try {
+      await updateSession(d.session.id, { status: 'skipped' });
+      const entry = await createSession({
+        title,
+        planned_start: combinePlanned(dateIso, d.startMin),
+        planned_end: combinePlannedEnd(dateIso, d.endMin),
+      });
+      await updateSession(entry.id, {
+        status: 'completed',
+        actual_start: combinePlanned(dateIso, d.startMin),
+        actual_end: combinePlannedEnd(dateIso, d.endMin),
+        actual_minutes: d.endMin - d.startMin,
+      });
+    } catch (err) {
+      console.error('did-this-instead failed:', err);
+    }
+    loadData();
+  }
+
+  function openInstead(session) {
+    closeTransients();
+    const dateIso = plannedDate(session.planned_start);
+    const startMin = plannedMinutes(session.planned_start);
+    const plannedEnd = Math.min(DAY_MINUTES, startMin + session.planned_minutes);
+    const endMin = dateIso === nowIso && nowMin > startMin
+      ? Math.min(plannedEnd, Math.max(startMin + MIN_SESSION_MINUTES, snapMinutes(nowMin)))
+      : plannedEnd;
+    setInsteadFor({ session, title: '', startMin, endMin, error: '' });
+  }
+
+  // ── Depth window templates (P15.0 §28/§29) ─────────────────────────────────
+  async function applyTemplateToDate(tpl, dateIso) {
+    setTemplateMode(null);
+    try {
+      for (const item of tpl.items) {
+        await createDepthWindow({
+          depth: item.depth,
+          date: dateIso,
+          start_minutes: item.start_minutes,
+          end_minutes: item.end_minutes,
+          protected: !!item.protected,
+        });
+      }
+      setWindows(await fetchDepthWindows());
+    } catch (err) {
+      console.error('apply template failed:', err);
+    }
+  }
+
+  async function captureTemplateFromDate(dateIso, updateTpl = null) {
+    setTemplateMode(null);
+    const items = windowsOnDate(windows, dateIso).map((w) => ({
+      depth: w.depth,
+      start_minutes: w.start_minutes,
+      end_minutes: w.end_minutes,
+      protected: w.protected === 1,
+    }));
+    if (items.length === 0) {
+      console.warn('no windows on that day to capture');
+      return;
+    }
+    try {
+      if (updateTpl) {
+        await updateWindowTemplate(updateTpl.id, { items });
+      } else {
+        const { weekday, dayNum } = dayHeaderLabel(dateIso);
+        await createWindowTemplate(`Windows from ${weekday} ${dayNum}`, items);
+      }
+      setTemplates(await fetchWindowTemplates());
+      setTemplatesOpen(true);
+    } catch (err) {
+      console.error('save template failed:', err);
+    }
+  }
+
+  async function refreshExternal() {
+    try {
+      setExternalCalendars(await fetchExternalCalendars());
+      setExternalEvents(await fetchExternalEvents(rangeStart, rangeEnd));
+    } catch (err) {
+      console.warn('external refresh failed:', err);
+    }
+  }
+
+  async function addExternalCalendar() {
+    const name = calDraft.name.trim();
+    const url = calDraft.url.trim();
+    if (!name || !url) {
+      setCalDraft((d) => ({ ...d, error: 'Name and ICS URL are both required.' }));
+      return;
+    }
+    setCalDraft((d) => ({ ...d, busy: true, error: '' }));
+    try {
+      const cal = await createExternalCalendar(name, url);
+      setCalDraft({ name: '', url: '', busy: false, error: cal.last_error ? `Added, but sync failed: ${cal.last_error}` : '' });
+      await refreshExternal();
+    } catch (err) {
+      setCalDraft((d) => ({ ...d, busy: false, error: err?.message || 'Add failed.' }));
+    }
   }
 
   async function skipWindowDay(windowId, dateIso) {
@@ -801,10 +1118,32 @@ export default function CalendarView() {
         const seg = sessionSegmentOnDate(s, dIso);
         if (seg) dayBlocks.push({ session: s, ...seg });
       }
+      // External commitments share the overlap layout so events and work
+      // blocks column-pack together like one surface (P15.0).
+      for (const ev of externalEvents) {
+        if (ev.all_day) continue;
+        const seg = sessionSegmentOnDate({ planned_start: ev.start, planned_end: ev.end }, dIso);
+        if (seg) dayBlocks.push({ ext: ev, ...seg });
+      }
       map[dIso] = layoutBlocks(dayBlocks);
     }
     return map;
-  }, [sessions, dates, hideCompleted]);
+  }, [sessions, externalEvents, dates, hideCompleted]);
+
+  // All-day external events render as slim banners at the top of the column.
+  const allDayByDate = useMemo(() => {
+    const map = {};
+    for (const ev of externalEvents) {
+      if (!ev.all_day) continue;
+      let d = plannedDate(ev.start);
+      const last = plannedDate(ev.end); // exclusive end
+      while (d < last) {
+        (map[d] = map[d] ?? []).push(ev);
+        d = addDaysIso(d, 1);
+      }
+    }
+    return map;
+  }, [externalEvents]);
 
   // Unscheduled queue (P13.0, §16/§17): a task is offered when it has no
   // upcoming scheduled session, OR when its estimate still has unscheduled
@@ -1016,6 +1355,38 @@ export default function CalendarView() {
           </div>
         )}
         <div className="cal-block-resize" aria-hidden="true" />
+      </div>
+    );
+  }
+
+  // External commitment block (P15.0 §9): source-marked, Fixed, read-only —
+  // no checkbox, no drag, no resize; never a task or an entry.
+  function renderExtBlock(item, dateIso) {
+    const ev = item.ext;
+    const heightPx = Math.max(14, minutesToPx(item.endMin - item.startMin) - 2);
+    const compact = heightPx < 34;
+    const width = 100 / item.cols;
+    return (
+      <div
+        key={`ext${ev.id}:${dateIso}`}
+        className="cal-block cal-block--ext"
+        style={{
+          top: minutesToPx(item.startMin),
+          height: heightPx,
+          left: `${item.col * width}%`,
+          width: `calc(${width}% - 3px)`,
+        }}
+        title={`${displayTitle(ev.title)} · ${formatTimeRange(item.startMin, item.endMin)} · ${ev.calendar_name} — external commitment (fixed)`}
+      >
+        <div className="cal-block-head">
+          <span className="cal-ext-marker" aria-hidden="true">▸</span>
+          <span className="cal-block-title">{displayTitle(ev.title)}</span>
+        </div>
+        {!compact && (
+          <div className="cal-block-meta">
+            {formatTimeRange(item.startMin, item.endMin)} · {ev.calendar_name}
+          </div>
+        )}
       </div>
     );
   }
@@ -1253,7 +1624,9 @@ export default function CalendarView() {
 
   // ── Popover: session detail ────────────────────────────────────────────────
   function renderSessionPopover() {
-    if (!selectedSession) return null;
+    // Mutually exclusive with the full editor (§4) — quickOpen is cleared
+    // before the editor ever opens, and closing the editor never sets it.
+    if (!quickOpen || editorSessionId || !selectedSession) return null;
     const s = selectedSession;
     const startMin = plannedMinutes(s.planned_start);
     const dateIso = plannedDate(s.planned_start);
@@ -1352,6 +1725,26 @@ export default function CalendarView() {
             >
               Partial…
             </button>
+            {s.status === 'scheduled' && (
+              <button
+                type="button"
+                className="cal-complete-btn"
+                title="Record what actually happened in this slot — the plan is preserved as displaced"
+                onClick={() => openInstead(s)}
+              >
+                Instead…
+              </button>
+            )}
+            {task && !!task.estimated_minutes && (task.remaining_unscheduled_minutes ?? 0) > 0 && (
+              <button
+                type="button"
+                className="cal-complete-btn"
+                title="Place another session of this same task — never a duplicate task"
+                onClick={() => { closeTransients(); setPlacingTask(task); }}
+              >
+                Schedule remaining · {durationLabel(task.remaining_unscheduled_minutes)}
+              </button>
+            )}
           </div>
         )}
         <div className="cal-popover-actions cal-popover-actions--spread">
@@ -1379,7 +1772,7 @@ export default function CalendarView() {
               type="button"
               className="task-modal-cancel"
               title="Edit this session and its task's scheduling fields (E)"
-              onClick={() => { setSelected(null); setEditorSessionId(s.id); }}
+              onClick={() => { setQuickOpen(false); setEditorSessionId(s.id); }}
             >
               Edit
             </button>
@@ -1503,13 +1896,40 @@ export default function CalendarView() {
               onClick={() => setViewMode('day')}
             >Day</button>
           </div>
+          <button
+            type="button"
+            className={`cal-nav-btn${calsOpen ? ' is-active' : ''}`}
+            aria-pressed={calsOpen}
+            title="External calendars (read-only ICS feeds — classes, meetings, personal)"
+            onClick={() => { const open = calsOpen; closeTransients(); setCalsOpen(!open); }}
+          >
+            Calendars{externalCalendars.length ? ` · ${externalCalendars.length}` : ''}
+          </button>
+          <button
+            type="button"
+            className={`cal-nav-btn${shiftOpen ? ' is-active' : ''}`}
+            aria-pressed={shiftOpen}
+            title="Shift today's remaining flexible work later — fixed commitments stay put"
+            onClick={() => { const open = shiftOpen; closeTransients(); setShiftOpen(!open); }}
+          >
+            Shift
+          </button>
+          <button
+            type="button"
+            className={`cal-nav-btn${templatesOpen ? ' is-active' : ''}`}
+            aria-pressed={templatesOpen}
+            title="Depth window templates — reusable window sets"
+            onClick={() => { const open = templatesOpen; closeTransients(); setTemplatesOpen(!open); }}
+          >
+            Windows
+          </button>
           {unresolvedSessions.length > 0 && (
             <button
               type="button"
               className={`cal-nav-btn cal-review-btn${reconcileOpen ? ' is-active' : ''}`}
               aria-pressed={reconcileOpen}
               title="Planned sessions whose time passed without being resolved"
-              onClick={() => setReconcileOpen((o) => !o)}
+              onClick={() => { const open = reconcileOpen; closeTransients(); setReconcileOpen(!open); }}
             >
               Review · {unresolvedSessions.length}
             </button>
@@ -1535,6 +1955,19 @@ export default function CalendarView() {
       </div>
 
 
+      {/* Arm-mode banner (P15.0): Schedule Remaining placement + template modes. */}
+      {(placingTask || templateMode) && (
+        <div className="cal-mode-banner" role="status">
+          {placingTask
+            ? `Placing “${displayTitle(placingTask.name)}” — drag or click a time slot · Esc cancels`
+            : templateMode.type === 'apply'
+              ? `Click a day header to apply “${templateMode.tpl.name}” · Esc cancels`
+              : templateMode.type === 'update'
+                ? `Click a day header to update “${templateMode.tpl.name}” from that day's windows · Esc cancels`
+                : 'Click a day header to save its depth windows as a template · Esc cancels'}
+        </div>
+      )}
+
       <div className="cal-main">
         <div className="cal-scroll" ref={scrollRef}>
           {/* ── Sticky day headers ── */}
@@ -1548,9 +1981,16 @@ export default function CalendarView() {
                   <button
                     type="button"
                     key={dIso}
-                    className={`cal-day-header${isToday ? ' is-today' : ''}`}
-                    title="Open day view"
-                    onClick={() => { setAnchorIso(dIso); setViewMode('day'); }}
+                    className={`cal-day-header${isToday ? ' is-today' : ''}${templateMode ? ' is-arm-target' : ''}`}
+                    title={templateMode ? 'Apply template action to this day' : 'Open day view'}
+                    onClick={() => {
+                      // Template arm modes intercept the day-header click.
+                      if (templateMode?.type === 'apply') { applyTemplateToDate(templateMode.tpl, dIso); return; }
+                      if (templateMode?.type === 'update') { captureTemplateFromDate(dIso, templateMode.tpl); return; }
+                      if (templateMode?.type === 'save') { captureTemplateFromDate(dIso); return; }
+                      setAnchorIso(dIso);
+                      setViewMode('day');
+                    }}
                   >
                     <span className="cal-day-header-weekday">{weekday}</span>
                     <span className="cal-day-header-num">{dayNum}</span>
@@ -1629,7 +2069,19 @@ export default function CalendarView() {
                         )}
                       </div>
                     ))}
-                    {blocksByDate[dIso]?.map((item) => renderBlock(item, dIso))}
+                    {(allDayByDate[dIso] ?? []).map((ev, i) => (
+                      <div
+                        key={`ad${ev.id}`}
+                        className="cal-allday"
+                        style={{ top: 2 + i * 18 }}
+                        title={`${displayTitle(ev.title)} · ${ev.calendar_name} · all day (external)`}
+                      >
+                        ▸ {displayTitle(ev.title)}
+                      </div>
+                    ))}
+                    {blocksByDate[dIso]?.map((item) => (
+                      item.ext ? renderExtBlock(item, dIso) : renderBlock(item, dIso)
+                    ))}
                     {renderGhost(dIso)}
                     {renderInlineCreator(dIso)}
                     {isToday && (
@@ -1703,6 +2155,8 @@ export default function CalendarView() {
                     </button>
                     <button type="button" title="Move this session to tomorrow, same time"
                       onClick={() => rescheduleSession(s, 1)}>Tmrw</button>
+                    <button type="button" title="Something else happened in this slot — record it"
+                      onClick={() => openInstead(s)}>Instead…</button>
                     <button type="button" title="It didn't happen — keep the record, return the effort to the backlog"
                       onClick={() => skipSession(s)}>Skip</button>
                   </div>
@@ -1710,6 +2164,281 @@ export default function CalendarView() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* External calendars manager (P15.0 §6/§10) — read-only ICS sources. */}
+      {calsOpen && (
+        <div className="cal-popover cal-reconcile" role="dialog" aria-label="External calendars">
+          <div className="cal-popover-head">
+            <span className="cal-popover-kicker">External calendars</span>
+            <button type="button" className="cal-popover-close" aria-label="Close"
+              onClick={() => setCalsOpen(false)}>×</button>
+          </div>
+          <div className="cal-popover-hint">
+            Read-only ICS feeds. For Google Calendar: Settings → your calendar →
+            “Secret address in iCal format”. Events show as fixed external
+            commitments — never tasks.
+          </div>
+          {externalCalendars.map((c) => (
+            <div key={c.id} className="cal-reconcile-row">
+              <div className="cal-reconcile-info">
+                <span className="cal-reconcile-name">{c.name}{c.visible ? '' : ' (hidden)'}</span>
+                <span className="cal-reconcile-time">
+                  {c.event_count} events
+                  {c.last_error
+                    ? ` · error: ${c.last_error.slice(0, 48)}`
+                    : c.last_synced_at ? ` · synced ${c.last_synced_at.slice(5, 16).replace('T', ' ')}` : ' · never synced'}
+                </span>
+              </div>
+              <div className="cal-reconcile-actions">
+                <button type="button" title={c.visible ? 'Hide this calendar' : 'Show this calendar'}
+                  onClick={async () => { await updateExternalCalendar(c.id, { visible: !c.visible }); refreshExternal(); }}>
+                  {c.visible ? 'Hide' : 'Show'}
+                </button>
+                <button type="button" title="Fetch the feed again now"
+                  onClick={async () => { try { await syncExternalCalendar(c.id); } catch {} refreshExternal(); }}>
+                  Sync
+                </button>
+                <button type="button" title="Remove this calendar and its events"
+                  onClick={async () => { await deleteExternalCalendar(c.id); refreshExternal(); }}>
+                  ×
+                </button>
+              </div>
+            </div>
+          ))}
+          <div className="cal-cal-add">
+            <input
+              className="task-modal-input"
+              placeholder="Name (e.g. GT Classes)"
+              value={calDraft.name}
+              onChange={(e) => setCalDraft((d) => ({ ...d, name: e.target.value }))}
+            />
+            <input
+              className="task-modal-input"
+              placeholder="ICS URL (https://…/basic.ics)"
+              value={calDraft.url}
+              onChange={(e) => setCalDraft((d) => ({ ...d, url: e.target.value }))}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addExternalCalendar(); } }}
+            />
+            {calDraft.error && <div className="cal-popover-error" role="alert">{calDraft.error}</div>}
+            <div className="cal-popover-actions">
+              <button type="button" className="task-modal-save" onClick={addExternalCalendar} disabled={calDraft.busy}>
+                {calDraft.busy ? 'Adding…' : 'Add calendar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Shift Remaining Day chooser (P15.0 §14). */}
+      {shiftOpen && (
+        <div className="cal-popover cal-reconcile" role="dialog" aria-label="Shift remaining flexible work">
+          <div className="cal-popover-head">
+            <span className="cal-popover-kicker">Shift remaining day</span>
+            <button type="button" className="cal-popover-close" aria-label="Close"
+              onClick={() => setShiftOpen(false)}>×</button>
+          </div>
+          <div className="cal-popover-hint">
+            Moves today's remaining flexible blocks later. Fixed sessions,
+            external commitments, and depth windows stay where they are;
+            conflicts are shown before anything is applied.
+          </div>
+          <div className="cal-popover-actions cal-popover-actions--wrap">
+            {[15, 30, 45, 60, 90].map((m) => (
+              <button key={m} type="button" className="cal-flag-btn" onClick={() => buildShiftPlan(m)}>
+                +{durationLabel(m)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Shift plan preview + conflict resolution (§16/§17). */}
+      {shiftPlan && (
+        <div className="cal-confirm-overlay" onClick={() => setShiftPlan(null)}>
+          <div className="cal-popover cal-confirm cal-shift-plan" role="dialog"
+            aria-label="Shift plan" onClick={(e) => e.stopPropagation()}>
+            <div className="cal-popover-kicker">Shift remaining flexible work +{durationLabel(shiftPlan.minutes)}</div>
+            {shiftPlan.proposed.length === 0 ? (
+              <div className="cal-popover-time">Nothing flexible remains today.</div>
+            ) : (
+              <>
+                <div className="cal-popover-hint">
+                  {shiftPlan.proposed.length} block{shiftPlan.proposed.length !== 1 ? 's' : ''} will move.
+                  Fixed commitments stay put.
+                </div>
+                {shiftPlan.proposed.map((p, idx) => {
+                  const [sm, em] = resolvedShiftTimes(p);
+                  const canShorten = p.conflict && (p.conflict.startMin - p.newStartMin) >= MIN_SESSION_MINUTES;
+                  return (
+                    <div key={p.session.id} className="cal-reconcile-row">
+                      <div className="cal-reconcile-info">
+                        <span className="cal-reconcile-name">{displayTitle(p.session.task_name)}</span>
+                        <span className="cal-reconcile-time">
+                          {p.resolution === 'unschedule'
+                            ? 'returned to backlog (skipped)'
+                            : `→ ${formatTimeRange(sm, em)}`}
+                          {p.conflict ? ` · overlaps ${p.conflict.label}` : ''}
+                        </span>
+                      </div>
+                      {p.conflict && (
+                        <div className="cal-reconcile-actions">
+                          <button type="button"
+                            className={p.resolution === 'keep' ? 'is-active' : ''}
+                            title="Allow the overlap"
+                            onClick={() => setShiftPlan((pl) => ({ ...pl, proposed: pl.proposed.map((x, i) => (i === idx ? { ...x, resolution: 'keep' } : x)) }))}>
+                            Overlap
+                          </button>
+                          <button type="button"
+                            className={p.resolution === 'after' ? 'is-active' : ''}
+                            title="Place it after the fixed commitment"
+                            onClick={() => setShiftPlan((pl) => ({ ...pl, proposed: pl.proposed.map((x, i) => (i === idx ? { ...x, resolution: 'after' } : x)) }))}>
+                            After
+                          </button>
+                          {canShorten && (
+                            <button type="button"
+                              className={p.resolution === 'shorten' ? 'is-active' : ''}
+                              title="Shorten it to end where the fixed commitment begins"
+                              onClick={() => setShiftPlan((pl) => ({ ...pl, proposed: pl.proposed.map((x, i) => (i === idx ? { ...x, resolution: 'shorten' } : x)) }))}>
+                              Shorten
+                            </button>
+                          )}
+                          <button type="button"
+                            className={p.resolution === 'unschedule' ? 'is-active' : ''}
+                            title="Skip this session — its effort returns to the backlog"
+                            onClick={() => setShiftPlan((pl) => ({ ...pl, proposed: pl.proposed.map((x, i) => (i === idx ? { ...x, resolution: 'unschedule' } : x)) }))}>
+                            Unschedule
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </>
+            )}
+            <div className="cal-popover-actions">
+              <button type="button" className="task-modal-cancel" onClick={() => setShiftPlan(null)}>Cancel</button>
+              {shiftPlan.proposed.length > 0 && (
+                <button type="button" className="task-modal-save" onClick={applyShiftPlan}>Apply shift</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Did This Instead (§18–§22): both facts are preserved. */}
+      {insteadFor && (
+        <div className="cal-confirm-overlay" onClick={() => setInsteadFor(null)}>
+          <div className="cal-popover cal-confirm" role="dialog" aria-label="Did this instead"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="cal-popover-kicker">Did This Instead</div>
+            <div className="cal-popover-time">
+              Planned: {displayTitle(insteadFor.session.task_name)} ·{' '}
+              {formatTimeRange(plannedMinutes(insteadFor.session.planned_start),
+                plannedMinutes(insteadFor.session.planned_start) + insteadFor.session.planned_minutes)}
+            </div>
+            <input
+              className="task-modal-input"
+              placeholder="What actually happened?"
+              autoFocus
+              value={insteadFor.title}
+              onChange={(e) => setInsteadFor((x) => (x ? { ...x, title: e.target.value, error: '' } : x))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); recordInstead(); }
+                if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setInsteadFor(null); }
+              }}
+            />
+            <TimeRangeFields
+              startMin={insteadFor.startMin}
+              endMin={insteadFor.endMin}
+              onChange={({ startMin, endMin }) => setInsteadFor((x) => (x ? { ...x, startMin, endMin } : x))}
+            />
+            <div className="cal-popover-hint">
+              The planned block stays in history as displaced
+              {insteadFor.session.task_id != null ? ' and the task keeps its remaining effort' : ''}.
+              What happened is recorded as a completed calendar-only entry — use
+              “Add to main Grid…” later if it deserves to become a task.
+            </div>
+            {insteadFor.error && <div className="cal-popover-error" role="alert">{insteadFor.error}</div>}
+            <div className="cal-popover-actions">
+              <button type="button" className="task-modal-cancel" onClick={() => setInsteadFor(null)}>Cancel</button>
+              <button type="button" className="task-modal-save" onClick={recordInstead}>Record</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Depth window templates (§28/§29). */}
+      {templatesOpen && (
+        <div className="cal-popover cal-reconcile" role="dialog" aria-label="Depth window templates">
+          <div className="cal-popover-head">
+            <span className="cal-popover-kicker">Depth window templates</span>
+            <button type="button" className="cal-popover-close" aria-label="Close"
+              onClick={() => setTemplatesOpen(false)}>×</button>
+          </div>
+          <div className="cal-popover-hint">
+            Reusable window sets you define — applying one creates those
+            windows on the day you pick. No inferred capacity, ever.
+          </div>
+          {templates.length === 0 && (
+            <div className="cal-popover-time">No templates yet — save one from a day below.</div>
+          )}
+          {templates.map((t) => (
+            <div key={t.id} className="cal-reconcile-row">
+              <div className="cal-reconcile-info">
+                {templateRename?.id === t.id ? (
+                  <input
+                    className="task-modal-input"
+                    autoFocus
+                    value={templateRename.name}
+                    onChange={(e) => setTemplateRename((r) => (r ? { ...r, name: e.target.value } : r))}
+                    onKeyDown={async (e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (templateRename.name.trim()) {
+                          await updateWindowTemplate(t.id, { name: templateRename.name.trim() });
+                          setTemplates(await fetchWindowTemplates());
+                        }
+                        setTemplateRename(null);
+                      }
+                      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setTemplateRename(null); }
+                    }}
+                  />
+                ) : (
+                  <span className="cal-reconcile-name">{t.name}</span>
+                )}
+                <span className="cal-reconcile-time">
+                  {t.items.map((i) => `D${i.depth} ${formatTimeOfDay(i.start_minutes)}–${formatTimeOfDay(i.end_minutes)}${i.protected ? ' 🛡' : ''}`).join(' · ') || 'empty'}
+                </span>
+              </div>
+              <div className="cal-reconcile-actions">
+                <button type="button" title="Apply to a day — click a day header next"
+                  onClick={() => { setTemplatesOpen(false); setTemplateMode({ type: 'apply', tpl: t }); }}>
+                  Apply…
+                </button>
+                <button type="button" title="Replace this template's windows from a day — click a day header next"
+                  onClick={() => { setTemplatesOpen(false); setTemplateMode({ type: 'update', tpl: t }); }}>
+                  ⟳
+                </button>
+                <button type="button" title="Rename"
+                  onClick={() => setTemplateRename({ id: t.id, name: t.name })}>
+                  ✎
+                </button>
+                <button type="button" title="Delete this template"
+                  onClick={async () => { await deleteWindowTemplate(t.id); setTemplates(await fetchWindowTemplates()); }}>
+                  ×
+                </button>
+              </div>
+            </div>
+          ))}
+          <div className="cal-popover-actions">
+            <button type="button" className="task-modal-save"
+              title="Capture an existing day's windows as a new template"
+              onClick={() => { setTemplatesOpen(false); setTemplateMode({ type: 'save' }); }}>
+              New from day…
+            </button>
+          </div>
         </div>
       )}
 

@@ -637,6 +637,20 @@ class TestCalendarEntries:
         assert client.patch(f"/sessions/{s['id']}", json={"title": "X"}).status_code == 422
         assert client.patch(f"/sessions/{s['id']}", json={"depth": 2}).status_code == 422
 
+    def test_promotion_never_manufactures_historical_completions(self, client):
+        # §3 (P15.0): an entry with prior execution state, once promoted,
+        # must not retroactively create Grid completions.
+        e = self._entry(client)
+        client.patch(f"/sessions/{e['id']}", json={"status": "completed", "actual_minutes": 60})
+        t = _make_task(client, name="Promoted late")
+        client.patch(f"/sessions/{e['id']}", json={"link_task_id": t["id"]})
+        comps = client.get("/completions", params={"start": "2026-08-01", "end": "2026-09-30"}).json()
+        assert comps == []
+        # execution history survives the link
+        s = client.get("/sessions", params={"task_id": t["id"]}).json()[0]
+        assert s["status"] == "completed"
+        assert s["actual_minutes"] == 60
+
     def test_entry_visible_even_when_tasks_deleted(self, client):
         t = _make_task(client)
         _make_session(client, t["id"])

@@ -1528,6 +1528,311 @@ def delete_depth_window(window_id: int):
 
 
 # ---------------------------------------------------------------------------
+# External calendars (P15.0) — read-only ICS commitments
+#
+# External events are their own object: never tasks, sessions, entries, or
+# depth windows, and always Fixed for replanning purposes. Sync fetches the
+# ICS feed, expands recurrence into concrete occurrences over a bounded
+# horizon, and replaces the calendar's events in ONE transaction — so a
+# refresh can never duplicate, and a failed fetch keeps the previous events
+# while recording last_error. Integration failures stay isolated here; no
+# other surface depends on these endpoints.
+# ---------------------------------------------------------------------------
+
+from backend import ics as ics_module
+
+SYNC_HORIZON_PAST_DAYS = 60
+SYNC_HORIZON_FUTURE_DAYS = 270
+ICS_FETCH_TIMEOUT_S = 15
+ICS_MAX_BYTES = 5 * 1024 * 1024
+
+
+def _fetch_ics_text(url: str) -> str:
+    """Fetch an ICS feed. Separate function so tests monkeypatch it."""
+    import urllib.request
+    if not url.lower().startswith(("http://", "https://")):
+        raise ValueError("Calendar URL must be http(s)")
+    req = urllib.request.Request(url, headers={"User-Agent": "TaskManager/1.0"})
+    with urllib.request.urlopen(req, timeout=ICS_FETCH_TIMEOUT_S) as res:
+        data = res.read(ICS_MAX_BYTES + 1)
+    if len(data) > ICS_MAX_BYTES:
+        raise ValueError("Calendar feed too large")
+    return data.decode("utf-8", errors="replace")
+
+
+def _sync_calendar(conn, cal_row) -> int:
+    """Fetch + expand + replace events for one calendar. Returns event count.
+    Raises on failure AFTER recording last_error (previous events kept)."""
+    now_iso = datetime.now().isoformat()
+    try:
+        text = _fetch_ics_text(cal_row["url"])
+        events = ics_module.parse_ics(text)
+        window_start = datetime.now() - timedelta(days=SYNC_HORIZON_PAST_DAYS)
+        window_end = datetime.now() + timedelta(days=SYNC_HORIZON_FUTURE_DAYS)
+        occurrences = ics_module.expand_events(events, window_start, window_end)
+    except Exception as exc:
+        with conn:
+            conn.execute(
+                "UPDATE external_calendars SET last_error = ?, updated_at = ? WHERE id = ?",
+                (str(exc)[:300], now_iso, cal_row["id"]),
+            )
+        raise
+    with conn:
+        conn.execute("DELETE FROM external_events WHERE calendar_id = ?", (cal_row["id"],))
+        conn.executemany(
+            "INSERT INTO external_events (calendar_id, uid, title, start, end, all_day) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            [(cal_row["id"], o["uid"], o["title"], o["start"], o["end"], int(o["all_day"]))
+             for o in occurrences],
+        )
+        conn.execute(
+            "UPDATE external_calendars SET last_synced_at = ?, last_error = NULL, updated_at = ? WHERE id = ?",
+            (now_iso, now_iso, cal_row["id"]),
+        )
+    return len(occurrences)
+
+
+class ExternalCalendarBody(BaseModel):
+    name: str
+    url: str
+
+
+class ExternalCalendarPatch(BaseModel):
+    name: Optional[str] = None
+    url: Optional[str] = None
+    visible: Optional[bool] = None
+
+
+@app.get("/external-calendars")
+def list_external_calendars():
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT c.*, (SELECT COUNT(*) FROM external_events e WHERE e.calendar_id = c.id) AS event_count
+        FROM external_calendars c ORDER BY c.id
+        """
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.post("/external-calendars", status_code=201)
+def create_external_calendar(body: ExternalCalendarBody):
+    name = body.name.strip()
+    url = body.url.strip()
+    if not name or not url:
+        raise HTTPException(status_code=422, detail="name and url are required")
+    now = datetime.now().isoformat()
+    conn = get_connection()
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO external_calendars (name, url, created_at, updated_at) VALUES (?, ?, ?, ?)",
+            (name, url, now, now),
+        )
+        cal_id = cur.lastrowid
+    row = conn.execute("SELECT * FROM external_calendars WHERE id = ?", (cal_id,)).fetchone()
+    # Best-effort initial sync — a bad URL still creates the calendar with
+    # last_error set, so the user can see and fix it.
+    try:
+        _sync_calendar(conn, row)
+    except Exception:
+        pass
+    out = conn.execute(
+        "SELECT c.*, (SELECT COUNT(*) FROM external_events e WHERE e.calendar_id = c.id) AS event_count "
+        "FROM external_calendars c WHERE c.id = ?", (cal_id,)
+    ).fetchone()
+    conn.close()
+    return dict(out)
+
+
+@app.patch("/external-calendars/{cal_id}")
+def update_external_calendar(cal_id: int, body: ExternalCalendarPatch):
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM external_calendars WHERE id = ?", (cal_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Calendar not found")
+    updates = {}
+    if body.name is not None and body.name.strip():
+        updates["name"] = body.name.strip()
+    if body.url is not None and body.url.strip():
+        updates["url"] = body.url.strip()
+    if body.visible is not None:
+        updates["visible"] = int(body.visible)
+    if updates:
+        updates["updated_at"] = datetime.now().isoformat()
+        set_clause = ", ".join(f"{c} = ?" for c in updates)
+        with conn:
+            conn.execute(
+                f"UPDATE external_calendars SET {set_clause} WHERE id = ?",
+                list(updates.values()) + [cal_id],
+            )
+    out = conn.execute("SELECT * FROM external_calendars WHERE id = ?", (cal_id,)).fetchone()
+    conn.close()
+    return dict(out)
+
+
+@app.delete("/external-calendars/{cal_id}")
+def delete_external_calendar(cal_id: int):
+    conn = get_connection()
+    row = conn.execute("SELECT id FROM external_calendars WHERE id = ?", (cal_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Calendar not found")
+    with conn:
+        conn.execute("DELETE FROM external_calendars WHERE id = ?", (cal_id,))
+    conn.close()
+    return {"deleted": cal_id}
+
+
+@app.post("/external-calendars/{cal_id}/sync")
+def sync_external_calendar(cal_id: int):
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM external_calendars WHERE id = ?", (cal_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Calendar not found")
+    try:
+        count = _sync_calendar(conn, row)
+    except Exception as exc:
+        conn.close()
+        raise HTTPException(status_code=502, detail=f"Sync failed: {exc}")
+    conn.close()
+    return {"synced": count}
+
+
+@app.get("/external-events")
+def list_external_events(start: str, end: str):
+    """Events from VISIBLE calendars overlapping [start, end] (ISO dates)."""
+    _validate_iso_date(start, "start")
+    _validate_iso_date(end, "end")
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT e.*, c.name AS calendar_name
+        FROM external_events e
+        JOIN external_calendars c ON c.id = e.calendar_id
+        WHERE c.visible = 1 AND e.start <= ? AND e.end >= ?
+        ORDER BY e.start, e.id
+        """,
+        (end + "T23:59", start + "T00:00"),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Depth window templates (P15.0) — user-defined reusable window sets.
+# Templates only accelerate creating the same user-declared windows; they
+# never infer capacity. Applying happens client-side via POST /depth-windows.
+# ---------------------------------------------------------------------------
+
+class TemplateBody(BaseModel):
+    name: str
+    items: list[dict]
+
+
+class TemplatePatch(BaseModel):
+    name: Optional[str] = None
+    items: Optional[list[dict]] = None
+
+
+def _validate_template_items(items: list[dict]) -> list[dict]:
+    clean = []
+    for it in items:
+        depth = it.get("depth")
+        start_m = it.get("start_minutes")
+        end_m = it.get("end_minutes")
+        protected = bool(it.get("protected", False))
+        if depth not in (1, 2, 3):
+            raise HTTPException(status_code=422, detail="template item depth must be 1, 2, or 3")
+        if not (isinstance(start_m, int) and isinstance(end_m, int)
+                and 0 <= start_m < end_m <= 1440):
+            raise HTTPException(status_code=422, detail="template item minutes invalid")
+        clean.append({"depth": depth, "start_minutes": start_m,
+                      "end_minutes": end_m, "protected": protected})
+    return clean
+
+
+@app.get("/depth-window-templates")
+def list_templates():
+    conn = get_connection()
+    rows = conn.execute("SELECT * FROM depth_window_templates ORDER BY name, id").fetchall()
+    conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["items"] = json.loads(d["items"])
+        out.append(d)
+    return out
+
+
+@app.post("/depth-window-templates", status_code=201)
+def create_template(body: TemplateBody):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="name is required")
+    items = _validate_template_items(body.items)
+    now = datetime.now().isoformat()
+    conn = get_connection()
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO depth_window_templates (name, items, created_at, updated_at) VALUES (?, ?, ?, ?)",
+            (name, json.dumps(items), now, now),
+        )
+        tpl_id = cur.lastrowid
+    row = conn.execute("SELECT * FROM depth_window_templates WHERE id = ?", (tpl_id,)).fetchone()
+    conn.close()
+    d = dict(row)
+    d["items"] = json.loads(d["items"])
+    return d
+
+
+@app.patch("/depth-window-templates/{tpl_id}")
+def update_template(tpl_id: int, body: TemplatePatch):
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM depth_window_templates WHERE id = ?", (tpl_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Template not found")
+    updates = {}
+    if body.name is not None and body.name.strip():
+        updates["name"] = body.name.strip()
+    if body.items is not None:
+        try:
+            updates["items"] = json.dumps(_validate_template_items(body.items))
+        except HTTPException:
+            conn.close()
+            raise
+    if updates:
+        updates["updated_at"] = datetime.now().isoformat()
+        set_clause = ", ".join(f"{c} = ?" for c in updates)
+        with conn:
+            conn.execute(
+                f"UPDATE depth_window_templates SET {set_clause} WHERE id = ?",
+                list(updates.values()) + [tpl_id],
+            )
+    out = conn.execute("SELECT * FROM depth_window_templates WHERE id = ?", (tpl_id,)).fetchone()
+    conn.close()
+    d = dict(out)
+    d["items"] = json.loads(d["items"])
+    return d
+
+
+@app.delete("/depth-window-templates/{tpl_id}")
+def delete_template(tpl_id: int):
+    conn = get_connection()
+    row = conn.execute("SELECT id FROM depth_window_templates WHERE id = ?", (tpl_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Template not found")
+    with conn:
+        conn.execute("DELETE FROM depth_window_templates WHERE id = ?", (tpl_id,))
+    conn.close()
+    return {"deleted": tpl_id}
+
+
+# ---------------------------------------------------------------------------
 # Reading Sheet (P5.0) — books + page-checkpoint history
 # ---------------------------------------------------------------------------
 

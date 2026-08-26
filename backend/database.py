@@ -555,4 +555,51 @@ def init_db() -> None:
     """)
     conn.commit()
 
+    # ── Migration 16: external calendars + depth window templates (P15.0) ────
+    # external_calendars: read-only ICS feed sources (Google Calendar secret
+    # iCal address, class schedules, …). external_events: expanded concrete
+    # occurrences, replaced wholesale on each successful sync — replace-all
+    # inside one transaction is what makes refresh duplicate-proof. A failed
+    # sync keeps the previous events and records last_error instead.
+    # depth_window_templates: user-defined reusable window sets; items is a
+    # JSON array of {depth, start_minutes, end_minutes, protected}.
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS external_calendars (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            name           TEXT    NOT NULL,
+            url            TEXT    NOT NULL,
+            visible        INTEGER NOT NULL DEFAULT 1,
+            last_synced_at TEXT             DEFAULT NULL,
+            last_error     TEXT             DEFAULT NULL,
+            created_at     TEXT    NOT NULL,
+            updated_at     TEXT    NOT NULL,
+            CHECK (visible IN (0, 1))
+        );
+
+        CREATE TABLE IF NOT EXISTS external_events (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            calendar_id INTEGER NOT NULL REFERENCES external_calendars(id) ON DELETE CASCADE,
+            uid         TEXT    NOT NULL DEFAULT '',
+            title       TEXT    NOT NULL DEFAULT '',
+            start       TEXT    NOT NULL,
+            end         TEXT    NOT NULL,
+            all_day     INTEGER NOT NULL DEFAULT 0,
+            CHECK (all_day IN (0, 1))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_extev_cal
+            ON external_events(calendar_id);
+        CREATE INDEX IF NOT EXISTS idx_extev_start
+            ON external_events(start);
+
+        CREATE TABLE IF NOT EXISTS depth_window_templates (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT    NOT NULL,
+            items      TEXT    NOT NULL DEFAULT '[]',
+            created_at TEXT    NOT NULL,
+            updated_at TEXT    NOT NULL
+        );
+    """)
+    conn.commit()
+
     conn.close()

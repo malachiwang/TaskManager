@@ -8056,6 +8056,90 @@ html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-sc
 /* Calendar session editor — task-modal chrome at a compact width. */
 .cal-editor-shell { max-width: 520px; }
 
+/* -------------------------------------------------------------------------
+   Calendar V3 (P15.0) — external commitments, replanning, templates.
+   ---------------------------------------------------------------------- */
+
+/* External commitment blocks: outlined + source marker, read-only, Fixed.
+   Distinct from task sessions (checkbox) and entries (round marker) by
+   shape/affordance, not color (§9). */
+.cal-block--ext {
+  cursor: default;
+  border-style: solid;
+  border-left-width: 3px;
+  border-left-color: var(--muted-2);
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--bg-panel) 0 6px,
+    color-mix(in srgb, var(--muted-2) 7%, var(--bg-panel)) 6px 12px
+  );
+}
+.cal-block--ext:hover { border-color: var(--grid-border); border-left-color: var(--muted-2); }
+.cal-block--ext:active { cursor: default; }
+.cal-ext-marker {
+  flex-shrink: 0;
+  font-size: 9px;
+  color: var(--muted);
+}
+
+/* All-day external banners at the top of a day column. */
+.cal-allday {
+  position: absolute;
+  left: 2px;
+  right: 3px;
+  height: 16px;
+  z-index: 9;
+  font-size: 10px;
+  line-height: 16px;
+  padding: 0 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-2);
+  border: 1px solid var(--grid-border);
+  border-left: 3px solid var(--muted-2);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--muted-2) 8%, var(--bg-panel));
+  pointer-events: none;
+}
+
+/* Arm-mode banner (Schedule Remaining placement / template modes). */
+.cal-mode-banner {
+  flex-shrink: 0;
+  padding: 5px 14px;
+  background: var(--accent-soft, var(--bg-hover));
+  border-bottom: 1px solid var(--accent);
+  color: var(--ink);
+  font-size: 12px;
+}
+
+/* Day headers while a template mode is armed. */
+.cal-day-header.is-arm-target {
+  outline: 1px dashed var(--accent);
+  outline-offset: -3px;
+}
+
+/* External-calendar add form. */
+.cal-cal-add {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid var(--hair);
+  padding-top: 8px;
+}
+
+/* Shift plan dialog is wider than the standard confirm. */
+.cal-shift-plan {
+  width: 460px;
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+}
+.cal-reconcile-actions button.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
 /* Protected-window override confirm. */
 .cal-confirm-overlay {
   position: fixed;

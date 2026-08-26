@@ -55,8 +55,9 @@ Do not use:
 - user accounts
 - AI APIs
 - Google Drive API
-- external calendar APIs (Google Calendar sync, etc. — the built-in Calendar
-  view is in scope; see "Calendar View (P12)" below)
+- external calendar WRITE APIs / OAuth integrations (read-only ICS feed
+  subscriptions — e.g. Google Calendar's secret iCal address — are in scope
+  as of P15.0; see "Calendar View (P12)" below)
 - notifications
 - mobile app framework
 
@@ -349,12 +350,13 @@ One-off (date) or recurring (weekday). Not a task; never has completions.
 
 ### External Calendar Commitment
 
-A future concept: classes, meetings, appointments — externally fixed time.
-Not yet implemented. When added, commitments are not tasks and are never
-auto-completed.
+Classes, meetings, appointments — externally fixed time (P15.0:
+`external_calendars` + `external_events`, populated from read-only ICS
+feeds). Commitments are not tasks, are never auto-completed, default to
+Fixed for replanning, and their sync failures never affect core surfaces.
 
-External calendar *integration* (Google Calendar APIs, sync) remains out of
-scope for now.
+External calendar WRITE access (creating/editing events upstream, OAuth
+APIs) remains out of scope.
 
 Reference: the approved Calendar MVP as verified —
 `docs/images/calendar-mvp.jpg`.

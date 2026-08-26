@@ -476,6 +476,99 @@ export async function deleteDepthWindow(id) {
   return res.json();
 }
 
+// ---------------------------------------------------------------------------
+// External calendars (P15.0) — read-only ICS commitments. Failures here are
+// isolated by callers; nothing else depends on these requests.
+// ---------------------------------------------------------------------------
+
+export async function fetchExternalCalendars() {
+  const res = await fetch(`${BASE}/external-calendars`);
+  if (!res.ok) throw new Error(`fetchExternalCalendars failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createExternalCalendar(name, url) {
+  const res = await fetch(`${BASE}/external-calendars`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, url }),
+  });
+  if (!res.ok) {
+    let detail = `createExternalCalendar failed: ${res.status}`;
+    try { const b = await res.json(); if (b.detail) detail = b.detail; } catch {}
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+export async function updateExternalCalendar(id, fields) {
+  const res = await fetch(`${BASE}/external-calendars/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error(`updateExternalCalendar failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteExternalCalendar(id) {
+  const res = await fetch(`${BASE}/external-calendars/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`deleteExternalCalendar failed: ${res.status}`);
+  return res.json();
+}
+
+export async function syncExternalCalendar(id) {
+  const res = await fetch(`${BASE}/external-calendars/${id}/sync`, { method: 'POST' });
+  if (!res.ok) {
+    let detail = `syncExternalCalendar failed: ${res.status}`;
+    try { const b = await res.json(); if (b.detail) detail = b.detail; } catch {}
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+export async function fetchExternalEvents(start, end) {
+  const res = await fetch(`${BASE}/external-events?start=${start}&end=${end}`);
+  if (!res.ok) throw new Error(`fetchExternalEvents failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Depth window templates (P15.0)
+// ---------------------------------------------------------------------------
+
+export async function fetchWindowTemplates() {
+  const res = await fetch(`${BASE}/depth-window-templates`);
+  if (!res.ok) throw new Error(`fetchWindowTemplates failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createWindowTemplate(name, items) {
+  const res = await fetch(`${BASE}/depth-window-templates`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, items }),
+  });
+  if (!res.ok) throw new Error(`createWindowTemplate failed: ${res.status}`);
+  return res.json();
+}
+
+export async function updateWindowTemplate(id, fields) {
+  const res = await fetch(`${BASE}/depth-window-templates/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error(`updateWindowTemplate failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteWindowTemplate(id) {
+  const res = await fetch(`${BASE}/depth-window-templates/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`deleteWindowTemplate failed: ${res.status}`);
+  return res.json();
+}
+
 export async function previewImport(file) {
   const formData = new FormData();
   formData.append('file', file);
