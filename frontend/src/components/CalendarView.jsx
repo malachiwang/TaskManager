@@ -15,6 +15,7 @@ import {
 } from '../api.js';
 import {
   SNAP_MINUTES, MIN_SESSION_MINUTES, DEFAULT_SESSION_MINUTES, DAY_MINUTES,
+  DENSITY_SCALES, setPxPerHour,
   todayIso, isoDate, addDaysIso, weekDates, isWeekendIso, weekdayOfIso,
   plannedDate, plannedMinutes, combinePlanned, combinePlannedEnd,
   shiftPlannedDays, plannedDiffMinutes,
@@ -25,6 +26,7 @@ import {
 } from '../calendarUtils.js';
 import TaskModal from './TaskModal.jsx';
 import CalendarEditor, { TimeRangeFields } from './CalendarEditor.jsx';
+import CommandPalette from './CommandPalette.jsx';
 import { displayTitle } from '../linkUtils.js';
 
 // Pointer capture keeps a drag alive when the cursor leaves the grid. It is
@@ -173,6 +175,29 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
   // after the full editor closes. The popover and the full editor are
   // mutually exclusive by construction.
   const [selected, setSelected] = useState(null); // { sessionId, rect }
+  const selectedSession = selected
+    ? sessions.find((s) => s.id === selected.sessionId) ?? null
+    : null;
+
+  // Command palette (V5.1 Part II) + duplicate menu (Part VII) + density
+  // (Part VI). Density is persisted; the module pixel scale and the CSS var
+  // are both set from DENSITY_SCALES so hit-testing and rendering can never
+  // disagree (§19).
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [dupOpen, setDupOpen] = useState(false);
+  const [dupDate, setDupDate] = useState('');
+  const [newTaskOpen, setNewTaskOpen] = useState(false);
+  const [density, setDensity] = useState(() => {
+    const saved = localStorage.getItem('taskos-cal-density');
+    return DENSITY_SCALES[saved] ? saved : 'standard';
+  });
+  // The module pixel scale must be set DURING render, before any minutesToPx
+  // call positions a block — an effect would run after paint and leave every
+  // block at the old scale until some later re-render.
+  setPxPerHour(DENSITY_SCALES[density]);
+  useEffect(() => {
+    localStorage.setItem('taskos-cal-density', density);
+  }, [density]);
   const [quickOpen, setQuickOpen] = useState(false);
   const [editorSessionId, setEditorSessionId] = useState(null); // Calendar session editor (P13.1)
   const [editingTask, setEditingTask] = useState(null); // full canonical TaskModal
@@ -212,6 +237,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
   const loadData = useCallback(async ({ gate = false } = {}) => {
     if (gate) setLoading(true);
     setError('');
+    nudgeBaseRef.current = null; // server truth supersedes any keyboard base
     try {
       const today = todayIso();
       const [tasksData, rangeSessions, upcoming, recent, windowsData, completionRows] =
@@ -303,6 +329,8 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
   // Transient surfaces only — deliberately does NOT clear block selection;
   // Escape clears selection as its own final step (§4).
   function closeTransients() {
+    setPaletteOpen(false);
+    setDupOpen(false);
     setCreator(null);
     setQuickOpen(false);
     setConfirmAction(null);
@@ -362,19 +390,53 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
   // ── Keyboard ───────────────────────────────────────────────────────────────
   useEffect(() => {
     function onKey(e) {
+      // ⌘K / Ctrl+K toggles the command palette from anywhere, including
+      // inputs — it is modifier-chorded, so it can never be typed by
+      // accident (§14). Everything else respects editable focus below.
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        if (paletteOpen) setPaletteOpen(false);
+        else { closeTransients(); setPaletteOpen(true); }
+        return;
+      }
+      if (paletteOpen) return; // the palette owns its own keys (incl. Escape)
       const tag = e.target.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable) return;
-      if (editingTask || editorSessionId) return;
+      if (editingTask || editorSessionId || newTaskOpen) return;
       if (e.key === 'Escape') {
         // Staged dismissal (§4): transient UI first, selection second.
         updateDrag(null);
         const hadTransient = creator || quickOpen || confirmAction || windowMenu
           || partialEdit || reconcileOpen || calsOpen || shiftOpen || shiftPlan
           || insteadFor || placingTask || templatesOpen || templateMode
-          || remindersOpen || extDetail;
+          || remindersOpen || extDetail || dupOpen;
         if (hadTransient) closeTransients();
         else setSelected(null);
         return;
+      }
+      // Keyboard scheduling (V5.1 §12/§13) — a selected, still-scheduled
+      // block moves in SNAP_MINUTES steps (Shift = 30m), jumps days with
+      // ⌥←/→, and resizes with ⌘/Ctrl+Shift+↑/↓. Completed/partial/skipped
+      // sessions never move — their planned history is settled.
+      if (selectedSession && selectedSession.status === 'scheduled') {
+        const vertical = e.key === 'ArrowUp' || e.key === 'ArrowDown';
+        const horizontal = e.key === 'ArrowLeft' || e.key === 'ArrowRight';
+        const dir = (e.key === 'ArrowUp' || e.key === 'ArrowLeft') ? -1 : 1;
+        if (vertical && (e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey) {
+          nudgeResize(selectedSession, dir * SNAP_MINUTES);
+          e.preventDefault();
+          return;
+        }
+        if (horizontal && e.altKey && !e.metaKey && !e.ctrlKey) {
+          nudgeMoveDays(selectedSession, dir);
+          e.preventDefault();
+          return;
+        }
+        if (vertical && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          nudgeMoveMinutes(selectedSession, dir * (e.shiftKey ? 30 : SNAP_MINUTES));
+          e.preventDefault();
+          return;
+        }
       }
       if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
       const k = e.key.toLowerCase();
@@ -393,9 +455,10 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [editingTask, editorSessionId, selected, creator, quickOpen, confirmAction,
-    windowMenu, partialEdit, reconcileOpen, calsOpen, shiftOpen, shiftPlan,
-    insteadFor, placingTask, templatesOpen, templateMode, remindersOpen, extDetail,
+  }, [editingTask, editorSessionId, selected, selectedSession, creator, quickOpen,
+    confirmAction, windowMenu, partialEdit, reconcileOpen, calsOpen, shiftOpen,
+    shiftPlan, insteadFor, placingTask, templatesOpen, templateMode, remindersOpen,
+    extDetail, paletteOpen, dupOpen, newTaskOpen,
     goToday, shiftPeriod, updateDrag]);
 
   // ── Pointer → slot math ────────────────────────────────────────────────────
@@ -722,19 +785,114 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
     loadData();
   }
 
-  // §50 — another session for the same task, same time tomorrow. Never
-  // duplicates the underlying task.
-  async function duplicateSession(session, deltaDays = 1) {
+  // §50 / V5.1 §21 — another session of the same canonical task (or another
+  // block of the same calendar-only entry). Never duplicates the task
+  // record. targetDateIso (from "Pick date") wins over deltaDays.
+  async function duplicateSession(session, deltaDays = 1, targetDateIso = null) {
     try {
+      const startMin = plannedMinutes(session.planned_start);
+      const body = session.task_id != null
+        ? { task_id: session.task_id }
+        : {
+          title: session.title || session.task_name,
+          depth: session.depth ?? 0,
+          context_id: session.context_id,
+        };
       await createSession({
-        task_id: session.task_id,
-        planned_start: shiftPlannedDays(session.planned_start, deltaDays),
-        planned_end: shiftPlannedDays(session.planned_end, deltaDays),
+        ...body,
+        planned_start: targetDateIso
+          ? combinePlanned(targetDateIso, startMin)
+          : shiftPlannedDays(session.planned_start, deltaDays),
+        planned_end: targetDateIso
+          ? combinePlannedEnd(targetDateIso, startMin + session.planned_minutes)
+          : shiftPlannedDays(session.planned_end, deltaDays),
       });
     } catch (err) {
       console.error('duplicate session failed:', err);
     }
     loadData();
+  }
+
+  // ── Keyboard scheduling (V5.1 §12/§13) ─────────────────────────────────────
+  // Rapid presses must compound on each other, and React state can lag a
+  // fast key burst (listeners re-bind in effects, which run after paint).
+  // nudgeBaseRef is the synchronous source of truth for the latest applied
+  // times — updated in the same tick as the PATCH, immune to render timing.
+  // The optimistic setSessions keeps the screen current; the debounced
+  // reload reconciles rollups once the burst settles.
+  const nudgeReloadRef = useRef(null);
+  const nudgeBaseRef = useRef(null); // { id, start, end, minutes }
+
+  function nudgeTimesOf(session) {
+    const b = nudgeBaseRef.current;
+    if (b && b.id === session.id) return b;
+    return {
+      id: session.id,
+      start: session.planned_start,
+      end: session.planned_end,
+      minutes: session.planned_minutes,
+    };
+  }
+
+  async function applyNudge(session, newStart, newEnd) {
+    nudgeBaseRef.current = {
+      id: session.id, start: newStart, end: newEnd,
+      minutes: plannedDiffMinutes(newStart, newEnd),
+    };
+    setQuickOpen(false); // its anchor rect is stale the moment the block moves
+    setSessions((prev) => prev.map((x) => (x.id === session.id
+      ? {
+        ...x,
+        planned_start: newStart,
+        planned_end: newEnd,
+        planned_minutes: plannedDiffMinutes(newStart, newEnd),
+      }
+      : x)));
+    try {
+      await updateSession(session.id, { planned_start: newStart, planned_end: newEnd });
+      clearTimeout(nudgeReloadRef.current);
+      nudgeReloadRef.current = setTimeout(() => loadData(), 800);
+    } catch (err) {
+      console.error('keyboard reschedule failed:', err);
+      loadData();
+    }
+  }
+
+  function nudgeMoveMinutes(session, delta) {
+    const base = nudgeTimesOf(session);
+    const startMin = plannedMinutes(base.start);
+    const next = Math.max(0, Math.min(DAY_MINUTES - base.minutes, startMin + delta));
+    if (next === startMin) return;
+    const dateIso = plannedDate(base.start);
+    applyNudge(
+      session,
+      combinePlanned(dateIso, next),
+      combinePlannedEnd(dateIso, next + base.minutes),
+    );
+  }
+
+  function nudgeMoveDays(session, dir) {
+    const base = nudgeTimesOf(session);
+    applyNudge(
+      session,
+      shiftPlannedDays(base.start, dir),
+      shiftPlannedDays(base.end, dir),
+    );
+  }
+
+  function nudgeResize(session, delta) {
+    const base = nudgeTimesOf(session);
+    const startMin = plannedMinutes(base.start);
+    const dur = Math.max(
+      MIN_SESSION_MINUTES,
+      Math.min(DAY_MINUTES - startMin, base.minutes + delta),
+    );
+    if (dur === base.minutes) return;
+    applyNudge(
+      session,
+      base.start,
+      combinePlannedEnd(plannedDate(base.start), startMin + dur),
+    );
   }
 
   async function rescheduleSession(session, deltaDays) {
@@ -1373,9 +1531,120 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
     [tasks],
   );
 
-  const selectedSession = selected
-    ? sessions.find((s) => s.id === selected.sessionId) ?? null
-    : null;
+  // ── Command palette (V5.1 Part II) ─────────────────────────────────────────
+  // Every command dispatches to the exact handler its equivalent button uses.
+  // Context-aware (§7): session-specific commands appear only with a session
+  // selected, and only the ones its status actually supports.
+  function openPaletteCreator() {
+    closeTransients();
+    const today = todayIso();
+    const dateIso = dates.includes(today) ? today : dates[0];
+    let startMin = 9 * 60;
+    if (dateIso === today) {
+      startMin = Math.max(0, Math.min(DAY_MINUTES - 60,
+        Math.ceil(nowMin / SNAP_MINUTES) * SNAP_MINUTES));
+    }
+    setCreator({
+      kind: 'task', mode: 'popover', tab: 'new',
+      dateIso, startMin, endMin: Math.min(DAY_MINUTES, startMin + DEFAULT_SESSION_MINUTES),
+      title: '', depth: 0, isFixed: false, search: '',
+      saving: false, error: '',
+    });
+  }
+
+  function buildPaletteCommands() {
+    const periodNoun = viewMode === 'week' ? 'week' : 'day';
+    const cmds = [
+      { id: 'today', label: 'Go to today', hint: 'T', keywords: 'now current', run: goToday },
+      { id: 'view-day', label: 'Day view', hint: 'D', run: () => setViewMode('day') },
+      { id: 'view-week', label: 'Week view', hint: 'W', run: () => setViewMode('week') },
+      { id: 'next', label: `Next ${periodNoun}`, hint: '→', keywords: 'forward', run: () => shiftPeriod(1) },
+      { id: 'prev', label: `Previous ${periodNoun}`, hint: '←', keywords: 'back', run: () => shiftPeriod(-1) },
+      { id: 'new-entry', label: 'New calendar entry…', keywords: 'create block session', run: openPaletteCreator },
+      { id: 'new-task', label: 'New Grid task…', keywords: 'create canonical', run: () => { closeTransients(); setNewTaskOpen(true); } },
+      {
+        id: 'drawer',
+        label: drawerOpen ? 'Close unscheduled drawer' : 'Open unscheduled drawer',
+        keywords: 'tasks remaining place',
+        run: () => setDrawerOpen((o) => !o),
+      },
+      { id: 'shift', label: 'Shift remaining day…', keywords: 'replan later push', run: () => { closeTransients(); setShiftOpen(true); } },
+      { id: 'reminders', label: 'Reminders…', keywords: 'notifications', run: () => { closeTransients(); setRemindersOpen(true); } },
+      { id: 'calendars', label: 'External calendars…', keywords: 'ics feeds subscribe', run: () => { closeTransients(); setCalsOpen(true); } },
+      { id: 'templates', label: 'Depth window templates…', keywords: 'windows apply', run: () => { closeTransients(); setTemplatesOpen(true); } },
+      {
+        id: 'hide-done',
+        label: hideCompleted ? 'Show completed sessions' : 'Hide completed sessions',
+        run: () => setHideCompleted((v) => !v),
+      },
+      ...['compact', 'standard', 'detailed'].map((d) => ({
+        id: `density-${d}`,
+        label: `Density: ${d[0].toUpperCase()}${d.slice(1)}`,
+        keywords: 'zoom scale hours',
+        hint: density === d ? 'current' : undefined,
+        run: () => setDensity(d),
+      })),
+    ];
+    if (unresolvedSessions.length > 0) {
+      cmds.push({
+        id: 'reconcile',
+        label: `Review unresolved sessions · ${unresolvedSessions.length}`,
+        keywords: 'reconcile past',
+        run: () => { closeTransients(); setReconcileOpen(true); },
+      });
+    }
+    if (selectedSession) {
+      const s = selectedSession;
+      const linkedTask = s.task_id != null ? tasks.find((t) => t.id === s.task_id) : null;
+      const label = displayTitle(s.task_name);
+      cmds.push({
+        id: 'sel-edit', label: `Edit “${label}”`, hint: 'E',
+        run: () => { setQuickOpen(false); setEditorSessionId(s.id); },
+      });
+      if (s.status !== 'completed') {
+        cmds.push({
+          id: 'sel-complete',
+          label: linkedTask ? 'Complete session' : 'Complete entry',
+          run: () => toggleComplete(s),
+        });
+      }
+      if (s.status === 'scheduled') {
+        cmds.push({
+          id: 'sel-instead', label: 'Did this instead…',
+          keywords: 'replace displaced actual',
+          run: () => openInstead(s),
+        });
+      }
+      if (linkedTask) {
+        cmds.push({
+          id: 'sel-open', label: 'Open full task',
+          run: () => { closeTransients(); setEditingTask(linkedTask); },
+        });
+        if ((linkedTask.remaining_unscheduled_minutes ?? 0) > 0) {
+          cmds.push({
+            id: 'sel-remaining',
+            label: `Schedule remaining · ${durationLabel(linkedTask.remaining_unscheduled_minutes)}`,
+            run: () => { closeTransients(); setPlacingTask(linkedTask); },
+          });
+        }
+      }
+      cmds.push(
+        {
+          id: 'sel-dup-tomorrow', label: 'Duplicate session · tomorrow',
+          keywords: 'another again', run: () => duplicateSession(s, 1),
+        },
+        {
+          id: 'sel-dup-week', label: 'Duplicate session · next week',
+          keywords: 'another again', run: () => duplicateSession(s, 7),
+        },
+        {
+          id: 'sel-remove', label: linkedTask ? 'Remove session' : 'Remove entry',
+          keywords: 'delete', run: () => removeSession(s.id),
+        },
+      );
+    }
+    return cmds;
+  }
 
   // ── Render helpers ─────────────────────────────────────────────────────────
   function renderGhost(dateIso) {
@@ -1932,11 +2201,12 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
             </button>
             <button
               type="button"
-              className="cal-flag-btn"
-              title="Add another session for this task tomorrow at the same time"
-              onClick={() => duplicateSession(s, 1)}
+              className={`cal-flag-btn${dupOpen ? ' is-active' : ''}`}
+              aria-expanded={dupOpen}
+              title="Add another session — same task or entry, never a duplicate record"
+              onClick={() => { setDupOpen((o) => !o); setDupDate(''); }}
             >
-              +1 day
+              Duplicate ▾
             </button>
           </div>
           <div className="cal-popover-actions-right">
@@ -1958,6 +2228,43 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
             </button>
           </div>
         </div>
+        {/* Duplicate menu (V5.1 §21/§22) — richer targets; the effort line
+            states the facts and never blocks the action. */}
+        {dupOpen && (
+          <div className="cal-dup-menu">
+            {task?.estimated_minutes ? (
+              <div className={`cal-popover-hint${s.planned_minutes > (task.remaining_unscheduled_minutes ?? 0) ? ' cal-coverage-warn' : ''}`}>
+                New session: {durationLabel(s.planned_minutes)} ·{' '}
+                {durationLabel(Math.max(0, task.remaining_unscheduled_minutes ?? 0))} estimated remaining unscheduled
+              </div>
+            ) : null}
+            <div className="cal-popover-actions cal-popover-actions--wrap">
+              <button type="button" className="cal-flag-btn"
+                title="Same time tomorrow"
+                onClick={() => { setDupOpen(false); duplicateSession(s, 1); }}>
+                Tomorrow
+              </button>
+              <button type="button" className="cal-flag-btn"
+                title="Same time next week"
+                onClick={() => { setDupOpen(false); duplicateSession(s, 7); }}>
+                Next week
+              </button>
+              <input
+                type="date"
+                className="task-modal-input cal-dup-date"
+                aria-label="Duplicate on date"
+                value={dupDate}
+                onChange={(e) => setDupDate(e.target.value)}
+              />
+              <button type="button" className="cal-flag-btn"
+                disabled={!dupDate}
+                title="Same time on the picked date"
+                onClick={() => { setDupOpen(false); duplicateSession(s, 0, dupDate); }}>
+                On date
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -2087,7 +2394,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
   const hours = Array.from({ length: 24 }, (_, h) => h);
 
   return (
-    <div className="cal-view">
+    <div className="cal-view" style={{ '--cal-hour-px': `${DENSITY_SCALES[density]}px` }}>
       {/* ── Toolbar ── */}
       <div className="cal-toolbar">
         <div className="cal-toolbar-nav">
@@ -2111,6 +2418,24 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
               onClick={() => setViewMode('day')}
             >Day</button>
           </div>
+          <button
+            type="button"
+            className="cal-nav-btn"
+            title={`Vertical density — click to cycle (now: ${density})`}
+            onClick={() => setDensity(
+              density === 'compact' ? 'standard' : density === 'standard' ? 'detailed' : 'compact',
+            )}
+          >
+            {density === 'compact' ? 'Compact' : density === 'standard' ? 'Standard' : 'Detailed'}
+          </button>
+          <button
+            type="button"
+            className="cal-nav-btn"
+            title={`Command palette (${IS_MAC ? '⌘' : 'Ctrl+'}K)`}
+            onClick={() => { closeTransients(); setPaletteOpen(true); }}
+          >
+            {IS_MAC ? '⌘K' : 'Ctrl+K'}
+          </button>
           {visibleReminders.length > 0 && (
             <button
               type="button"
@@ -2951,6 +3276,31 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
           onClose={() => setReviewDraft(null)}
         />
       )}
+
+      {/* New Grid task from the palette (V5.1) — the canonical modal, no
+          shortcuts around Grid semantics. */}
+      {newTaskOpen && (
+        <TaskModal
+          task={null}
+          sectionSuggestions={sectionSuggestions}
+          onSave={async (payload) => {
+            await createTask(payload);
+            setNewTaskOpen(false);
+            await loadData();
+          }}
+          onDelete={() => {}}
+          onClose={() => setNewTaskOpen(false)}
+        />
+      )}
+
+      {/* Command palette (V5.1 Part II) — keyboard-first dispatch to the
+          same handlers every button uses. */}
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        commands={buildPaletteCommands()}
+        placeholder="Type a command…"
+      />
 
       {/* Protected-window override (§8) — always permits scheduling. */}
       {confirmAction && (

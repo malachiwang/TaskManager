@@ -10,8 +10,22 @@
 export const SNAP_MINUTES = 15;
 export const MIN_SESSION_MINUTES = 15;
 export const DEFAULT_SESSION_MINUTES = 60;
-export const PX_PER_HOUR = 48;
 export const DAY_MINUTES = 1440;
+
+// Vertical time density (V5.1 Part VI). One module-level scale keeps every
+// pixel↔minute conversion in the app agreeing with the CSS var
+// (--cal-hour-px) that CalendarView sets from the same table. Interaction
+// precision is unaffected: snapping happens in minutes, not pixels.
+export const DENSITY_SCALES = { compact: 32, standard: 48, detailed: 72 };
+let pxPerHour = DENSITY_SCALES.standard;
+
+export function setPxPerHour(px) {
+  pxPerHour = px;
+}
+
+export function getPxPerHour() {
+  return pxPerHour;
+}
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -240,9 +254,9 @@ export function layoutBlocks(blocks) {
 // ---------------------------------------------------------------------------
 
 export function minutesToPx(minutes) {
-  return (minutes / 60) * PX_PER_HOUR;
+  return (minutes / 60) * pxPerHour;
 }
 
 export function pxToMinutes(px) {
-  return (px / PX_PER_HOUR) * 60;
+  return (px / pxPerHour) * 60;
 }
