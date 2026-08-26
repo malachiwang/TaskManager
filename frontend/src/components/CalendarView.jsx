@@ -10,6 +10,7 @@ import {
   fetchWindowTemplates, createWindowTemplate, updateWindowTemplate, deleteWindowTemplate,
   fetchContexts, createContext, linkEventToContext, unlinkEventFromContext,
   fetchTaskEventLinks, createTaskEventLink, deleteTaskEventLink,
+  updateTaskEventLink, fetchEventMoveProposal,
   fetchSuggestions, fetchReminders,
 } from '../api.js';
 import {
@@ -934,10 +935,41 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
   async function openExtDetail(ev, rect) {
     closeTransients();
     let links = [];
+    let proposal = null;
     try {
       links = await fetchTaskEventLinks({ calendar_id: ev.calendar_id, uid: ev.uid });
+      // Moved event with related sessions (V5.0 §3/§4)? The proposal is
+      // computed server-side; fetching it changes nothing.
+      if (links.some((l) => l.event_status === 'moved')) {
+        const p = await fetchEventMoveProposal(ev.calendar_id, ev.uid);
+        if (p.moved) proposal = p;
+      }
     } catch { /* isolated */ }
-    setExtDetail({ event: ev, rect, links, linkPicker: null, ctxDraft: '' });
+    setExtDetail({ event: ev, rect, links, proposal, reviewSel: null, linkPicker: null, ctxDraft: '' });
+  }
+
+  // Apply an event-move decision (V5.0 §4). sessionIds picks which flexible
+  // sessions actually move (empty = "keep current schedule"); either way the
+  // links' remembered event_start advances so the offer is acknowledged.
+  async function resolveEventMove(ev, proposal, sessionIds) {
+    try {
+      for (const item of proposal.items) {
+        if (!sessionIds.includes(item.session_id)) continue;
+        await updateSession(item.session_id, {
+          planned_start: item.proposed_start,
+          planned_end: item.proposed_end,
+        });
+      }
+      for (const linkId of proposal.link_ids) {
+        await updateTaskEventLink(linkId, { event_start: proposal.new_start });
+      }
+      await loadData();
+      const links = await fetchTaskEventLinks({ calendar_id: ev.calendar_id, uid: ev.uid });
+      setExtDetail((d) => (d && d.event.uid === ev.uid
+        ? { ...d, links, proposal: null, reviewSel: null } : d));
+    } catch (err) {
+      console.error('event-move resolution failed:', err);
+    }
   }
 
   async function refreshExtDetailLinks(ev) {
@@ -1800,6 +1832,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
           <br />
           {formatTimeRange(startMin, startMin + s.planned_minutes)} · {durationLabel(s.planned_minutes)}
           {s.task_section && s.task_section !== 'General' ? ` · ${s.task_section}` : ''}
+          {s.context_name ? ` · ${s.context_name}` : ''}
           {s.status === 'partial' ? ' · partial' : s.status === 'skipped' ? ' · skipped' : ''}
           {actualLine && (
             <>
@@ -2673,6 +2706,14 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
                     Review
                   </button>
                 )}
+                {r.type === 'event_moved' && (
+                  <button type="button"
+                    title="Jump to the event — its detail panel offers the move"
+                    onClick={() => {
+                      closeTransients();
+                      if (r.event_start) setAnchorIso(r.event_start.slice(0, 10));
+                    }}>Open</button>
+                )}
                 <button type="button" title="Dismiss this reminder"
                   onClick={() => dismissReminder(r.key)}>×</button>
               </div>
@@ -2682,7 +2723,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
           <div className="cal-popover-actions cal-popover-actions--wrap">
             {[['session_soon', 'Sessions'], ['event_soon', 'Commitments'], ['prep', 'Prep'],
               ['followup', 'Follow-ups'], ['reconcile', 'Review'], ['deadline', 'Deadlines'],
-              ['class_review', 'Post-class']].map(([type, label]) => (
+              ['class_review', 'Post-class'], ['event_moved', 'Event moves']].map(([type, label]) => (
               <button
                 key={type}
                 type="button"
@@ -2754,6 +2795,88 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
                 </div>
               )}
             </div>
+            {/* Event-move proposal (V5.0 §4): effect shown before applying;
+                only Flexible sessions are offered. Nothing moves silently —
+                even "keep" is an explicit acknowledgement. */}
+            {extDetail.proposal && (() => {
+              const p = extDetail.proposal;
+              const sel = extDetail.reviewSel;
+              const dayOf = (s) => s.slice(5, 10);
+              const rangeOf = (s, e) => formatTimeRange(plannedMinutes(s), plannedMinutes(e));
+              return (
+                <div className="cal-ext-links cal-move-proposal">
+                  <span className="cal-drawer-group-title cal-coverage-warn">
+                    Event moved · {p.old_start.slice(11, 16)} → {p.new_start.slice(5, 16).replace('T', ' ')}
+                  </span>
+                  {p.items.map((item) => (
+                    <div key={item.session_id} className="cal-reconcile-row">
+                      <div className="cal-reconcile-info">
+                        <span className="cal-reconcile-name">
+                          {sel != null && (
+                            <input
+                              type="checkbox"
+                              checked={sel.includes(item.session_id)}
+                              onChange={() => setExtDetail((d) => (d ? {
+                                ...d,
+                                reviewSel: d.reviewSel.includes(item.session_id)
+                                  ? d.reviewSel.filter((id) => id !== item.session_id)
+                                  : [...d.reviewSel, item.session_id],
+                              } : d))}
+                            />
+                          )}
+                          {' '}{displayTitle(item.task_name)}
+                        </span>
+                        <span className="cal-reconcile-time">
+                          {dayOf(item.planned_start)} {rangeOf(item.planned_start, item.planned_end)}
+                          {' → '}
+                          {dayOf(item.proposed_start)} {rangeOf(item.proposed_start, item.proposed_end)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  {p.fixed_count > 0 && (
+                    <div className="cal-popover-hint">
+                      {p.fixed_count} fixed session{p.fixed_count !== 1 ? 's' : ''} stay
+                      put unless you move them yourself.
+                    </div>
+                  )}
+                  <div className="cal-popover-actions cal-popover-actions--wrap">
+                    {p.items.length === 0 ? (
+                      <button type="button" className="task-modal-cancel"
+                        title="Acknowledge the new time — nothing is scheduled"
+                        onClick={() => resolveEventMove(ev, p, [])}>Got it</button>
+                    ) : sel != null ? (
+                      <>
+                        <button type="button" className="task-modal-save"
+                          disabled={sel.length === 0}
+                          onClick={() => resolveEventMove(ev, p, sel)}>Move selected</button>
+                        <button type="button" className="task-modal-cancel"
+                          onClick={() => setExtDetail((d) => (d ? { ...d, reviewSel: null } : d))}>
+                          Back
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button type="button" className="task-modal-save"
+                          onClick={() => resolveEventMove(ev, p, p.items.map((i) => i.session_id))}>
+                          Move related sessions
+                        </button>
+                        <button type="button" className="task-modal-cancel"
+                          onClick={() => resolveEventMove(ev, p, [])}>Keep current schedule</button>
+                        {p.items.length > 1 && (
+                          <button type="button" className="task-modal-cancel"
+                            onClick={() => setExtDetail((d) => (d ? {
+                              ...d, reviewSel: d.proposal.items.map((i) => i.session_id),
+                            } : d))}>
+                            Review individually
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
             {['before', 'after', 'related'].map((rel) => groups[rel].length > 0 && (
               <div key={rel} className="cal-ext-links">
                 <span className="cal-drawer-group-title">{rel === 'before' ? 'Before' : rel === 'after' ? 'After' : 'Related'}</span>
@@ -2867,6 +2990,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
             session={editorSession}
             task={editorTask}
             sectionSuggestions={sectionSuggestions}
+            contexts={contexts}
             onClose={() => setEditorSessionId(null)}
             onOpenFullTask={() => {
               setEditorSessionId(null);

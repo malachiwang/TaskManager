@@ -659,4 +659,19 @@ def init_db() -> None:
         except Exception:
             pass  # Column already exists.
 
+    # ── Migration 18: calendar-entry contexts (V5.0 Part I) ──────────────────
+    # Calendar-only entries may carry a context/course association. Relational
+    # metadata only: assigning or clearing it never changes the entry's
+    # schedule, depth, status, or linkage. Linked sessions keep taking context
+    # from their task — s.context_id is meaningful only while task_id is NULL.
+    # SET NULL keeps entries alive when a context is deleted.
+    try:
+        conn.execute(
+            "ALTER TABLE task_sessions ADD COLUMN context_id INTEGER DEFAULT NULL "
+            "REFERENCES contexts(id) ON DELETE SET NULL"
+        )
+        conn.commit()
+    except Exception:
+        pass  # Column already exists.
+
     conn.close()

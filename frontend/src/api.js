@@ -647,6 +647,27 @@ export async function deleteTaskEventLink(id) {
   return res.json();
 }
 
+export async function updateTaskEventLink(id, fields) {
+  const res = await fetch(`${BASE}/task-event-links/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error(`updateTaskEventLink failed: ${res.status}`);
+  return res.json();
+}
+
+// Repositioning proposal for sessions related to a moved external event
+// (V5.0). Read-only — applying a choice goes through updateSession +
+// updateTaskEventLink so nothing ever moves without an explicit user act.
+export async function fetchEventMoveProposal(calendarId, uid) {
+  const res = await fetch(
+    `${BASE}/event-move-proposals?calendar_id=${calendarId}&uid=${encodeURIComponent(uid)}`,
+  );
+  if (!res.ok) throw new Error(`fetchEventMoveProposal failed: ${res.status}`);
+  return res.json();
+}
+
 export async function fetchSuggestions() {
   const res = await fetch(`${BASE}/suggestions`);
   if (!res.ok) throw new Error(`fetchSuggestions failed: ${res.status}`);

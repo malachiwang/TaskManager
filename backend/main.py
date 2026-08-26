@@ -1175,6 +1175,7 @@ _SESSION_SELECT = """
     SELECT s.*,
            CASE WHEN s.task_id IS NULL THEN s.title ELSE t.name END AS task_name,
            CASE WHEN s.task_id IS NULL THEN s.depth ELSE t.depth END AS task_depth,
+           CASE WHEN s.task_id IS NULL THEN cs.name ELSE ct.name END AS context_name,
            t.section           AS task_section,
            t.category          AS task_category,
            t.priority          AS task_priority,
@@ -1183,6 +1184,8 @@ _SESSION_SELECT = """
            t.is_paused         AS task_is_paused
     FROM task_sessions s
     LEFT JOIN tasks t ON t.id = s.task_id
+    LEFT JOIN contexts cs ON cs.id = s.context_id
+    LEFT JOIN contexts ct ON ct.id = t.context_id
     WHERE (s.task_id IS NULL OR t.is_active = 1)
 """
 
@@ -1195,11 +1198,12 @@ def _session_dict(row) -> dict:
 
 class SessionBody(BaseModel):
     # Either task_id (session for a canonical task) or title (calendar-only
-    # entry, P14.0). Depth applies to unlinked entries only — linked sessions
-    # take depth from their task.
+    # entry, P14.0). Depth and context apply to unlinked entries only —
+    # linked sessions take both from their task.
     task_id: Optional[int] = None
     title: Optional[str] = None
     depth: Optional[int] = None
+    context_id: Optional[int] = None
     planned_start: str
     planned_end: str
     is_fixed: bool = False
@@ -1213,10 +1217,12 @@ class SessionPatch(BaseModel):
     actual_start: Optional[str] = None
     actual_end: Optional[str] = None
     actual_minutes: Optional[int] = None
-    # Calendar-only entries (P14.0): title/depth edits, and the one-way
-    # promotion that links an entry to a canonical task.
+    # Calendar-only entries (P14.0): title/depth/context edits, and the
+    # one-way promotion that links an entry to a canonical task.
+    # context_id 0 clears the association (V5.0 — mirrors TaskPatch).
     title: Optional[str] = None
     depth: Optional[int] = None
+    context_id: Optional[int] = None
     link_task_id: Optional[int] = None
 
 
@@ -1264,6 +1270,7 @@ def create_session(body: SessionBody):
 
     title = (body.title or "").strip()
     depth_val = None
+    context_val = None
     if body.task_id is None:
         if not title:
             raise HTTPException(
@@ -1271,8 +1278,9 @@ def create_session(body: SessionBody):
                 detail="Provide task_id (task session) or a non-empty title (calendar entry)",
             )
         depth_val = _normalize_depth(body.depth)
+        context_val = body.context_id or None
     else:
-        title = ""  # linked sessions take their name from the task
+        title = ""  # linked sessions take name/depth/context from the task
 
     conn = get_connection()
     if body.task_id is not None:
@@ -1282,12 +1290,17 @@ def create_session(body: SessionBody):
         if not task:
             conn.close()
             raise HTTPException(status_code=404, detail="Task not found")
+    if context_val is not None and not conn.execute(
+        "SELECT id FROM contexts WHERE id = ?", (context_val,)
+    ).fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Context not found")
     now = datetime.now().isoformat()
     with conn:
         cur = conn.execute(
-            "INSERT INTO task_sessions (task_id, title, depth, planned_start, planned_end, is_fixed, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (body.task_id, title, depth_val, start_iso, end_iso, int(body.is_fixed), now, now),
+            "INSERT INTO task_sessions (task_id, title, depth, context_id, planned_start, planned_end, is_fixed, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (body.task_id, title, depth_val, context_val, start_iso, end_iso, int(body.is_fixed), now, now),
         )
         session_id = cur.lastrowid
     row = conn.execute(_SESSION_SELECT + " AND s.id = ?", (session_id,)).fetchone()
@@ -1344,8 +1357,9 @@ def update_session(session_id: int, body: SessionPatch):
                 raise HTTPException(status_code=422, detail="actual_minutes must be >= 0")
             updates["actual_minutes"] = body.actual_minutes or None
         # Promotion (P14.0): link a calendar-only entry to a canonical task.
-        # One-way and exclusive — the task then provides name and depth, so
-        # the entry's own title/depth are cleared rather than left to drift.
+        # One-way and exclusive — the task then provides name, depth, and
+        # context, so the entry's own copies are cleared rather than left to
+        # drift.
         if body.link_task_id is not None:
             if session["task_id"] is not None:
                 raise HTTPException(status_code=409, detail="Session is already linked to a task")
@@ -1357,6 +1371,7 @@ def update_session(session_id: int, body: SessionPatch):
             updates["task_id"] = body.link_task_id
             updates["title"] = ""
             updates["depth"] = None
+            updates["context_id"] = None
         else:
             if body.title is not None:
                 if session["task_id"] is not None:
@@ -1370,6 +1385,21 @@ def update_session(session_id: int, body: SessionPatch):
                     raise HTTPException(
                         status_code=422, detail="Linked sessions take depth from the task")
                 updates["depth"] = _normalize_depth(body.depth)
+            # Context is relational metadata only (V5.0 §2) — assigning or
+            # clearing it must leave schedule, depth, status, and linkage
+            # untouched, which this achieves by updating nothing else.
+            if body.context_id is not None:
+                if session["task_id"] is not None:
+                    raise HTTPException(
+                        status_code=422, detail="Linked sessions take context from the task")
+                if body.context_id == 0:
+                    updates["context_id"] = None
+                else:
+                    if not conn.execute(
+                        "SELECT id FROM contexts WHERE id = ?", (body.context_id,)
+                    ).fetchone():
+                        raise HTTPException(status_code=404, detail="Context not found")
+                    updates["context_id"] = body.context_id
     except HTTPException:
         conn.close()
         raise
@@ -2198,6 +2228,67 @@ def delete_task_event_link(link_id: int):
     return {"deleted": link_id}
 
 
+def _shift_stamp(stamp: str, delta_minutes: int) -> str:
+    return (datetime.fromisoformat(stamp)
+            + timedelta(minutes=delta_minutes)).strftime("%Y-%m-%dT%H:%M")
+
+
+@app.get("/event-move-proposals")
+def get_event_move_proposal(calendar_id: int, uid: str, now: Optional[str] = None):
+    """Repositioning proposal for sessions related to a MOVED external event
+    (V5.0 §3–§4). Detection and arithmetic only — nothing here moves anything.
+
+    The response carries exact proposed times computed from the event's time
+    delta; the client applies the user's choice through the ordinary session
+    PATCH and then acknowledges by updating each link's remembered
+    event_start. Only Flexible scheduled future sessions are proposed; Fixed
+    sessions are counted so the UI can say they stay put.
+    """
+    now_stamp = now or datetime.now().strftime("%Y-%m-%dT%H:%M")
+    conn = get_connection()
+    links = conn.execute(
+        "SELECT * FROM task_event_links WHERE calendar_id = ? AND uid = ?",
+        (calendar_id, uid.strip()),
+    ).fetchall()
+    moved = [l for l in _enrich_task_event_links(conn, links, now_stamp)
+             if l["event_status"] == "moved" and l["next_start"] and l["event_start"]]
+    if not moved:
+        conn.close()
+        return {"moved": False, "items": [], "fixed_count": 0, "link_ids": []}
+
+    items = []
+    fixed_count = 0
+    for link in moved:
+        delta = _session_minutes(link["event_start"], link["next_start"])
+        for s in conn.execute(
+            "SELECT * FROM task_sessions WHERE task_id = ? AND status = 'scheduled' "
+            "AND planned_start >= ? ORDER BY planned_start, id",
+            (link["task_id"], now_stamp),
+        ).fetchall():
+            if s["is_fixed"]:
+                fixed_count += 1
+                continue
+            items.append({
+                "session_id": s["id"],
+                "task_id": link["task_id"],
+                "task_name": link["task_name"],
+                "planned_start": s["planned_start"],
+                "planned_end": s["planned_end"],
+                "proposed_start": _shift_stamp(s["planned_start"], delta),
+                "proposed_end": _shift_stamp(s["planned_end"], delta),
+            })
+    out = {
+        "moved": True,
+        "old_start": moved[0]["event_start"],
+        "new_start": moved[0]["next_start"],
+        "items": items,
+        "fixed_count": fixed_count,
+        "link_ids": [l["id"] for l in moved],
+    }
+    conn.close()
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Contextual scheduling (P16.0 Part I) — gap detection + Good Fits Now.
 #
@@ -2477,6 +2568,38 @@ def get_reminders(now: Optional[str] = None):
                         "title": f"Follow-up pending: {l['task_name']}",
                         "detail": f"Linked event ended at {past['end'][11:16]}",
                     })
+
+    # Moved linked events with related flexible sessions (V5.0 §3). One
+    # reminder per event; the key includes the NEW start so a dismissal
+    # stays dismissed until the event moves again. Offer only — the
+    # proposal/apply flow lives behind /event-move-proposals.
+    moved_by_event: dict = {}
+    for l in links:
+        if l["event_status"] == "moved" and l["next_start"] and l["event_start"]:
+            moved_by_event.setdefault((l["calendar_id"], l["uid"]), []).append(l)
+    for (cal_id, uid), ls in moved_by_event.items():
+        movable = 0
+        for l in ls:
+            movable += conn.execute(
+                "SELECT COUNT(*) FROM task_sessions WHERE task_id = ? "
+                "AND status = 'scheduled' AND is_fixed = 0 AND planned_start >= ?",
+                (l["task_id"], now_stamp),
+            ).fetchone()[0]
+        if not movable:
+            continue
+        ev = conn.execute(
+            "SELECT title FROM external_events WHERE calendar_id = ? AND uid = ? "
+            "ORDER BY start LIMIT 1", (cal_id, uid),
+        ).fetchone()
+        out.append({
+            "type": "event_moved",
+            "key": f"event_moved:{cal_id}:{uid}:{ls[0]['next_start']}",
+            "title": f"{ev['title'] if ev else 'Linked event'} moved",
+            "detail": f"Move {movable} related flexible session{'s' if movable != 1 else ''}?",
+            "calendar_id": cal_id,
+            "uid": uid,
+            "event_start": ls[0]["next_start"],
+        })
 
     # Deadlines approaching with unscheduled remaining effort (§19).
     task_rows = conn.execute(

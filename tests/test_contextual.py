@@ -14,7 +14,11 @@ NOW = "2026-08-25T13:00"
 
 
 def _task(client, name="Task", **overrides):
-    params = {"name": name}
+    # active_from defaults to the REAL creation date on the server. This suite
+    # runs against a frozen NOW, so pin active_from to that date — otherwise
+    # every fixture task becomes "scheduled to start in the future" the day
+    # after the suite was written and is_scheduled filters it out of Good Fits.
+    params = {"name": name, "active_from": NOW[:10]}
     params.update(overrides)
     res = client.post("/tasks", params=params)
     assert res.status_code == 201, res.text

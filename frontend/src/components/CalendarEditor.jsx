@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { updateTask, updateSession, deleteSession } from '../api.js';
+import { updateTask, updateSession, deleteSession, createContext } from '../api.js';
 import SectionCombobox from './SectionCombobox.jsx';
 import {
   DAY_MINUTES, MIN_SESSION_MINUTES,
@@ -103,7 +103,7 @@ const DEPTH_OPTIONS = [
 ];
 
 export default function CalendarEditor({
-  session, task, sectionSuggestions,
+  session, task, sectionSuggestions, contexts = [],
   onClose, onOpenFullTask, onChanged, onCompleteSession, onPromote,
 }) {
   // task == null → calendar-only entry (P14.0): no canonical record behind
@@ -123,6 +123,9 @@ export default function CalendarEditor({
       startMin,
       endMin: Math.min(DAY_MINUTES, startMin + session.planned_minutes),
       isFixed: !!session.is_fixed,
+      // Entry context (V5.0): relational metadata only, entries only —
+      // linked sessions show their task's context read-only.
+      contextName: isLinked ? '' : (session.context_name ?? ''),
     };
   });
   const [saving, setSaving] = useState(false);
@@ -170,9 +173,17 @@ export default function CalendarEditor({
           is_fixed: form.isFixed,
         });
       } else {
+        // Context resolves find-or-create by name; blank clears (0).
+        const ctxName = form.contextName.trim();
+        let contextId = 0;
+        if (ctxName) {
+          const ctx = await createContext(ctxName);
+          contextId = ctx.id;
+        }
         await updateSession(session.id, {
           title: form.name.trim(),
           depth: form.depth || 0,
+          context_id: contextId,
           planned_start: combinePlanned(dateIso, form.startMin),
           planned_end: combinePlannedEnd(dateIso, form.endMin),
           is_fixed: form.isFixed,
@@ -302,6 +313,22 @@ export default function CalendarEditor({
                   value={form.estimated_minutes}
                   onChange={(e) => set('estimated_minutes', e.target.value)}
                 />
+              </div>
+            )}
+            {!isLinked && (
+              <div className="task-modal-field">
+                <label className="task-modal-label" htmlFor="ce-context">Context / course</label>
+                <input
+                  id="ce-context"
+                  className="task-modal-input"
+                  list="ce-context-options"
+                  placeholder="e.g. ISYE 2027 (optional)"
+                  value={form.contextName}
+                  onChange={(e) => set('contextName', e.target.value)}
+                />
+                <datalist id="ce-context-options">
+                  {contexts.map((c) => <option key={c.id} value={c.name} />)}
+                </datalist>
               </div>
             )}
             {!isLinked && (
