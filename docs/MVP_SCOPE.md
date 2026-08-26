@@ -377,3 +377,76 @@ The user's manual arrangement is deliberate and authoritative:
   two rows, the true bottom of a section, and into empty sections.
 - Cross-section drag applies the section change and the new position in one
   backend transaction (`POST /tasks/reorder` with `section_updates`).
+---
+
+## Semester OS (V5) — approved extension
+
+V5 layers power-user operation, academic import, and execution analytics
+over the same canonical records. Nothing below changes Grid or Calendar
+completion semantics, and the user remains authoritative throughout: the
+system parses, suggests, ranks, and forecasts, but never silently creates
+tasks, schedules work, changes deadlines, rewrites estimates, reorders the
+Grid, moves sessions, or marks work complete.
+
+### Contexts on calendar entries
+
+Calendar-only entries may carry a context/course (`task_sessions.context_id`,
+Migration 18). Relational metadata only — assigning or clearing it never
+alters the entry. Linked sessions keep taking context from their task.
+
+### Event-move proposals
+
+When a linked external event moves, TaskManager computes a repositioning
+proposal for related *Flexible* scheduled sessions (`/event-move-proposals`)
+and offers it (move all / keep / review individually). Fixed sessions are
+never proposed; nothing moves without an explicit choice.
+
+### Command palette, keyboard scheduling, density
+
+⌘K/Ctrl+K palette dispatches to the same handlers the buttons use, with
+context-aware session commands. Selected scheduled blocks move with
+↑/↓ (±15m, Shift ±30m), jump days with ⌥←/→, and resize with
+⌘/Ctrl+Shift+↑/↓ — settled (completed/partial/skipped) sessions never move.
+Vertical density (Compact/Standard/Detailed) is persisted and never changes
+snapping semantics. Session duplication offers tomorrow / next week / pick
+date for sessions **and** entries, always reusing the same canonical record.
+
+### Natural-language scheduling and search
+
+`/nl/parse` is a deterministic regex parser (no AI, no network): it only
+interprets, and the creation popover shows the interpretation — including
+every assumption — for confirmation. Calendar-only remains the default
+outcome. `/search` spans tasks, sessions, entries, external events, and
+contexts with type/date/status/context filters; selecting a dated result
+navigates the Calendar to it.
+
+### Academic importer
+
+Architecture is fixed as: Source → parser → **candidate records**
+(`academic_batches`/`academic_candidates`, Migration 19) → user review →
+approved canonical records. Parsing is deterministic and local (pasted
+syllabus/schedule text is the supported pathway; PDF/Canvas remain
+architectural seams). Candidates keep their exact source line as evidence.
+Approval semantics: dated obligations → Grid tasks with `due_date` and the
+course as section/context; timed exams → fixed calendar entries; recurring
+class/office hours → fixed entries expanded only through a user-chosen
+horizon. Duplicates and changed dates are detected and surfaced — an
+accepted date change updates the existing task instead of duplicating.
+Rejected candidates create nothing; import failures never touch canonical
+tables.
+
+### Execution analytics (Reports · Execution, Dashboard signals)
+
+`/reports/execution`, `/reports/estimates`, `/reports/patterns`, and
+`/forecast` are read-only facts: planned vs actual (calendar-only entries
+totaled separately unless deliberately included), estimate-accuracy medians,
+behavioral observations with sample counts, and a weekly load forecast that
+separates Fixed commitments from Flexible estimated work and places
+remaining effort only in its deadline's week (undated work is listed, never
+placed). Hard rules: medians + n over averages; groups under the sample
+floor say "not enough history yet"; **no composite productivity/efficiency
+score exists**, and **no biological cognitive capacity is ever inferred** —
+only user-declared depth windows and estimates are compared.
+
+Reference screenshots: `docs/images/calendar-v5-semester-os.jpg`,
+`docs/images/reports-execution-v5.jpg`.

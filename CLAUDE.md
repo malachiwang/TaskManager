@@ -18,13 +18,27 @@ The Calendar view (approved P12 direction) is an additive first-class
 scheduling/execution view over the same canonical task records. It does not
 replace the Grid and does not change completion semantics.
 
-Core concepts — keep these distinct in the data model:
+Core concepts — keep these distinct in the data model (V5: never collapse
+them into one generic record type):
 - Task: the canonical objective/record (tasks table)
 - Session: a scheduled allocation of time toward a task (task_sessions);
   sessions may live in the future; session completion ≠ task completion
+- Calendar Entry: a task_sessions row with task_id NULL — records time, not
+  an obligation; promotion to the Grid is always an explicit user act
 - Depth Window: a user-declared cognitive-capacity region (depth_windows)
-- External Calendar Commitment: future concept (classes, meetings) — not a
-  task, never auto-completed, not yet implemented
+- External Calendar Commitment: read-only ICS occurrence (external_calendars
+  + external_events, P15.0) — not a task, never auto-completed, always Fixed
+- Context: a shared real-world course/project (contexts) — relational
+  metadata on tasks, entries, and event series; deleting one deletes nothing
+- Academic Candidate: parsed syllabus line (academic_* tables, V5.3) —
+  isolated until the user approves it into a canonical record
+
+Semester OS analytics (V5) are facts only: medians + sample counts,
+insufficient-data states below the floor, no composite productivity or
+efficiency score, no inferred biological capacity, and no automatic
+scheduler — the system parses/suggests/forecasts, the user decides. The
+natural-language and academic parsers are deterministic local regex ("no AI
+APIs" still holds).
 
 ## Non-Negotiables
 
