@@ -27,6 +27,7 @@ from fastapi.responses import Response
 from backend import academic
 from backend import database as db_config
 from backend import nl as nl_parser
+from backend import reports as reports_engine
 from backend.database import get_connection, init_db
 from backend.logic import (
     calculate_days_since,
@@ -2838,6 +2839,49 @@ def delete_academic_batch(batch_id: int):
         conn.execute("DELETE FROM academic_batches WHERE id = ?", (batch_id,))
     conn.close()
     return {"deleted": batch_id}
+
+
+# ---------------------------------------------------------------------------
+# Execution analytics (V5.4 Parts IX–XII) — see backend/reports.py for the
+# arithmetic and its guarantees (no scores, no inferred capacity, sample
+# floors). Endpoints are thin and read-only.
+# ---------------------------------------------------------------------------
+
+@app.get("/reports/execution")
+def report_execution(start: str, end: str, include_entries: bool = False):
+    _validate_iso_date(start, "start")
+    _validate_iso_date(end, "end")
+    conn = get_connection()
+    out = reports_engine.execution_report(conn, start, end, include_entries)
+    conn.close()
+    return out
+
+
+@app.get("/reports/estimates")
+def report_estimates(today: Optional[str] = None):
+    today_iso = today or date.today().isoformat()
+    conn = get_connection()
+    out = reports_engine.estimates_report(conn, today_iso)
+    conn.close()
+    return out
+
+
+@app.get("/reports/patterns")
+def report_patterns():
+    conn = get_connection()
+    out = reports_engine.patterns_report(conn)
+    conn.close()
+    return out
+
+
+@app.get("/forecast")
+def forecast(now: Optional[str] = None, weeks: int = 8):
+    weeks = max(1, min(26, weeks))
+    now_dt = datetime.fromisoformat(now) if now else datetime.now()
+    conn = get_connection()
+    out = reports_engine.forecast_report(conn, now_dt, weeks)
+    conn.close()
+    return out
 
 
 # ---------------------------------------------------------------------------

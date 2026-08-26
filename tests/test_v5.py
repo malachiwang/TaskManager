@@ -580,3 +580,250 @@ class TestAcademicImport:
         assert client.post("/academic/import", json={"text": "   "}).status_code == 422
         batch = _import(client, text="??? \x01 garbage\nHomework 1 due September 3\n")
         assert len(batch["candidates"]) == 1          # bad line skipped, good line kept
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# V5.4 — planned-vs-actual, estimates, calibration, forecast (§63–§65)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _resolve(client, sid, status, actual_minutes=None):
+    body = {"status": status}
+    if actual_minutes is not None:
+        body["actual_minutes"] = actual_minutes
+    res = client.patch(f"/sessions/{sid}", json=body)
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+class TestExecutionReport:
+    def _seed(self, client):
+        ctx = _context(client, "ISYE 2027")
+        t = _task(client, name="Task A", context_id=ctx["id"], depth=1,
+                  estimated_minutes=240)
+        mk = lambda s, e: client.post("/sessions", json={
+            "task_id": t["id"], "planned_start": s, "planned_end": e}).json()
+        s1 = mk("2026-08-17T09:00", "2026-08-17T10:30")   # 90m planned
+        s2 = mk("2026-08-18T09:00", "2026-08-18T10:00")   # 60m
+        s3 = mk("2026-08-19T14:00", "2026-08-19T15:00")   # 60m
+        s4 = mk("2026-08-20T09:00", "2026-08-20T10:00")   # 60m
+        _resolve(client, s1["id"], "completed", 84)
+        _resolve(client, s2["id"], "completed")            # counts planned 60
+        _resolve(client, s3["id"], "partial", 30)
+        _resolve(client, s4["id"], "skipped")
+        e = _entry(client, "Fraternity Admin", "2026-08-20T20:00", "2026-08-20T21:00")
+        _resolve(client, e["id"], "completed")
+        return t
+
+    def test_planned_and_actual_totals(self, client):
+        self._seed(client)
+        r = client.get("/reports/execution",
+                       params={"start": "2026-08-17", "end": "2026-08-23"}).json()
+        assert r["planned_minutes"] == 270          # 90+60+60+60, entry excluded
+        assert r["actual_minutes"] == 174           # 84+60+30+0
+        assert r["entries_planned_minutes"] == 60   # §33: separate, not hidden
+        assert r["entries_actual_minutes"] == 60
+
+    def test_entries_deliberately_included(self, client):
+        self._seed(client)
+        r = client.get("/reports/execution", params={
+            "start": "2026-08-17", "end": "2026-08-23", "include_entries": "true"}).json()
+        assert r["planned_minutes"] == 330
+        assert r["actual_minutes"] == 234
+
+    def test_breakdowns(self, client):
+        self._seed(client)
+        r = client.get("/reports/execution",
+                       params={"start": "2026-08-17", "end": "2026-08-23"}).json()
+        d1 = next(x for x in r["by_depth"] if x["depth"] == 1)
+        assert d1["planned_minutes"] == 270
+        ctx = next(x for x in r["by_context"] if x["context_name"] == "ISYE 2027")
+        assert ctx["actual_minutes"] == 174
+        mon = next(x for x in r["by_day"] if x["date"] == "2026-08-17")
+        assert (mon["planned_minutes"], mon["actual_minutes"]) == (90, 84)
+        task = r["by_task"][0]
+        assert task["name"] == "Task A" and task["sessions"] == 4
+
+    def test_session_log_preserves_truth(self, client):
+        self._seed(client)
+        r = client.get("/reports/execution",
+                       params={"start": "2026-08-17", "end": "2026-08-23"}).json()
+        statuses = sorted(x["status"] for x in r["log"])
+        assert statuses == ["completed", "completed", "completed", "partial", "skipped"]
+        skipped = next(x for x in r["log"] if x["status"] == "skipped")
+        assert skipped["planned_minutes"] == 60     # the plan is preserved
+        assert skipped["actual_minutes"] is None
+
+
+class TestEstimateAccuracy:
+    def test_session_medians_by_depth(self, client):
+        t = _task(client, name="Deep", depth=1)
+        for actual in (100, 108, 110, 95, 120):
+            s = client.post("/sessions", json={
+                "task_id": t["id"], "planned_start": "2026-08-17T09:00",
+                "planned_end": "2026-08-17T10:30"}).json()   # 90m planned
+            _resolve(client, s["id"], "completed", actual)
+        r = client.get("/reports/estimates", params={"today": NOW[:10]}).json()
+        d1 = next(x for x in r["sessions_by_depth"] if x["depth"] == 1)
+        assert d1["insufficient"] is False
+        assert d1["n"] == 5
+        assert d1["median_planned_minutes"] == 90
+        assert d1["median_actual_minutes"] == 108
+        assert d1["median_ratio"] == 1.2
+
+    def test_insufficient_sample_says_so(self, client):
+        t = _task(client, name="Shallowish", depth=2)
+        for actual in (30, 40):
+            s = client.post("/sessions", json={
+                "task_id": t["id"], "planned_start": "2026-08-17T09:00",
+                "planned_end": "2026-08-17T09:30"}).json()
+            _resolve(client, s["id"], "completed", actual)
+        r = client.get("/reports/estimates", params={"today": NOW[:10]}).json()
+        d2 = next(x for x in r["sessions_by_depth"] if x["depth"] == 2)
+        assert d2["insufficient"] is True
+        assert d2["n"] == 2
+        assert "median_ratio" not in d2             # §41: no fake confidence
+
+    def test_task_ratio_uses_actual_history(self, client):
+        for i, actual in enumerate((60, 72, 66, 90, 60)):
+            t = _task(client, name=f"Done {i}", estimated_minutes=60)
+            s = client.post("/sessions", json={
+                "task_id": t["id"], "planned_start": "2026-08-17T09:00",
+                "planned_end": "2026-08-17T10:00"}).json()
+            _resolve(client, s["id"], "completed", actual)
+            client.post("/completions", params={
+                "task_id": t["id"], "completion_date": "2026-08-17"})
+        r = client.get("/reports/estimates", params={"today": NOW[:10]}).json()
+        assert r["tasks_overall"]["n"] == 5
+        assert r["tasks_overall"]["median_ratio"] == 1.1
+        # unfinished estimated tasks contribute nothing
+        _task(client, name="In flight", estimated_minutes=600)
+        r2 = client.get("/reports/estimates", params={"today": NOW[:10]}).json()
+        assert r2["tasks_overall"]["n"] == 5
+
+
+class TestBehavioralPatterns:
+    def test_time_of_day_shares_and_floors(self, client):
+        t = _task(client, name="Deep", depth=1)
+        # 6 morning D1: 5 completed, 1 skipped → 0.83
+        for i in range(6):
+            s = client.post("/sessions", json={
+                "task_id": t["id"], "planned_start": f"2026-07-0{i + 1}T09:00",
+                "planned_end": f"2026-07-0{i + 1}T10:00"}).json()
+            _resolve(client, s["id"], "completed" if i < 5 else "skipped")
+        # 3 evening D1 → insufficient
+        for i in range(3):
+            s = client.post("/sessions", json={
+                "task_id": t["id"], "planned_start": f"2026-07-1{i}T19:00",
+                "planned_end": f"2026-07-1{i}T20:00"}).json()
+            _resolve(client, s["id"], "skipped")
+        r = client.get("/reports/patterns").json()
+        morning = next(x for x in r["time_of_day"]
+                       if x["depth"] == 1 and x["part"] == "morning")
+        assert morning["n"] == 6
+        assert morning["completed_share"] == 0.83
+        evening = next(x for x in r["time_of_day"]
+                       if x["depth"] == 1 and x["part"] == "evening")
+        assert evening["insufficient"] is True
+        assert "completed_share" not in evening
+
+    def test_weekday_median_daily_minutes(self, client):
+        t = _task(client, name="Work")
+        # five Tuesdays with daily completed totals 60/120/90/150/90
+        days = ["2026-07-07", "2026-07-14", "2026-07-21", "2026-07-28", "2026-08-04"]
+        for day, minutes in zip(days, (60, 120, 90, 150, 90)):
+            s = client.post("/sessions", json={
+                "task_id": t["id"], "planned_start": f"{day}T09:00",
+                "planned_end": f"{day}T11:00"}).json()
+            _resolve(client, s["id"], "completed", minutes)
+        r = client.get("/reports/patterns").json()
+        tue = next(x for x in r["weekday"] if x["name"] == "Tuesday")
+        assert tue["n_days"] == 5
+        assert tue["median_actual_minutes"] == 90
+        wed = next(x for x in r["weekday"] if x["name"] == "Wednesday")
+        assert wed["insufficient"] is True
+
+    def test_no_composite_score_anywhere(self, client):
+        r = client.get("/reports/patterns").json()
+        flat = str(r).lower()
+        assert "productivity" not in flat
+        assert "efficiency" not in flat
+        assert "score" not in flat
+
+
+class TestForecast:
+    def _seed(self, client, monkeypatch):
+        ctx = _context(client, "ISYE 2027")
+        x = _task(client, name="Project X", context_id=ctx["id"], depth=1,
+                  estimated_minutes=240, due_date="2026-09-03")
+        done = client.post("/sessions", json={
+            "task_id": x["id"], "planned_start": "2026-08-24T09:00",
+            "planned_end": "2026-08-24T10:00"}).json()
+        _resolve(client, done["id"], "completed", 60)         # logged 60
+        client.post("/sessions", json={
+            "task_id": x["id"], "planned_start": "2026-08-26T10:00",
+            "planned_end": "2026-08-26T11:00"})               # pending 60, wk1
+        _task(client, name="Undated Y", estimated_minutes=90)
+        _task(client, name="Overdue Z", estimated_minutes=60, due_date="2026-08-20")
+        _fixed_entry = client.post("/sessions", json={
+            "title": "Advising", "planned_start": "2026-09-01T11:00",
+            "planned_end": "2026-09-01T12:00", "is_fixed": True})
+        _calendar(client, monkeypatch, text=(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"
+            "BEGIN:VEVENT\r\nUID:cls@f\r\nSUMMARY:Class\r\n"
+            "DTSTART:20260827T140000\r\nDTEND:20260827T153000\r\nEND:VEVENT\r\n"
+            "END:VCALENDAR\r\n"))
+        return ctx, x
+
+    def _forecast(self, client, weeks=3):
+        res = client.get("/forecast", params={"now": NOW, "weeks": weeks})
+        assert res.status_code == 200
+        return res.json()
+
+    def test_week_windows_start_sunday(self, client, monkeypatch):
+        self._seed(client, monkeypatch)
+        f = self._forecast(client)
+        assert f["weeks"][0]["week_start"] == "2026-08-23"
+        assert f["weeks"][0]["week_end"] == "2026-08-29"
+        assert f["weeks"][1]["week_start"] == "2026-08-30"
+
+    def test_remaining_lands_in_due_week_without_double_count(self, client, monkeypatch):
+        self._seed(client, monkeypatch)
+        f = self._forecast(client)
+        wk1, wk2 = f["weeks"][0], f["weeks"][1]
+        # Project X: 240 est − 60 logged − 60 pending = 120 in due week (wk2)
+        assert wk2["due_remaining_minutes"] == 120
+        assert wk1["scheduled_flexible_minutes"] == 60       # the pending session
+        # Overdue Z lands in the CURRENT week, flagged
+        z = next(i for i in wk1["items"] if i["name"] == "Overdue Z")
+        assert z["overdue"] is True
+        assert wk1["due_remaining_minutes"] == 60
+
+    def test_fixed_separated_from_flexible(self, client, monkeypatch):
+        self._seed(client, monkeypatch)
+        f = self._forecast(client)
+        assert f["weeks"][0]["fixed_minutes"] == 90          # external class
+        assert f["weeks"][1]["fixed_minutes"] == 60          # fixed advising entry
+        assert f["weeks"][0]["fixed_minutes"] not in (
+            f["weeks"][0]["flexible_minutes"],)              # never merged
+
+    def test_drilldown_matches_headline(self, client, monkeypatch):
+        self._seed(client, monkeypatch)
+        f = self._forecast(client)
+        for wk in f["weeks"]:
+            assert sum(i["minutes"] for i in wk["items"]) == wk["flexible_minutes"]
+            assert wk["flexible_minutes"] == (
+                wk["scheduled_flexible_minutes"] + wk["due_remaining_minutes"])
+            assert sum(wk["depth_minutes"].values()) == wk["flexible_minutes"]
+
+    def test_undated_work_is_not_placed(self, client, monkeypatch):
+        self._seed(client, monkeypatch)
+        f = self._forecast(client)
+        assert f["undated"]["total_minutes"] == 90
+        assert f["undated"]["items"][0]["name"] == "Undated Y"
+        placed = [i["name"] for wk in f["weeks"] for i in wk["items"]]
+        assert "Undated Y" not in placed
+
+    def test_depth_composition(self, client, monkeypatch):
+        self._seed(client, monkeypatch)
+        f = self._forecast(client)
+        assert f["weeks"][1]["depth_minutes"]["1"] == 120    # Project X is D1
