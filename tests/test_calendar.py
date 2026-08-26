@@ -512,6 +512,140 @@ class TestDepthWindowSkips:
         assert next(x for x in listed if x["id"] == w2["id"])["skips"] == []
 
 
+class TestCalendarEntries:
+    """P14.0 — calendar-only entries: Calendar records time, Grid records
+    obligations. Entries exist without a canonical task until explicitly
+    promoted."""
+
+    def _entry(self, client, title="Study with Alex", **extra):
+        body = {"title": title, "planned_start": "2026-08-25T15:00",
+                "planned_end": "2026-08-25T16:00"}
+        body.update(extra)
+        res = client.post("/sessions", json=body)
+        assert res.status_code == 201, res.text
+        return res.json()
+
+    def test_create_entry_without_task(self, client):
+        e = self._entry(client, depth=2)
+        assert e["task_id"] is None
+        assert e["task_name"] == "Study with Alex"
+        assert e["task_depth"] == 2
+        assert e["title"] == "Study with Alex"
+        assert e["planned_minutes"] == 60
+
+    def test_entry_does_not_create_grid_task(self, client):
+        before = len(client.get("/tasks").json())
+        self._entry(client)
+        assert len(client.get("/tasks").json()) == before
+
+    def test_requires_task_or_title(self, client):
+        res = client.post("/sessions", json={
+            "planned_start": "2026-08-25T15:00", "planned_end": "2026-08-25T16:00"})
+        assert res.status_code == 422
+        res = client.post("/sessions", json={
+            "title": "   ", "planned_start": "2026-08-25T15:00",
+            "planned_end": "2026-08-25T16:00"})
+        assert res.status_code == 422
+
+    def test_entry_depth_validated(self, client):
+        res = client.post("/sessions", json={
+            "title": "X", "depth": 5, "planned_start": "2026-08-25T15:00",
+            "planned_end": "2026-08-25T16:00"})
+        assert res.status_code == 422
+
+    def test_entry_listed_in_range(self, client):
+        self._entry(client)
+        listed = client.get("/sessions", params={"start": "2026-08-25", "end": "2026-08-25"}).json()
+        assert len(listed) == 1
+        assert listed[0]["task_id"] is None
+
+    def test_entry_editable_and_reconcilable(self, client):
+        e = self._entry(client)
+        res = client.patch(f"/sessions/{e['id']}", json={
+            "title": "Study group", "depth": 1,
+            "planned_start": "2026-08-25T16:00", "planned_end": "2026-08-25T17:30",
+            "status": "partial", "actual_minutes": 40, "is_fixed": True,
+        })
+        assert res.status_code == 200
+        got = res.json()
+        assert got["task_name"] == "Study group"
+        assert got["task_depth"] == 1
+        assert got["status"] == "partial"
+        assert got["actual_minutes"] == 40
+        assert got["is_fixed"] == 1
+
+    def test_entry_completion_writes_no_grid_completion(self, client):
+        e = self._entry(client)
+        client.patch(f"/sessions/{e['id']}", json={"status": "completed"})
+        comps = client.get("/completions", params={"start": "2026-08-25", "end": "2026-08-25"}).json()
+        assert comps == []
+
+    def test_entry_survives_restart(self, tmp_path, monkeypatch):
+        import backend.database as db_module
+        from starlette.testclient import TestClient as _TC
+        from backend.main import app as _app
+        monkeypatch.setattr(db_module, "DB_PATH", tmp_path / "entries.db")
+        with _TC(_app) as c:
+            self._entry(c, depth=3)
+        with _TC(_app) as c2:
+            listed = c2.get("/sessions", params={"start": "2026-08-25", "end": "2026-08-25"}).json()
+            assert len(listed) == 1
+            assert listed[0]["task_id"] is None
+            assert listed[0]["task_depth"] == 3
+
+    def test_entries_do_not_affect_task_rollups(self, client):
+        t = _make_task(client, estimated_minutes=120)
+        self._entry(client)
+        got = client.get(f"/tasks/{t['id']}").json()
+        assert got["logged_minutes"] == 0
+        assert got["scheduled_pending_minutes"] == 0
+        assert got["remaining_unscheduled_minutes"] == 120
+
+    def test_promotion_links_entry_to_new_task(self, client):
+        e = self._entry(client, depth=1)
+        t = _make_task(client, name="Promoted", depth=1, estimated_minutes=60)
+        res = client.patch(f"/sessions/{e['id']}", json={"link_task_id": t["id"]})
+        assert res.status_code == 200
+        got = res.json()
+        assert got["task_id"] == t["id"]
+        assert got["task_name"] == "Promoted"
+        assert got["title"] == ""           # task provides the name now
+        assert got["depth"] is None         # and the depth
+        # same row, same interval — no duplicate block
+        assert got["id"] == e["id"]
+        assert got["planned_start"] == e["planned_start"]
+        listed = client.get("/sessions", params={"start": "2026-08-25", "end": "2026-08-25"}).json()
+        assert len(listed) == 1
+        # rollups now see the linked session as pending work
+        task = client.get(f"/tasks/{t['id']}").json()
+        assert task["scheduled_pending_minutes"] == 60
+
+    def test_promoting_linked_session_conflicts(self, client):
+        t1 = _make_task(client, name="One")
+        t2 = _make_task(client, name="Two")
+        s = _make_session(client, t1["id"])
+        res = client.patch(f"/sessions/{s['id']}", json={"link_task_id": t2["id"]})
+        assert res.status_code == 409
+
+    def test_promotion_to_unknown_task_404(self, client):
+        e = self._entry(client)
+        assert client.patch(f"/sessions/{e['id']}", json={"link_task_id": 999}).status_code == 404
+
+    def test_linked_session_rejects_title_and_depth_edits(self, client):
+        t = _make_task(client)
+        s = _make_session(client, t["id"])
+        assert client.patch(f"/sessions/{s['id']}", json={"title": "X"}).status_code == 422
+        assert client.patch(f"/sessions/{s['id']}", json={"depth": 2}).status_code == 422
+
+    def test_entry_visible_even_when_tasks_deleted(self, client):
+        t = _make_task(client)
+        _make_session(client, t["id"])
+        self._entry(client, title="Standalone")
+        client.delete(f"/tasks/{t['id']}")
+        listed = client.get("/sessions", params={"start": "2026-08-25", "end": "2026-08-25"}).json()
+        assert [s["task_name"] for s in listed] == ["Standalone"]
+
+
 class TestSchedulingIntegrity:
     """P13.1 (§33/§44) — scheduling through Calendar never duplicates tasks."""
 

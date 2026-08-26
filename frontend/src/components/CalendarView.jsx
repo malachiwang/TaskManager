@@ -18,7 +18,6 @@ import {
 } from '../calendarUtils.js';
 import TaskModal from './TaskModal.jsx';
 import CalendarEditor, { TimeRangeFields } from './CalendarEditor.jsx';
-import SectionCombobox from './SectionCombobox.jsx';
 import { displayTitle } from '../linkUtils.js';
 
 // Pointer capture keeps a drag alive when the cursor leaves the grid. It is
@@ -118,6 +117,10 @@ export default function CalendarView() {
   const [selected, setSelected] = useState(null); // { sessionId, rect }
   const [editorSessionId, setEditorSessionId] = useState(null); // Calendar session editor (P13.1)
   const [editingTask, setEditingTask] = useState(null); // full canonical TaskModal
+  // Promotion (P14.0): "Add to main Grid…" — the standard New Task modal,
+  // prefilled from a calendar-only entry; on save the entry links to the
+  // created task. { sessionId, initialValues }
+  const [promoteFor, setPromoteFor] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   // Drawer drag uses HTML5 DnD; the dragged task lives in a ref for the same
   // reason as dragRef — drop can fire before any dragstart state would commit.
@@ -334,7 +337,7 @@ export default function CalendarView() {
           mode: d.quick ? 'inline' : 'popover',
           tab: 'new',
           dateIso: d.dateIso, startMin, endMin,
-          title: '', section: 'General', category: '', depth: 0, priority: 5, isFixed: false,
+          title: '', depth: 0, isFixed: false,
           search: '',
           saving: false, error: '',
         });
@@ -470,7 +473,9 @@ export default function CalendarView() {
       (s.id === session.id ? { ...s, status: completing ? 'completed' : 'scheduled' } : s)));
     try {
       await updateSession(session.id, { status: completing ? 'completed' : 'scheduled' });
-      if (dateIso <= todayIso()) {
+      // Calendar-only entries (P14.0) have no canonical task — their
+      // completion is session-level only and never writes a Grid completion.
+      if (session.task_id != null && dateIso <= todayIso()) {
         if (completing) {
           await upsertCompletion(session.task_id, dateIso);
         } else {
@@ -505,7 +510,9 @@ export default function CalendarView() {
       await updateSession(session.id, {
         actual_end: end, actual_minutes: minutes, status: 'completed',
       });
-      if (dateIso <= todayIso()) await upsertCompletion(session.task_id, dateIso);
+      if (session.task_id != null && dateIso <= todayIso()) {
+        await upsertCompletion(session.task_id, dateIso);
+      }
     } catch (err) {
       console.error('finish session failed:', err);
     }
@@ -585,31 +592,61 @@ export default function CalendarView() {
   }
 
   // ── Creation ───────────────────────────────────────────────────────────────
-  async function commitCreateTask() {
+  // Default drag creation makes a CALENDAR-ONLY entry (P14.0) — nothing is
+  // written to the Grid. "Add to main Grid…" is the explicit promotion path.
+  async function commitCreateEntry() {
     const c = creator;
     if (!c || c.saving) return;
     const title = c.title.trim();
     if (!title) {
-      setCreator((cc) => (cc ? { ...cc, error: 'Enter a task name.' } : cc));
+      setCreator((cc) => (cc ? { ...cc, error: 'Enter a name.' } : cc));
       return;
     }
     setCreator((cc) => (cc ? { ...cc, saving: true, error: '' } : cc));
     try {
-      const task = await createTask({
-        name: title,
-        section: c.section?.trim() || 'General',
-        category: c.category ?? '',
-        depth: c.depth || 0,
-        priority: Math.max(1, Math.min(10, Number(c.priority) || 5)),
-        estimated_minutes: c.endMin - c.startMin,
-      });
       await createSession({
-        task_id: task.id,
+        title,
+        depth: c.depth || null,
         planned_start: combinePlanned(c.dateIso, c.startMin),
         planned_end: combinePlannedEnd(c.dateIso, c.endMin),
         is_fixed: !!c.isFixed,
       });
       setCreator(null);
+      await loadData();
+    } catch (err) {
+      setCreator((cc) => (cc ? { ...cc, saving: false, error: err?.message || 'Create failed.' } : cc));
+    }
+  }
+
+  // Creation-time promotion: persist the entry first, then route through the
+  // canonical New Task modal; the entry links on save (§3/§4). If the modal
+  // is cancelled the calendar entry simply stays calendar-only.
+  async function addToGridFromCreator() {
+    const c = creator;
+    if (!c || c.saving) return;
+    const title = c.title.trim();
+    if (!title) {
+      setCreator((cc) => (cc ? { ...cc, error: 'Enter a name first.' } : cc));
+      return;
+    }
+    setCreator((cc) => (cc ? { ...cc, saving: true, error: '' } : cc));
+    try {
+      const entry = await createSession({
+        title,
+        depth: c.depth || null,
+        planned_start: combinePlanned(c.dateIso, c.startMin),
+        planned_end: combinePlannedEnd(c.dateIso, c.endMin),
+        is_fixed: !!c.isFixed,
+      });
+      setCreator(null);
+      setPromoteFor({
+        sessionId: entry.id,
+        initialValues: {
+          name: title,
+          depth: c.depth || 0,
+          estimated_minutes: c.endMin - c.startMin,
+        },
+      });
       await loadData();
     } catch (err) {
       setCreator((cc) => (cc ? { ...cc, saving: false, error: err?.message || 'Create failed.' } : cc));
@@ -684,11 +721,18 @@ export default function CalendarView() {
     loadData();
   }
 
-  async function setTaskDepth(taskId, depth) {
+  // Depth change routes to the right canonical home: the task when linked,
+  // the entry row itself when calendar-only (P14.0).
+  async function setDepthFor(session, depth) {
     setSessions((prev) => prev.map((s) =>
-      (s.task_id === taskId ? { ...s, task_depth: depth || null } : s)));
+      (s.id === session.id || (session.task_id != null && s.task_id === session.task_id)
+        ? { ...s, task_depth: depth || null } : s)));
     try {
-      await updateTask(taskId, { depth: depth || 0 });
+      if (session.task_id != null) {
+        await updateTask(session.task_id, { depth: depth || 0 });
+      } else {
+        await updateSession(session.id, { depth: depth || 0 });
+      }
     } catch (err) {
       console.error('set depth failed:', err);
     }
@@ -886,7 +930,7 @@ export default function CalendarView() {
           value={creator.title}
           onChange={(e) => setCreator((c) => (c ? { ...c, title: e.target.value } : c))}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') { e.preventDefault(); commitCreateTask(); }
+            if (e.key === 'Enter') { e.preventDefault(); commitCreateEntry(); }
             if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setCreator(null); }
           }}
           onBlur={() => { if (!creator.title.trim() && !creator.saving) setCreator(null); }}
@@ -906,6 +950,7 @@ export default function CalendarView() {
     const done = s.status === 'completed';
     const partial = s.status === 'partial';
     const skipped = s.status === 'skipped';
+    const isEntry = s.task_id == null; // calendar-only (P14.0)
     const depth = s.task_depth;
     // Now state (§3): the current-time line is inside this still-scheduled
     // block on today — restrained highlight, actions live in the popover.
@@ -925,6 +970,7 @@ export default function CalendarView() {
           partial ? 'is-partial' : '',
           skipped ? 'is-skipped' : '',
           isNow ? 'is-now' : '',
+          isEntry ? 'cal-block--entry' : '',
           s.is_fixed ? 'is-fixed' : '',
           isDragSource ? 'is-drag-source' : '',
           selected?.sessionId === s.id || editorSessionId === s.id ? 'is-selected' : '',
@@ -941,8 +987,11 @@ export default function CalendarView() {
         <div className="cal-block-head">
           <button
             type="button"
-            className={`cal-block-check${done ? ' is-done' : ''}`}
-            aria-label={done ? 'Mark session not completed' : 'Mark session completed'}
+            className={`cal-block-check${done ? ' is-done' : ''}${isEntry ? ' cal-block-check--entry' : ''}`}
+            aria-label={isEntry
+              ? (done ? 'Mark entry not completed' : 'Mark entry completed (calendar-only)')
+              : (done ? 'Mark session not completed' : 'Mark session completed')}
+            title={isEntry ? 'Calendar-only entry — completing it never writes a Grid completion' : undefined}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => { e.stopPropagation(); toggleComplete(s); }}
           >
@@ -1064,7 +1113,7 @@ export default function CalendarView() {
             className={`cal-seg-btn${creator.tab === 'new' ? ' is-active' : ''}`}
             onClick={() => setCreator((c) => (c ? { ...c, tab: 'new', error: '' } : c))}
           >
-            New task
+            Calendar entry
           </button>
           <button
             type="button"
@@ -1088,48 +1137,19 @@ export default function CalendarView() {
             <input
               ref={creatorInputRef}
               className="task-modal-input cal-popover-title"
-              placeholder="Task name…"
+              placeholder="What is this time for?"
               value={creator.title}
               onChange={(e) => setCreator((c) => (c ? { ...c, title: e.target.value } : c))}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') { e.preventDefault(); commitCreateTask(); }
+                if (e.key === 'Enter') { e.preventDefault(); commitCreateEntry(); }
                 if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setCreator(null); }
               }}
             />
-            <div className="cal-creator-grid">
-              <label className="cal-creator-field">
-                <span>Section</span>
-                <SectionCombobox
-                  value={creator.section}
-                  onChange={(v) => setCreator((c) => (c ? { ...c, section: v } : c))}
-                  suggestions={sectionSuggestions}
-                  placeholder="General"
-                />
-              </label>
-              <label className="cal-creator-field">
-                <span>Category</span>
-                <input
-                  className="task-modal-input"
-                  value={creator.category}
-                  onChange={(e) => setCreator((c) => (c ? { ...c, category: e.target.value } : c))}
-                />
-              </label>
-            </div>
             <div className="cal-creator-row">
               <DepthSeg
                 value={creator.depth}
                 onChange={(d) => setCreator((c) => (c ? { ...c, depth: d } : c))}
               />
-              <label className="cal-creator-priority">
-                <span>Priority</span>
-                <input
-                  type="number"
-                  min="1"
-                  max="10"
-                  value={creator.priority}
-                  onChange={(e) => setCreator((c) => (c ? { ...c, priority: e.target.value } : c))}
-                />
-              </label>
               <button
                 type="button"
                 className={`cal-flag-btn${creator.isFixed ? ' is-active' : ''}`}
@@ -1141,8 +1161,9 @@ export default function CalendarView() {
               </button>
             </div>
             <div className="cal-popover-hint">
-              Creates a real task record scheduled here. {QUICK_CREATE_HINT} for
-              instant inline creation · ⇧ drag for a depth window.
+              Creates a calendar entry only — nothing is added to the Grid
+              unless you choose “Add to main Grid…”. {QUICK_CREATE_HINT} for
+              inline creation · ⇧ drag for a depth window.
             </div>
             {(() => {
               const pw = protectedConflictAt(creator.dateIso, creator.startMin, creator.endMin, creator.depth || null);
@@ -1153,11 +1174,22 @@ export default function CalendarView() {
               ) : null;
             })()}
             {creator.error && <div className="cal-popover-error" role="alert">{creator.error}</div>}
-            <div className="cal-popover-actions">
-              <button type="button" className="task-modal-cancel" onClick={() => setCreator(null)}>Cancel</button>
-              <button type="button" className="task-modal-save" onClick={commitCreateTask} disabled={creator.saving}>
-                {creator.saving ? 'Creating…' : 'Create task'}
+            <div className="cal-popover-actions cal-popover-actions--spread">
+              <button
+                type="button"
+                className="task-modal-cancel"
+                title="Create this as a canonical Grid task via the standard New Task form"
+                onClick={addToGridFromCreator}
+                disabled={creator.saving}
+              >
+                Add to main Grid…
               </button>
+              <div className="cal-popover-actions-right">
+                <button type="button" className="task-modal-cancel" onClick={() => setCreator(null)}>Cancel</button>
+                <button type="button" className="task-modal-save" onClick={commitCreateEntry} disabled={creator.saving}>
+                  {creator.saving ? 'Creating…' : 'Create entry'}
+                </button>
+              </div>
             </div>
           </>
         ) : (
@@ -1243,6 +1275,11 @@ export default function CalendarView() {
           <span className="cal-popover-name">
             {isNow && s.status === 'scheduled' && <span className="cal-now-chip">NOW</span>}
             {displayTitle(s.task_name)}
+            {s.task_id == null && (
+              <span className="cal-entry-chip" title="Lives only on the Calendar — not a Grid task">
+                calendar-only
+              </span>
+            )}
           </span>
           <button type="button" className="cal-popover-close" aria-label="Close" onClick={() => setSelected(null)}>×</button>
         </div>
@@ -1266,7 +1303,7 @@ export default function CalendarView() {
             {durationLabel(task.estimated_minutes)}
           </div>
         ) : null}
-        <DepthSeg value={s.task_depth ?? 0} onChange={(d) => setTaskDepth(s.task_id, d)} />
+        <DepthSeg value={s.task_depth ?? 0} onChange={(d) => setDepthFor(s, d)} />
         {partialEdit?.sessionId === s.id ? (
           <div className="cal-partial-row">
             <span>Worked</span>
@@ -1697,16 +1734,18 @@ export default function CalendarView() {
         </div>
       )}
 
-      {/* Calendar-native session editor (P13.1) — Grid-recurrence fields live
-          only in the full TaskModal behind "Open full task". */}
+      {/* Calendar-native session editor (P13.1/P14.0) — task is null for
+          calendar-only entries; Grid-recurrence fields live only in the full
+          TaskModal behind "Open full task". */}
       {editorSessionId && (() => {
         const editorSession = sessions.find((x) => x.id === editorSessionId)
           ?? recentSessions.find((x) => x.id === editorSessionId)
           ?? upcomingSessions.find((x) => x.id === editorSessionId);
-        const editorTask = editorSession
-          ? tasks.find((t) => t.id === editorSession.task_id)
+        if (!editorSession) return null;
+        const editorTask = editorSession.task_id != null
+          ? tasks.find((t) => t.id === editorSession.task_id) ?? null
           : null;
-        if (!editorSession || !editorTask) return null;
+        if (editorSession.task_id != null && !editorTask) return null;
         return (
           <CalendarEditor
             session={editorSession}
@@ -1719,9 +1758,32 @@ export default function CalendarView() {
             }}
             onChanged={() => loadData()}
             onCompleteSession={() => toggleComplete(editorSession)}
+            onPromote={(initialValues) => {
+              setEditorSessionId(null);
+              setPromoteFor({ sessionId: editorSession.id, initialValues });
+            }}
           />
         );
       })()}
+
+      {/* "Add to main Grid…" (P14.0) — the canonical New Task modal, prefilled
+          from the calendar entry. Saving creates exactly one task and links
+          the existing entry to it; cancelling leaves the entry calendar-only. */}
+      {promoteFor && (
+        <TaskModal
+          task={null}
+          initialValues={promoteFor.initialValues}
+          sectionSuggestions={sectionSuggestions}
+          onSave={async (payload) => {
+            const created = await createTask(payload);
+            await updateSession(promoteFor.sessionId, { link_task_id: created.id });
+            setPromoteFor(null);
+            await loadData();
+          }}
+          onDelete={() => {}}
+          onClose={() => setPromoteFor(null)}
+        />
+      )}
 
       {editingTask && (
         <TaskModal

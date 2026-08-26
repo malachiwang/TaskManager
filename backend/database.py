@@ -397,7 +397,9 @@ def init_db() -> None:
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS task_sessions (
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
-            task_id        INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            task_id        INTEGER          REFERENCES tasks(id) ON DELETE CASCADE,
+            title          TEXT    NOT NULL DEFAULT '',
+            depth          INTEGER          DEFAULT NULL,
             planned_start  TEXT    NOT NULL,
             planned_end    TEXT    NOT NULL,
             actual_start   TEXT             DEFAULT NULL,
@@ -409,7 +411,9 @@ def init_db() -> None:
             updated_at     TEXT    NOT NULL,
             CHECK (status IN ('scheduled', 'completed', 'partial', 'skipped')),
             CHECK (is_fixed IN (0, 1)),
-            CHECK (planned_end > planned_start)
+            CHECK (planned_end > planned_start),
+            CHECK (depth IS NULL OR depth IN (1, 2, 3)),
+            CHECK (task_id IS NOT NULL OR TRIM(title) <> '')
         );
 
         CREATE INDEX IF NOT EXISTS idx_sessions_task
@@ -482,6 +486,58 @@ def init_db() -> None:
                 (name, position, now_iso, now_iso),
             )
             position += 1
+        conn.commit()
+
+    # ── Migration 15: calendar-only entries (P14.0) ──────────────────────────
+    # Calendar records time; the Grid records obligations. A session may now
+    # exist WITHOUT a canonical task: task_id becomes nullable, and unlinked
+    # rows carry their own title and optional depth. Linked rows keep taking
+    # name/depth from the task (their title stays ''). SQLite cannot relax a
+    # NOT NULL constraint in place, so the table is rebuilt once, preserving
+    # ids and all planned/actual/status data.
+    ts_info = conn.execute("PRAGMA table_info(task_sessions)").fetchall()
+    ts_cols = {r[1] for r in ts_info}
+    ts_task_id_notnull = any(r[1] == "task_id" and r[3] == 1 for r in ts_info)
+    if ts_info and ("title" not in ts_cols or ts_task_id_notnull):
+        conn.executescript("""
+            CREATE TABLE task_sessions_new (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id        INTEGER          REFERENCES tasks(id) ON DELETE CASCADE,
+                title          TEXT    NOT NULL DEFAULT '',
+                depth          INTEGER          DEFAULT NULL,
+                planned_start  TEXT    NOT NULL,
+                planned_end    TEXT    NOT NULL,
+                actual_start   TEXT             DEFAULT NULL,
+                actual_end     TEXT             DEFAULT NULL,
+                actual_minutes INTEGER          DEFAULT NULL,
+                status         TEXT    NOT NULL DEFAULT 'scheduled',
+                is_fixed       INTEGER NOT NULL DEFAULT 0,
+                created_at     TEXT    NOT NULL,
+                updated_at     TEXT    NOT NULL,
+                CHECK (status IN ('scheduled', 'completed', 'partial', 'skipped')),
+                CHECK (is_fixed IN (0, 1)),
+                CHECK (planned_end > planned_start),
+                CHECK (depth IS NULL OR depth IN (1, 2, 3)),
+                CHECK (task_id IS NOT NULL OR TRIM(title) <> '')
+            );
+
+            INSERT INTO task_sessions_new (
+                id, task_id, planned_start, planned_end,
+                actual_start, actual_end, actual_minutes,
+                status, is_fixed, created_at, updated_at)
+            SELECT id, task_id, planned_start, planned_end,
+                   actual_start, actual_end, actual_minutes,
+                   status, is_fixed, created_at, updated_at
+            FROM task_sessions;
+
+            DROP TABLE task_sessions;
+            ALTER TABLE task_sessions_new RENAME TO task_sessions;
+
+            CREATE INDEX IF NOT EXISTS idx_sessions_task
+                ON task_sessions(task_id);
+            CREATE INDEX IF NOT EXISTS idx_sessions_start
+                ON task_sessions(planned_start);
+        """)
         conn.commit()
 
     # ── Migration 14: depth_window_skips (P13.0) — recurrence exceptions ─────

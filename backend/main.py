@@ -1112,19 +1112,23 @@ def _session_minutes(start_iso: str, end_iso: str) -> int:
     return int(delta.total_seconds() // 60)
 
 
+# Calendar-only entries (P14.0): task_id NULL means the row is a lightweight
+# calendar entry, not a task session. Display fields resolve from the task
+# when linked and from the row itself when not — task_name/task_depth are
+# therefore safe for every consumer regardless of linkage.
 _SESSION_SELECT = """
     SELECT s.*,
-           t.name              AS task_name,
+           CASE WHEN s.task_id IS NULL THEN s.title ELSE t.name END AS task_name,
+           CASE WHEN s.task_id IS NULL THEN s.depth ELSE t.depth END AS task_depth,
            t.section           AS task_section,
            t.category          AS task_category,
            t.priority          AS task_priority,
-           t.depth             AS task_depth,
            t.estimated_minutes AS task_estimated_minutes,
            t.status            AS task_status,
            t.is_paused         AS task_is_paused
     FROM task_sessions s
-    JOIN tasks t ON t.id = s.task_id
-    WHERE t.is_active = 1
+    LEFT JOIN tasks t ON t.id = s.task_id
+    WHERE (s.task_id IS NULL OR t.is_active = 1)
 """
 
 
@@ -1135,7 +1139,12 @@ def _session_dict(row) -> dict:
 
 
 class SessionBody(BaseModel):
-    task_id: int
+    # Either task_id (session for a canonical task) or title (calendar-only
+    # entry, P14.0). Depth applies to unlinked entries only — linked sessions
+    # take depth from their task.
+    task_id: Optional[int] = None
+    title: Optional[str] = None
+    depth: Optional[int] = None
     planned_start: str
     planned_end: str
     is_fixed: bool = False
@@ -1149,6 +1158,11 @@ class SessionPatch(BaseModel):
     actual_start: Optional[str] = None
     actual_end: Optional[str] = None
     actual_minutes: Optional[int] = None
+    # Calendar-only entries (P14.0): title/depth edits, and the one-way
+    # promotion that links an entry to a canonical task.
+    title: Optional[str] = None
+    depth: Optional[int] = None
+    link_task_id: Optional[int] = None
 
 
 @app.get("/sessions")
@@ -1183,23 +1197,42 @@ def list_sessions(
 
 @app.post("/sessions", status_code=201)
 def create_session(body: SessionBody):
+    """Create a task session (task_id) or a calendar-only entry (title).
+
+    Calendar creation is entry-first (P14.0): nothing here ever creates a
+    canonical task — promotion to the Grid is a separate, explicit step.
+    """
     start_iso = _validate_planned_time(body.planned_start, "planned_start")
     end_iso = _validate_planned_time(body.planned_end, "planned_end")
     if end_iso <= start_iso:
         raise HTTPException(status_code=422, detail="planned_end must be after planned_start")
+
+    title = (body.title or "").strip()
+    depth_val = None
+    if body.task_id is None:
+        if not title:
+            raise HTTPException(
+                status_code=422,
+                detail="Provide task_id (task session) or a non-empty title (calendar entry)",
+            )
+        depth_val = _normalize_depth(body.depth)
+    else:
+        title = ""  # linked sessions take their name from the task
+
     conn = get_connection()
-    task = conn.execute(
-        "SELECT id FROM tasks WHERE id = ? AND is_active = 1", (body.task_id,)
-    ).fetchone()
-    if not task:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Task not found")
+    if body.task_id is not None:
+        task = conn.execute(
+            "SELECT id FROM tasks WHERE id = ? AND is_active = 1", (body.task_id,)
+        ).fetchone()
+        if not task:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Task not found")
     now = datetime.now().isoformat()
     with conn:
         cur = conn.execute(
-            "INSERT INTO task_sessions (task_id, planned_start, planned_end, is_fixed, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (body.task_id, start_iso, end_iso, int(body.is_fixed), now, now),
+            "INSERT INTO task_sessions (task_id, title, depth, planned_start, planned_end, is_fixed, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (body.task_id, title, depth_val, start_iso, end_iso, int(body.is_fixed), now, now),
         )
         session_id = cur.lastrowid
     row = conn.execute(_SESSION_SELECT + " AND s.id = ?", (session_id,)).fetchone()
@@ -1255,6 +1288,33 @@ def update_session(session_id: int, body: SessionPatch):
             if body.actual_minutes < 0:
                 raise HTTPException(status_code=422, detail="actual_minutes must be >= 0")
             updates["actual_minutes"] = body.actual_minutes or None
+        # Promotion (P14.0): link a calendar-only entry to a canonical task.
+        # One-way and exclusive — the task then provides name and depth, so
+        # the entry's own title/depth are cleared rather than left to drift.
+        if body.link_task_id is not None:
+            if session["task_id"] is not None:
+                raise HTTPException(status_code=409, detail="Session is already linked to a task")
+            task = conn.execute(
+                "SELECT id FROM tasks WHERE id = ? AND is_active = 1", (body.link_task_id,)
+            ).fetchone()
+            if not task:
+                raise HTTPException(status_code=404, detail="Task not found")
+            updates["task_id"] = body.link_task_id
+            updates["title"] = ""
+            updates["depth"] = None
+        else:
+            if body.title is not None:
+                if session["task_id"] is not None:
+                    raise HTTPException(
+                        status_code=422, detail="Linked sessions take their name from the task")
+                if not body.title.strip():
+                    raise HTTPException(status_code=422, detail="title must not be blank")
+                updates["title"] = body.title.strip()
+            if body.depth is not None:
+                if session["task_id"] is not None:
+                    raise HTTPException(
+                        status_code=422, detail="Linked sessions take depth from the task")
+                updates["depth"] = _normalize_depth(body.depth)
     except HTTPException:
         conn.close()
         raise

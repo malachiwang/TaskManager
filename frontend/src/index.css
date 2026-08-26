@@ -7876,6 +7876,29 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
    Calendar UX refinement (P13.1) — creation editor, selection, time fields.
    ---------------------------------------------------------------------- */
 
+/* Calendar-only entries (P14.0): same depth colors, but a round completion
+   marker instead of the Grid-task checkbox — linkage is never color-only. */
+.cal-block-check--entry {
+  border-radius: 50%;
+  border-style: dashed;
+}
+.cal-block-check--entry.is-done {
+  border-style: solid;
+}
+.cal-entry-chip {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0 5px;
+  border: 1px solid var(--grid-border);
+  border-radius: 999px;
+  color: var(--muted);
+  vertical-align: 1px;
+}
+
 /* Selected session (§30): keyboard target for E, visible without hover. */
 .cal-block.is-selected {
   border-color: var(--accent);

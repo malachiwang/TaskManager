@@ -104,16 +104,20 @@ const DEPTH_OPTIONS = [
 
 export default function CalendarEditor({
   session, task, sectionSuggestions,
-  onClose, onOpenFullTask, onChanged, onCompleteSession,
+  onClose, onOpenFullTask, onChanged, onCompleteSession, onPromote,
 }) {
+  // task == null → calendar-only entry (P14.0): no canonical record behind
+  // it, so no Grid fields — just title/time/depth/fixed plus the explicit
+  // "Add to main Grid…" promotion.
+  const isLinked = task != null;
   const dateIso = plannedDate(session.planned_start);
   const [form, setForm] = useState(() => {
     const startMin = plannedMinutes(session.planned_start);
     return {
-      name: task?.name ?? session.task_name,
+      name: isLinked ? task.name : (session.title || session.task_name),
       section: task?.section ?? 'General',
       category: task?.category ?? '',
-      depth: task?.depth ?? 0,
+      depth: isLinked ? (task.depth ?? 0) : (session.depth ?? 0),
       priority: task?.priority ?? 5,
       estimated_minutes: task?.estimated_minutes ?? '',
       startMin,
@@ -145,25 +149,35 @@ export default function CalendarEditor({
   async function handleSave() {
     if (saving) return;
     if (!form.name.trim()) {
-      setError('Task name must not be empty.');
+      setError('Name must not be empty.');
       return;
     }
     setSaving(true);
     setError('');
     try {
-      await updateTask(task.id, {
-        name: form.name.trim(),
-        section: form.section,
-        category: form.category,
-        depth: form.depth || 0,
-        priority: form.priority,
-        estimated_minutes: form.estimated_minutes === '' ? 0 : Number(form.estimated_minutes),
-      });
-      await updateSession(session.id, {
-        planned_start: combinePlanned(dateIso, form.startMin),
-        planned_end: combinePlannedEnd(dateIso, form.endMin),
-        is_fixed: form.isFixed,
-      });
+      if (isLinked) {
+        await updateTask(task.id, {
+          name: form.name.trim(),
+          section: form.section,
+          category: form.category,
+          depth: form.depth || 0,
+          priority: form.priority,
+          estimated_minutes: form.estimated_minutes === '' ? 0 : Number(form.estimated_minutes),
+        });
+        await updateSession(session.id, {
+          planned_start: combinePlanned(dateIso, form.startMin),
+          planned_end: combinePlannedEnd(dateIso, form.endMin),
+          is_fixed: form.isFixed,
+        });
+      } else {
+        await updateSession(session.id, {
+          title: form.name.trim(),
+          depth: form.depth || 0,
+          planned_start: combinePlanned(dateIso, form.startMin),
+          planned_end: combinePlannedEnd(dateIso, form.endMin),
+          is_fixed: form.isFixed,
+        });
+      }
       onChanged();
       onClose();
     } catch (err) {
@@ -190,7 +204,9 @@ export default function CalendarEditor({
 
         <div className="task-modal-header">
           <div className="task-modal-header-left">
-            <div className="task-modal-kicker">Calendar Session</div>
+            <div className="task-modal-kicker">
+              {isLinked ? 'Calendar Session · linked to Grid task' : 'Calendar Entry · not on the Grid'}
+            </div>
             <div className="task-modal-title">{displayTitle(task?.name || session.task_name)}</div>
             <div className="task-modal-subtitle">
               {fullDateLabel(dateIso)} · {statusLabel.toLowerCase()}
@@ -207,7 +223,7 @@ export default function CalendarEditor({
           onSubmit={(e) => { e.preventDefault(); handleSave(); }}
         >
           <div className="task-modal-section">
-            <div className="task-modal-section-title">Task</div>
+            <div className="task-modal-section-title">{isLinked ? 'Task' : 'Entry'}</div>
             <div className="task-modal-field task-modal-field--full">
               <label className="task-modal-label" htmlFor="ce-name">Name</label>
               <input
@@ -218,27 +234,29 @@ export default function CalendarEditor({
                 onChange={(e) => set('name', e.target.value)}
               />
             </div>
-            <div className="task-modal-grid">
-              <div className="task-modal-field">
-                <label className="task-modal-label" htmlFor="ce-section">Section</label>
-                <SectionCombobox
-                  id="ce-section"
-                  value={form.section}
-                  onChange={(v) => set('section', v)}
-                  suggestions={sectionSuggestions}
-                  placeholder="General"
-                />
+            {isLinked && (
+              <div className="task-modal-grid">
+                <div className="task-modal-field">
+                  <label className="task-modal-label" htmlFor="ce-section">Section</label>
+                  <SectionCombobox
+                    id="ce-section"
+                    value={form.section}
+                    onChange={(v) => set('section', v)}
+                    suggestions={sectionSuggestions}
+                    placeholder="General"
+                  />
+                </div>
+                <div className="task-modal-field">
+                  <label className="task-modal-label" htmlFor="ce-category">Category</label>
+                  <input
+                    id="ce-category"
+                    className="task-modal-input"
+                    value={form.category}
+                    onChange={(e) => set('category', e.target.value)}
+                  />
+                </div>
               </div>
-              <div className="task-modal-field">
-                <label className="task-modal-label" htmlFor="ce-category">Category</label>
-                <input
-                  id="ce-category"
-                  className="task-modal-input"
-                  value={form.category}
-                  onChange={(e) => set('category', e.target.value)}
-                />
-              </div>
-            </div>
+            )}
             <div className="task-modal-grid">
               <div className="task-modal-field">
                 <label className="task-modal-label">Cognitive depth</label>
@@ -256,32 +274,43 @@ export default function CalendarEditor({
                   ))}
                 </div>
               </div>
+              {isLinked && (
+                <div className="task-modal-field">
+                  <label className="task-modal-label" htmlFor="ce-priority">Priority (1–10)</label>
+                  <input
+                    id="ce-priority"
+                    className="task-modal-input"
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={form.priority}
+                    onChange={(e) => set('priority', Number(e.target.value))}
+                  />
+                </div>
+              )}
+            </div>
+            {isLinked && (
               <div className="task-modal-field">
-                <label className="task-modal-label" htmlFor="ce-priority">Priority (1–10)</label>
+                <label className="task-modal-label" htmlFor="ce-estimate">Estimated total effort (min)</label>
                 <input
-                  id="ce-priority"
+                  id="ce-estimate"
                   className="task-modal-input"
                   type="number"
-                  min="1"
-                  max="10"
-                  value={form.priority}
-                  onChange={(e) => set('priority', Number(e.target.value))}
+                  min="0"
+                  step="5"
+                  placeholder="e.g. 180"
+                  value={form.estimated_minutes}
+                  onChange={(e) => set('estimated_minutes', e.target.value)}
                 />
               </div>
-            </div>
-            <div className="task-modal-field">
-              <label className="task-modal-label" htmlFor="ce-estimate">Estimated total effort (min)</label>
-              <input
-                id="ce-estimate"
-                className="task-modal-input"
-                type="number"
-                min="0"
-                step="5"
-                placeholder="e.g. 180"
-                value={form.estimated_minutes}
-                onChange={(e) => set('estimated_minutes', e.target.value)}
-              />
-            </div>
+            )}
+            {!isLinked && (
+              <div className="task-modal-field-hint">
+                This lives only on the Calendar — it is not a Grid task and
+                carries no recurrence or pressure. Use “Add to main Grid…” to
+                promote it.
+              </div>
+            )}
           </div>
 
           <div className="task-modal-section">
@@ -321,15 +350,16 @@ export default function CalendarEditor({
             {confirmDelete ? (
               <div className="task-modal-confirm-zone">
                 <span className="task-modal-confirm-copy">
-                  Remove this scheduled session only — the task itself stays in
-                  the Grid and keeps its history.
+                  {isLinked
+                    ? 'Remove this scheduled session only — the task itself stays in the Grid and keeps its history.'
+                    : 'Remove this calendar entry. It was never on the Grid, so nothing else changes.'}
                 </span>
                 <div className="task-modal-confirm-actions">
                   <button type="button" className="task-modal-cancel" onClick={() => setConfirmDelete(false)}>
                     Cancel
                   </button>
                   <button type="button" className="task-modal-confirm-delete" onClick={handleDeleteSession}>
-                    Remove session
+                    {isLinked ? 'Remove session' : 'Remove entry'}
                   </button>
                 </div>
               </div>
@@ -338,10 +368,12 @@ export default function CalendarEditor({
                 <button
                   type="button"
                   className="task-modal-delete-btn"
-                  title="Remove only this scheduled session — never the task"
+                  title={isLinked
+                    ? 'Remove only this scheduled session — never the task'
+                    : 'Remove this calendar entry'}
                   onClick={() => setConfirmDelete(true)}
                 >
-                  Remove session
+                  {isLinked ? 'Remove session' : 'Remove entry'}
                 </button>
                 <div className="task-modal-actions">
                   {error && <span className="task-modal-save-error" role="alert">{error}</span>}
@@ -349,20 +381,37 @@ export default function CalendarEditor({
                     <button
                       type="button"
                       className="task-modal-cancel"
-                      title="Mark this session completed (records a completion for its date)"
+                      title={isLinked
+                        ? 'Mark this session completed (records a completion for its date)'
+                        : 'Mark this entry completed — calendar-only, no Grid completion'}
                       onClick={() => { onCompleteSession(); onClose(); }}
                     >
-                      Complete session
+                      {isLinked ? 'Complete session' : 'Complete entry'}
                     </button>
                   )}
-                  <button
-                    type="button"
-                    className="task-modal-cancel"
-                    title="Open the complete TaskManager record editor"
-                    onClick={onOpenFullTask}
-                  >
-                    Open full task
-                  </button>
+                  {isLinked ? (
+                    <button
+                      type="button"
+                      className="task-modal-cancel"
+                      title="Open the complete TaskManager record editor"
+                      onClick={onOpenFullTask}
+                    >
+                      Open full task
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="task-modal-cancel"
+                      title="Create a canonical Grid task from this entry via the standard New Task form"
+                      onClick={() => onPromote({
+                        name: form.name.trim() || session.task_name,
+                        depth: form.depth || 0,
+                        estimated_minutes: form.endMin - form.startMin,
+                      })}
+                    >
+                      Add to main Grid…
+                    </button>
+                  )}
                   <button type="button" className="task-modal-cancel" onClick={onClose} disabled={saving}>
                     Cancel
                   </button>

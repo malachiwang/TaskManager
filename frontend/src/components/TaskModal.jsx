@@ -62,7 +62,10 @@ function stopLinkUiPropagation(e) {
   e.stopPropagation();
 }
 
-export default function TaskModal({ task, sectionSuggestions = [], onSave, onDelete, onClose, onHiatusChanged }) {
+// initialValues (P14.0): optional prefill for ADD mode — used when promoting
+// a calendar-only entry to a Grid task, so name/depth/estimate carry over.
+// Ignored entirely in edit mode.
+export default function TaskModal({ task, sectionSuggestions = [], initialValues = null, onSave, onDelete, onClose, onHiatusChanged }) {
   const isEdit = task != null;
 
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -164,11 +167,11 @@ export default function TaskModal({ task, sectionSuggestions = [], onSave, onDel
   const linkUrlRef = useRef(null);
 
   const [form, setForm] = useState(() => {
-    const d = isEdit ? {} : loadTaskDefaults();
+    const d = isEdit ? {} : { ...loadTaskDefaults(), ...(initialValues ?? {}) };
     return {
-      name:                      task?.name                      ?? '',
+      name:                      task?.name                      ?? d.name ?? '',
       section:                   task?.section                   ?? d.defaultSection      ?? 'General',
-      category:                  task?.category                  ?? '',
+      category:                  task?.category                  ?? d.category ?? '',
       status:                    task?.status                    ?? 'active',
       subtask:                   task?.subtask                   ?? '',
       priority:                  task?.priority                  ?? d.defaultPriority     ?? 5,
@@ -178,8 +181,8 @@ export default function TaskModal({ task, sectionSuggestions = [], onSave, onDel
       active_from:               task?.active_from               ?? (isEdit ? '' : getLocalTodayIso()),
       end_date:                  task?.end_date                  ?? '',
       // Calendar (P12.0): 0 = no depth (stored as NULL); '' = no estimate.
-      depth:                     task?.depth                     ?? 0,
-      estimated_minutes:         task?.estimated_minutes         ?? '',
+      depth:                     task?.depth                     ?? d.depth ?? 0,
+      estimated_minutes:         task?.estimated_minutes         ?? d.estimated_minutes ?? '',
     };
   });
 
