@@ -1,11 +1,80 @@
 const BASE = import.meta.env.VITE_API_BASE ?? '/api';
 
+// ---------------------------------------------------------------------------
+// Bounded requests
+//
+// Native fetch() has no timeout. A backend that accepts the TCP connection but
+// never sends a response leaves the promise permanently *pending* — it never
+// resolves and never rejects. Any loading gate awaiting such a request (the App
+// boot probe, TaskGrid's Promise.all, ReadingSheet's load) then sits on
+// "Loading…" forever, because even `.finally()` never runs.
+//
+// requestWithTimeout puts a hard deadline on the whole exchange — connect,
+// headers, and body read — via AbortController, and reports the stall as a
+// labelled RequestTimeoutError so UI error states can name the endpoint that
+// hung. Timeouts are deliberately distinguishable from ordinary HTTP errors,
+// which keep their original `<fnName> failed: <status>` text.
+//
+// This is applied to the reads that gate a full screen or sheet on startup.
+// It is *not* applied blanket-wide: downloads, restores and imports can take
+// legitimately much longer and are left alone.
+// ---------------------------------------------------------------------------
+
+// Per-attempt cap for the boot readiness probe. Short because App.jsx retries.
+export const HEALTH_TIMEOUT_MS = 1500;
+// Cap for the initial data reads behind a loading gate.
+export const READ_TIMEOUT_MS = 8000;
+
+function formatTimeout(ms) {
+  const seconds = ms / 1000;
+  return `${Number.isInteger(seconds) ? seconds : seconds.toFixed(1)}s`;
+}
+
+export class RequestTimeoutError extends Error {
+  constructor(label, timeoutMs) {
+    super(`${label} timed out after ${formatTimeout(timeoutMs)}`);
+    this.name = 'RequestTimeoutError';
+    this.isTimeout = true;
+    this.label = label;
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+// `label` names the request in user-facing text ("Hiatus history request").
+// `failureName` keeps the pre-existing message for non-2xx responses.
+// Nothing user-specific (paths, task names, DB contents) goes into either.
+async function requestWithTimeout(url, options, { timeoutMs, label, failureName }) {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    if (!res.ok) throw new Error(`${failureName} failed: ${res.status}`);
+    // Parsed inside the deadline: a response whose body never finishes
+    // streaming would otherwise hang here instead.
+    return await res.json();
+  } catch (err) {
+    if (timedOut) {
+      console.warn(`[TaskManager API] ${label} timed out after ${timeoutMs}ms`);
+      throw new RequestTimeoutError(label, timeoutMs);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Cheap readiness probe — used by the App boot gate. Hits the backend /health
 // endpoint (no DB work) instead of a heavy data endpoint.
 export async function fetchHealth() {
-  const res = await fetch(`${BASE}/health`);
-  if (!res.ok) throw new Error(`fetchHealth failed: ${res.status}`);
-  return res.json();
+  return requestWithTimeout(`${BASE}/health`, undefined, {
+    timeoutMs: HEALTH_TIMEOUT_MS,
+    label: 'Backend health check',
+    failureName: 'fetchHealth',
+  });
 }
 
 export async function fetchDoc(name) {
@@ -15,15 +84,19 @@ export async function fetchDoc(name) {
 }
 
 export async function fetchTasks() {
-  const res = await fetch(`${BASE}/tasks`);
-  if (!res.ok) throw new Error(`fetchTasks failed: ${res.status}`);
-  return res.json();
+  return requestWithTimeout(`${BASE}/tasks`, undefined, {
+    timeoutMs: READ_TIMEOUT_MS,
+    label: 'Tasks request',
+    failureName: 'fetchTasks',
+  });
 }
 
 export async function fetchCompletions(start, end) {
-  const res = await fetch(`${BASE}/completions?start=${start}&end=${end}`);
-  if (!res.ok) throw new Error(`fetchCompletions failed: ${res.status}`);
-  return res.json();
+  return requestWithTimeout(`${BASE}/completions?start=${start}&end=${end}`, undefined, {
+    timeoutMs: READ_TIMEOUT_MS,
+    label: 'Completions request',
+    failureName: 'fetchCompletions',
+  });
 }
 
 export async function upsertCompletion(taskId, date) {
@@ -184,9 +257,11 @@ export async function setCompletionCount(taskId, date, count) {
 }
 
 export async function fetchNotes(start, end) {
-  const res = await fetch(`${BASE}/notes?start=${start}&end=${end}`);
-  if (!res.ok) throw new Error(`fetchNotes failed: ${res.status}`);
-  return res.json();
+  return requestWithTimeout(`${BASE}/notes?start=${start}&end=${end}`, undefined, {
+    timeoutMs: READ_TIMEOUT_MS,
+    label: 'Notes request',
+    failureName: 'fetchNotes',
+  });
 }
 
 export async function upsertNote(taskId, date, note) {
@@ -206,9 +281,11 @@ export async function deleteNote(taskId, date) {
 // ---------------------------------------------------------------------------
 
 export async function fetchDateCellOverrides(start, end) {
-  const res = await fetch(`${BASE}/date-cell-overrides?start=${start}&end=${end}`);
-  if (!res.ok) throw new Error(`fetchDateCellOverrides failed: ${res.status}`);
-  return res.json();
+  return requestWithTimeout(`${BASE}/date-cell-overrides?start=${start}&end=${end}`, undefined, {
+    timeoutMs: READ_TIMEOUT_MS,
+    label: 'Cell text overrides request',
+    failureName: 'fetchDateCellOverrides',
+  });
 }
 
 export async function upsertDateCellOverride(taskId, date, text) {
@@ -256,9 +333,11 @@ export async function batchDeleteDateCellOverrides(items) {
 
 // Intervals overlapping [start, end] — used for grid range rendering.
 export async function fetchHiatusPeriodsInRange(start, end) {
-  const res = await fetch(`${BASE}/task-hiatus-periods?start=${start}&end=${end}`);
-  if (!res.ok) throw new Error(`fetchHiatusPeriodsInRange failed: ${res.status}`);
-  return res.json();
+  return requestWithTimeout(`${BASE}/task-hiatus-periods?start=${start}&end=${end}`, undefined, {
+    timeoutMs: READ_TIMEOUT_MS,
+    label: 'Hiatus history request',
+    failureName: 'fetchHiatusPeriodsInRange',
+  });
 }
 
 // All intervals for one task — used by the Task Details hiatus history list.
@@ -292,6 +371,423 @@ export async function deleteHiatusPeriod(id) {
   return res.json();
 }
 
+// ---------------------------------------------------------------------------
+// Calendar (P12.0) — task sessions + depth windows.
+// Sessions are scheduled time allocations toward canonical task records; the
+// Calendar view renders and mutates them. Times are local-naive
+// "YYYY-MM-DDTHH:MM" strings throughout.
+// ---------------------------------------------------------------------------
+
+// Sessions overlapping [start, end] (ISO dates), joined with task info.
+export async function fetchSessions(start, end) {
+  return requestWithTimeout(`${BASE}/sessions?start=${start}&end=${end}`, undefined, {
+    timeoutMs: READ_TIMEOUT_MS,
+    label: 'Sessions request',
+    failureName: 'fetchSessions',
+  });
+}
+
+// fields: { task_id, planned_start, planned_end, is_fixed? }
+export async function createSession(fields) {
+  const res = await fetch(`${BASE}/sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) {
+    let detail = `createSession failed: ${res.status}`;
+    try { const b = await res.json(); if (b.detail) detail = b.detail; } catch {}
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+// fields: any of { planned_start, planned_end, status, is_fixed,
+// actual_start, actual_end, actual_minutes }
+export async function updateSession(id, fields) {
+  const res = await fetch(`${BASE}/sessions/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) {
+    let detail = `updateSession failed: ${res.status}`;
+    try { const b = await res.json(); if (b.detail) detail = b.detail; } catch {}
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+export async function deleteSession(id) {
+  const res = await fetch(`${BASE}/sessions/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`deleteSession failed: ${res.status}`);
+  return res.json();
+}
+
+// All depth windows (one-off + recurring); the frontend expands recurring
+// windows onto concrete dates.
+export async function fetchDepthWindows() {
+  return requestWithTimeout(`${BASE}/depth-windows`, undefined, {
+    timeoutMs: READ_TIMEOUT_MS,
+    label: 'Depth windows request',
+    failureName: 'fetchDepthWindows',
+  });
+}
+
+// fields: { depth, start_minutes, end_minutes, date? | weekday?, protected? }
+export async function createDepthWindow(fields) {
+  const res = await fetch(`${BASE}/depth-windows`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) {
+    let detail = `createDepthWindow failed: ${res.status}`;
+    try { const b = await res.json(); if (b.detail) detail = b.detail; } catch {}
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+// Exempt one date from a recurring window ("remove just this day", P13.0).
+export async function skipDepthWindowDay(id, date) {
+  const res = await fetch(`${BASE}/depth-windows/${id}/skips`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ date }),
+  });
+  if (!res.ok) throw new Error(`skipDepthWindowDay failed: ${res.status}`);
+  return res.json();
+}
+
+export async function updateDepthWindow(id, fields) {
+  const res = await fetch(`${BASE}/depth-windows/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error(`updateDepthWindow failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteDepthWindow(id) {
+  const res = await fetch(`${BASE}/depth-windows/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`deleteDepthWindow failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// External calendars (P15.0) — read-only ICS commitments. Failures here are
+// isolated by callers; nothing else depends on these requests.
+// ---------------------------------------------------------------------------
+
+export async function fetchExternalCalendars() {
+  const res = await fetch(`${BASE}/external-calendars`);
+  if (!res.ok) throw new Error(`fetchExternalCalendars failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createExternalCalendar(name, url) {
+  const res = await fetch(`${BASE}/external-calendars`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, url }),
+  });
+  if (!res.ok) {
+    let detail = `createExternalCalendar failed: ${res.status}`;
+    try { const b = await res.json(); if (b.detail) detail = b.detail; } catch {}
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+export async function updateExternalCalendar(id, fields) {
+  const res = await fetch(`${BASE}/external-calendars/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error(`updateExternalCalendar failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteExternalCalendar(id) {
+  const res = await fetch(`${BASE}/external-calendars/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`deleteExternalCalendar failed: ${res.status}`);
+  return res.json();
+}
+
+export async function syncExternalCalendar(id) {
+  const res = await fetch(`${BASE}/external-calendars/${id}/sync`, { method: 'POST' });
+  if (!res.ok) {
+    let detail = `syncExternalCalendar failed: ${res.status}`;
+    try { const b = await res.json(); if (b.detail) detail = b.detail; } catch {}
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+export async function fetchExternalEvents(start, end) {
+  const res = await fetch(`${BASE}/external-events?start=${start}&end=${end}`);
+  if (!res.ok) throw new Error(`fetchExternalEvents failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Depth window templates (P15.0)
+// ---------------------------------------------------------------------------
+
+export async function fetchWindowTemplates() {
+  const res = await fetch(`${BASE}/depth-window-templates`);
+  if (!res.ok) throw new Error(`fetchWindowTemplates failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createWindowTemplate(name, items) {
+  const res = await fetch(`${BASE}/depth-window-templates`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, items }),
+  });
+  if (!res.ok) throw new Error(`createWindowTemplate failed: ${res.status}`);
+  return res.json();
+}
+
+export async function updateWindowTemplate(id, fields) {
+  const res = await fetch(`${BASE}/depth-window-templates/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error(`updateWindowTemplate failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteWindowTemplate(id) {
+  const res = await fetch(`${BASE}/depth-window-templates/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`deleteWindowTemplate failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Contexts + contextual scheduling (P16.0)
+// ---------------------------------------------------------------------------
+
+export async function fetchContexts() {
+  const res = await fetch(`${BASE}/contexts`);
+  if (!res.ok) throw new Error(`fetchContexts failed: ${res.status}`);
+  return res.json();
+}
+
+// Find-or-create by exact name.
+export async function createContext(name) {
+  const res = await fetch(`${BASE}/contexts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error(`createContext failed: ${res.status}`);
+  return res.json();
+}
+
+export async function renameContext(id, name) {
+  const res = await fetch(`${BASE}/contexts/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error(`renameContext failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteContext(id) {
+  const res = await fetch(`${BASE}/contexts/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`deleteContext failed: ${res.status}`);
+  return res.json();
+}
+
+export async function linkEventToContext(contextId, calendarId, uid) {
+  const res = await fetch(`${BASE}/context-event-links`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ context_id: contextId, calendar_id: calendarId, uid }),
+  });
+  if (!res.ok) throw new Error(`linkEventToContext failed: ${res.status}`);
+  return res.json();
+}
+
+export async function unlinkEventFromContext(calendarId, uid) {
+  const res = await fetch(
+    `${BASE}/context-event-links?calendar_id=${calendarId}&uid=${encodeURIComponent(uid)}`,
+    { method: 'DELETE' },
+  );
+  if (!res.ok && res.status !== 404) throw new Error(`unlinkEventFromContext failed: ${res.status}`);
+}
+
+export async function fetchTaskEventLinks(params) {
+  const q = new URLSearchParams(params).toString();
+  const res = await fetch(`${BASE}/task-event-links?${q}`);
+  if (!res.ok) throw new Error(`fetchTaskEventLinks failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createTaskEventLink(fields) {
+  const res = await fetch(`${BASE}/task-event-links`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error(`createTaskEventLink failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteTaskEventLink(id) {
+  const res = await fetch(`${BASE}/task-event-links/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`deleteTaskEventLink failed: ${res.status}`);
+  return res.json();
+}
+
+export async function updateTaskEventLink(id, fields) {
+  const res = await fetch(`${BASE}/task-event-links/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error(`updateTaskEventLink failed: ${res.status}`);
+  return res.json();
+}
+
+// Repositioning proposal for sessions related to a moved external event
+// (V5.0). Read-only — applying a choice goes through updateSession +
+// updateTaskEventLink so nothing ever moves without an explicit user act.
+export async function fetchEventMoveProposal(calendarId, uid) {
+  const res = await fetch(
+    `${BASE}/event-move-proposals?calendar_id=${calendarId}&uid=${encodeURIComponent(uid)}`,
+  );
+  if (!res.ok) throw new Error(`fetchEventMoveProposal failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchSuggestions() {
+  const res = await fetch(`${BASE}/suggestions`);
+  if (!res.ok) throw new Error(`fetchSuggestions failed: ${res.status}`);
+  return res.json();
+}
+
+// Academic importer (V5.3) — candidate pipeline. Importing only parses;
+// canonical records appear exclusively through explicit approvals.
+export async function academicImport(body) {
+  const res = await fetch(`${BASE}/academic/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`academicImport failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchAcademicCandidates(params = {}) {
+  const q = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v != null)),
+  ).toString();
+  const res = await fetch(`${BASE}/academic/candidates${q ? `?${q}` : ''}`);
+  if (!res.ok) throw new Error(`fetchAcademicCandidates failed: ${res.status}`);
+  return res.json();
+}
+
+export async function updateAcademicCandidate(id, fields) {
+  const res = await fetch(`${BASE}/academic/candidates/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error(`updateAcademicCandidate failed: ${res.status}`);
+  return res.json();
+}
+
+export async function approveAcademicCandidate(id, body = {}) {
+  const res = await fetch(`${BASE}/academic/candidates/${id}/approve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = `approveAcademicCandidate failed: ${res.status}`;
+    try { detail = (await res.json()).detail ?? detail; } catch { /* keep default */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+export async function rejectAcademicCandidate(id) {
+  const res = await fetch(`${BASE}/academic/candidates/${id}/reject`, { method: 'POST' });
+  if (!res.ok) throw new Error(`rejectAcademicCandidate failed: ${res.status}`);
+  return res.json();
+}
+
+export async function bulkAcademicCandidates(body) {
+  const res = await fetch(`${BASE}/academic/candidates/bulk`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`bulkAcademicCandidates failed: ${res.status}`);
+  return res.json();
+}
+
+// Execution analytics (V5.4) — read-only facts: planned vs actual, estimate
+// accuracy, behavioral patterns, and forward load. No scores.
+export async function fetchExecutionReport(start, end, includeEntries = false) {
+  const res = await fetch(
+    `${BASE}/reports/execution?start=${start}&end=${end}&include_entries=${includeEntries}`,
+  );
+  if (!res.ok) throw new Error(`fetchExecutionReport failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchEstimateReport() {
+  const res = await fetch(`${BASE}/reports/estimates`);
+  if (!res.ok) throw new Error(`fetchEstimateReport failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchPatternsReport() {
+  const res = await fetch(`${BASE}/reports/patterns`);
+  if (!res.ok) throw new Error(`fetchPatternsReport failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchForecast(weeks = 8) {
+  const res = await fetch(`${BASE}/forecast?weeks=${weeks}`);
+  if (!res.ok) throw new Error(`fetchForecast failed: ${res.status}`);
+  return res.json();
+}
+
+// Natural-language scheduling (V5.2) — interpretation only; the caller shows
+// the parsed proposal for confirmation before anything is created.
+export async function parseNaturalLanguage(q) {
+  const res = await fetch(`${BASE}/nl/parse?q=${encodeURIComponent(q)}`);
+  if (!res.ok) throw new Error(`parseNaturalLanguage failed: ${res.status}`);
+  return res.json();
+}
+
+// Calendar search (V5.2) — params: q, types, start, end, context_id, depth,
+// status, calendar_id. Read-only.
+export async function searchCalendar(params) {
+  const clean = Object.fromEntries(
+    Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ''),
+  );
+  const res = await fetch(`${BASE}/search?${new URLSearchParams(clean)}`);
+  if (!res.ok) throw new Error(`searchCalendar failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchReminders() {
+  const res = await fetch(`${BASE}/reminders`);
+  if (!res.ok) throw new Error(`fetchReminders failed: ${res.status}`);
+  return res.json();
+}
+
 export async function previewImport(file) {
   const formData = new FormData();
   formData.append('file', file);
@@ -300,13 +796,49 @@ export async function previewImport(file) {
   return res.json();
 }
 
-export async function reorderTasks(orderedIds) {
+// sectionUpdates (optional): [{ id, section }] — cross-section drag moves,
+// applied by the backend in the same transaction as the ordering write.
+export async function reorderTasks(orderedIds, sectionUpdates) {
+  const body = { order: orderedIds };
+  if (sectionUpdates?.length) body.section_updates = sectionUpdates;
   const res = await fetch(`${BASE}/tasks/reorder`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ order: orderedIds }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`reorderTasks failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Sections (P12.1) — persisted manual section ordering.
+// Section name '' is the blank/"(no section)" group.
+// ---------------------------------------------------------------------------
+
+export async function fetchSections() {
+  return requestWithTimeout(`${BASE}/sections`, undefined, {
+    timeoutMs: READ_TIMEOUT_MS,
+    label: 'Sections request',
+    failureName: 'fetchSections',
+  });
+}
+
+export async function reorderSections(orderedNames) {
+  const res = await fetch(`${BASE}/sections/reorder`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ order: orderedNames }),
+  });
+  if (!res.ok) throw new Error(`reorderSections failed: ${res.status}`);
+  return res.json();
+}
+
+// Remove an EMPTY section from the ordering list (409 if it still has tasks).
+export async function deleteSectionOrder(name) {
+  const res = await fetch(`${BASE}/sections?name=${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error(`deleteSectionOrder failed: ${res.status}`);
   return res.json();
 }
 
@@ -315,9 +847,11 @@ export async function reorderTasks(orderedIds) {
 // ---------------------------------------------------------------------------
 
 export async function fetchReadingBooks() {
-  const res = await fetch(`${BASE}/reading/books`);
-  if (!res.ok) throw new Error(`fetchReadingBooks failed: ${res.status}`);
-  return res.json();
+  return requestWithTimeout(`${BASE}/reading/books`, undefined, {
+    timeoutMs: READ_TIMEOUT_MS,
+    label: 'Reading library request',
+    failureName: 'fetchReadingBooks',
+  });
 }
 
 export async function createReadingBook(fields) {
@@ -375,9 +909,11 @@ export async function createReadingEntry(bookId, page, opts = {}) {
 }
 
 export async function fetchReadingEntries(bookId) {
-  const res = await fetch(`${BASE}/reading/books/${bookId}/entries`);
-  if (!res.ok) throw new Error(`fetchReadingEntries failed: ${res.status}`);
-  return res.json();
+  return requestWithTimeout(`${BASE}/reading/books/${bookId}/entries`, undefined, {
+    timeoutMs: READ_TIMEOUT_MS,
+    label: 'Reading history request',
+    failureName: 'fetchReadingEntries',
+  });
 }
 
 export async function reorderReadingBooks(orderedIds) {

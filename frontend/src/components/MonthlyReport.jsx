@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { fetchTasks, fetchCompletions, fetchSnapshotPressure, fetchReadingBooks, fetchHiatusPeriodsInRange } from '../api.js';
+import ExecutionReport from './ExecutionReport.jsx';
 import { urgencyClass, urgencyLabel } from '../urgency.js';
+import { displayTitle } from '../linkUtils.js';
 import {
   completionSummary, consistency, finishedInPeriod,
   carriedForward, neglectedAllPeriod, sectionBreakdown, sectionPressureChange,
@@ -38,6 +40,9 @@ export default function MonthlyReport({ onOpenDashboard }) {
   const now = new Date();
   // Period = mode (week/month/quarter/year) + an anchor date inside it (P10.0).
   const [period, setPeriod] = useState({ mode: 'month', anchor: now });
+  // View: 'history' = the pressure/completions report below; 'execution' =
+  // planned-vs-actual + calibration + forecast (V5.5). Same period selector.
+  const [view, setView] = useState('history');
   const [tasks, setTasks] = useState(null);
   const [tasksError, setTasksError] = useState(null);
   const [completions, setCompletions] = useState(null);
@@ -172,6 +177,23 @@ export default function MonthlyReport({ onOpenDashboard }) {
           </div>
         </div>
         <div className="report-period">
+          <div className="report-period-modes" role="group" aria-label="Report view">
+            <button
+              className={`report-mode-btn${view === 'history' ? ' report-mode-btn--active' : ''}`}
+              aria-pressed={view === 'history'}
+              onClick={() => setView('history')}
+            >
+              History
+            </button>
+            <button
+              className={`report-mode-btn${view === 'execution' ? ' report-mode-btn--active' : ''}`}
+              aria-pressed={view === 'execution'}
+              onClick={() => setView('execution')}
+              title="Planned vs actual, estimate accuracy, execution patterns, and the upcoming-load forecast"
+            >
+              Execution
+            </button>
+          </div>
           <div className="report-period-modes" role="group" aria-label="Report period">
             {PERIOD_MODES.map((m) => (
               <button
@@ -193,7 +215,9 @@ export default function MonthlyReport({ onOpenDashboard }) {
         </div>
       </div>
 
-      <div className="report-body">
+      {view === 'execution' && <ExecutionReport start={start} end={end} />}
+
+      <div className="report-body" style={view === 'execution' ? { display: 'none' } : undefined}>
 
         {/* Summary tiles */}
         <div className="report-summary">
@@ -266,7 +290,7 @@ export default function MonthlyReport({ onOpenDashboard }) {
                     <tbody>
                       {staleness.candidates.map((c) => (
                         <tr key={c.id}>
-                          <td className="dash-task-name">{c.name}</td>
+                          <td className="dash-task-name">{displayTitle(c.name)}</td>
                           <td className="dash-muted">{c.section || '—'}</td>
                           <td className="dash-num">{c.days}d</td>
                           <td className="dash-muted">{c.reason}</td>
@@ -314,7 +338,7 @@ export default function MonthlyReport({ onOpenDashboard }) {
                       <table className="dash-table">
                         <tbody>
                           {activity.topTasks.map((t) => (
-                            <tr key={t.id}><td className="dash-task-name">{t.name}</td>
+                            <tr key={t.id}><td className="dash-task-name">{displayTitle(t.name)}</td>
                               <td className="dash-muted">{t.section}</td>
                               <td className="dash-num">{t.count}</td></tr>
                           ))}
@@ -338,7 +362,7 @@ export default function MonthlyReport({ onOpenDashboard }) {
                 <thead><tr><th>Task</th><th>Section</th><th>Category</th><th className="dash-th-num">Finished</th><th className="dash-th-num">Freq</th></tr></thead>
                 <tbody>
                   {finished.map((t) => (
-                    <tr key={t.id}><td className="dash-task-name">{t.name}</td>
+                    <tr key={t.id}><td className="dash-task-name">{displayTitle(t.name)}</td>
                       <td className="dash-muted">{t.section || '—'}</td>
                       <td className="dash-muted">{t.category || '—'}</td>
                       <td className="dash-num">{fmtDate(t.end_date)}</td>
@@ -361,7 +385,7 @@ export default function MonthlyReport({ onOpenDashboard }) {
                   {carried.map((t) => (
                     <tr key={t.id}>
                       <td><span className={`dash-urg-num ${urgencyClass(t.urgency)}`}>{(t.urgency ?? 0).toFixed(1)}</span></td>
-                      <td className="dash-task-name">{t.name}</td>
+                      <td className="dash-task-name">{displayTitle(t.name)}</td>
                       <td className="dash-muted">{t.section || '—'}</td>
                       <td className="dash-num">{(t.days_overdue ?? 0) > 0 ? `${t.days_overdue}d` : '—'}</td>
                       <td className="dash-muted">{urgencyLabel(t.urgency)}</td>
@@ -384,7 +408,7 @@ export default function MonthlyReport({ onOpenDashboard }) {
                   {neglected.map((t) => (
                     <tr key={t.id}>
                       <td><span className={`dash-urg-num ${urgencyClass(t.urgency)}`}>{(t.urgency ?? 0).toFixed(1)}</span></td>
-                      <td className="dash-task-name">{t.name}</td>
+                      <td className="dash-task-name">{displayTitle(t.name)}</td>
                       <td className="dash-muted">{t.section || '—'}</td>
                       <td className="dash-num">{t.priority}</td>
                       <td className="dash-muted">{t.latest_completion || 'never'}</td>
@@ -567,7 +591,7 @@ export default function MonthlyReport({ onOpenDashboard }) {
                     </div>
                     {hiatus.currentList.length > 0 && (
                       <div className="report-note">
-                        On hiatus: {hiatus.currentList.map((t) => t.name).join(', ')}
+                        On hiatus: {hiatus.currentList.map((t) => displayTitle(t.name)).join(', ')}
                       </div>
                     )}
                   </>

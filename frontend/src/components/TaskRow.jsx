@@ -281,7 +281,7 @@ export default function TaskRow({
   task, dates, todayStr, completions, notes, selectedCell, colLayout,
   selectedMetaCell, editingTextCell, rangeSelection,
   cellOverrides, editingOverrideCell, hiatusCells,
-  reorderEnabled, isDragOver, isDragSource, onHandlePointerDown,
+  reorderEnabled, dragOverEdge, isDragSource, onHandlePointerDown,
   onIncrement, onEdit, onSelect, onExtendRange,
   onSelectMeta, onStartTextEdit, onCommitTextEdit, onCancelTextEdit,
   onStartOverrideEdit, onCommitOverrideText, onCancelOverrideEdit,
@@ -313,7 +313,11 @@ export default function TaskRow({
   const isSelectedMeta = (col) => selectedMetaCell?.taskId === task.id && selectedMetaCell?.col === col;
   const isEditingMeta  = (col) => editingTextCell?.taskId  === task.id && editingTextCell?.col  === col;
 
-  const rowClass = ['task-row', isPaused ? 'paused' : '', isScheduled ? 'scheduled' : '', isEnded ? 'ended' : '', isDragOver ? 'drag-over' : '', isDragSource ? 'drag-source' : '']
+  // dragOverEdge: 'before' draws the insertion line above this row, 'after'
+  // below it — 'after' is what makes the true bottom of a section reachable.
+  const rowClass = ['task-row', isPaused ? 'paused' : '', isScheduled ? 'scheduled' : '', isEnded ? 'ended' : '',
+    dragOverEdge === 'before' ? 'drag-over' : '', dragOverEdge === 'after' ? 'drag-over-bottom' : '',
+    isDragSource ? 'drag-source' : '']
     .filter(Boolean).join(' ');
 
   const noteLinks = hasLinks(task.notes) ? extractLinks(task.notes) : [];

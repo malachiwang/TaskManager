@@ -260,6 +260,7 @@ html[data-appearance="dark"] .ws-inspector-badge {
 
 html[data-appearance="dark"] .edit-bar-btn.primary,
 html[data-appearance="dark"] .btn-add-task,
+html[data-appearance="dark"] .grid-status-retry,
 html[data-appearance="dark"] .task-modal-save,
 html[data-appearance="dark"] .ws-views-save-btn,
 html[data-appearance="dark"] .task-modal-seg-btn--active,
@@ -1457,6 +1458,38 @@ thead .meta-col {
   padding: 2px 6px;
   border-radius: 3px;
   font-style: normal;
+}
+
+/* Failed-load detail line (which request timed out) + its Retry action. */
+.grid-status-detail {
+  display: block;
+  margin-top: 4px;
+  font-style: normal;
+  font-size: 12px;
+}
+
+.grid-status-hint {
+  color: var(--muted);
+}
+
+.grid-status-actions {
+  margin-top: 14px;
+}
+
+/* Same treatment as .btn-add-task — see the dark-appearance rule above. */
+.grid-status-retry {
+  padding: 4px 12px;
+  font-family: inherit;
+  font-size: 12px;
+  font-style: normal;
+  cursor: pointer;
+  background: var(--ink);
+  color: #fff;
+  border: 1px solid var(--ink-2);
+}
+
+.grid-status-retry:hover {
+  background: var(--ink-2);
 }
 
 /* -------------------------------------------------------------------------
@@ -6892,3 +6925,1583 @@ select.task-modal-input {
 .rd-buy-link:hover { color: var(--accent-blue-strong, var(--accent)); }
 .rd-buy-nolink { color: var(--muted-2); }
 .rd-col-buynotes { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+
+/* -------------------------------------------------------------------------
+   Calendar (P12.0) — week/day scheduling surface
+   Depth hues (restrained, edge + pill only — never full saturated blocks):
+     D1 deep = accent blue · D2 focused = green · D3 shallow = neutral gray
+   Hour row height is --cal-hour-px (V5.1 density: 32/48/72px, set inline by
+   CalendarView from DENSITY_SCALES in calendarUtils.js) — the repeating
+   gradients below derive every stop from the same variable.
+   ---------------------------------------------------------------------- */
+
+.cal-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  font-family: var(--font-ui);
+  --cal-hour-px: 48px;
+}
+
+.cal-status {
+  margin: auto;
+  padding: 24px;
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.cal-status--error { color: var(--urg-crit); }
+
+/* ── Toolbar ── */
+.cal-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--rule);
+}
+.cal-toolbar-nav,
+.cal-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cal-nav-btn {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 3px 10px;
+  cursor: pointer;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  background: var(--bg-panel);
+  color: var(--ink-2);
+}
+.cal-nav-btn:hover { border-color: var(--accent); }
+.cal-nav-btn--today { font-size: 11px; }
+.cal-nav-btn.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.cal-range-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-left: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-seg {
+  display: inline-flex;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.cal-seg-btn {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 3px 12px;
+  cursor: pointer;
+  border: none;
+  background: var(--bg-panel);
+  color: var(--ink-2);
+}
+.cal-seg-btn + .cal-seg-btn { border-left: 1px solid var(--grid-border); }
+.cal-seg-btn:hover:not(.is-active) { background: var(--bg-hover); }
+.cal-seg-btn.is-active {
+  background: var(--ink);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* ── Main layout ── */
+.cal-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.cal-scroll {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* ── Sticky day headers ── */
+.cal-header-row {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--rule);
+}
+.cal-gutter-spacer { width: 56px; flex-shrink: 0; border-right: 1px solid var(--hair); }
+.cal-day-headers { flex: 1; display: flex; }
+.cal-day-header {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 4px;
+  font-family: inherit;
+  font-size: 11px;
+  border: none;
+  border-left: 1px solid var(--hair);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.cal-day-header:first-child { border-left: none; }
+.cal-day-header:hover { background: var(--bg-hover); color: var(--ink-2); }
+.cal-day-header-num {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.cal-day-header.is-today .cal-day-header-weekday { color: var(--accent); }
+.cal-day-header.is-today .cal-day-header-num {
+  color: #fff;
+  background: var(--accent);
+  border-radius: 999px;
+  min-width: 24px;
+  height: 24px;
+  line-height: 24px;
+  text-align: center;
+  padding: 0 4px;
+}
+
+/* ── Time grid ── */
+.cal-grid-row { display: flex; }
+.cal-gutter {
+  width: 56px;
+  flex-shrink: 0;
+  position: relative;
+  height: calc(var(--cal-hour-px) * 24);
+  border-right: 1px solid var(--hair);
+}
+.cal-gutter-hour {
+  position: absolute;
+  right: 6px;
+  transform: translateY(-50%);
+  font-size: 10px;
+  color: var(--muted-2);
+  font-variant-numeric: tabular-nums;
+  background: var(--paper);
+  padding: 0 2px;
+}
+
+.cal-days {
+  flex: 1;
+  display: flex;
+  position: relative;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.cal-day-col {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  height: calc(var(--cal-hour-px) * 24);
+  border-left: 1px solid var(--hair);
+  cursor: crosshair;
+  /* Time hierarchy (§15): :00 strongest, :30 secondary, :15/:45 faintest. */
+  background-image:
+    repeating-linear-gradient(to bottom,
+      var(--grid-border) 0 1px, transparent 1px var(--cal-hour-px)),
+    repeating-linear-gradient(to bottom,
+      transparent 0 calc(var(--cal-hour-px) / 2),
+      var(--hair) calc(var(--cal-hour-px) / 2) calc(var(--cal-hour-px) / 2 + 1px),
+      transparent calc(var(--cal-hour-px) / 2 + 1px) var(--cal-hour-px)),
+    repeating-linear-gradient(to bottom,
+      transparent 0 calc(var(--cal-hour-px) / 4),
+      color-mix(in srgb, var(--hair) 40%, transparent)
+        calc(var(--cal-hour-px) / 4) calc(var(--cal-hour-px) / 4 + 1px),
+      transparent calc(var(--cal-hour-px) / 4 + 1px) calc(var(--cal-hour-px) / 2));
+}
+.cal-day-col:first-child { border-left: none; }
+.cal-day-col.is-weekend { background-color: var(--weekend-bg); }
+.cal-day-col.is-today { background-color: var(--today-bg); }
+/* Day view (§16): one column fills the viewport — a full-surface tint reads
+   as a wash, so the Calendar stays neutral; the header pill and now-line
+   carry "today". */
+.cal-days--day .cal-day-col.is-today,
+.cal-days--day .cal-day-col.is-weekend { background-color: transparent; }
+
+/* ── Now indicator ── */
+.cal-now-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px solid var(--urg-crit);
+  z-index: 12;
+  pointer-events: none;
+}
+.cal-now-dot {
+  position: absolute;
+  left: -4px;
+  top: -5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--urg-crit);
+}
+
+/* ── Depth windows — quiet background regions ── */
+.cal-window {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  pointer-events: none;
+  border-left: 2px solid transparent;
+}
+/* Depth hue families (§18/§20): D1 red · D2 amber · D3 green. Windows use
+   the same hues far quieter than task blocks — capacity is background,
+   tasks are foreground. */
+.cal-window--d1 {
+  background: color-mix(in srgb, var(--urg-crit) 7%, transparent);
+  border-left-color: color-mix(in srgb, var(--urg-crit) 35%, transparent);
+}
+.cal-window--d2 {
+  background: color-mix(in srgb, var(--urg-mid) 8%, transparent);
+  border-left-color: color-mix(in srgb, var(--urg-mid) 35%, transparent);
+}
+.cal-window--d3 {
+  background: color-mix(in srgb, var(--good) 8%, transparent);
+  border-left-color: color-mix(in srgb, var(--good) 35%, transparent);
+}
+.cal-window-label {
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  opacity: 0.85;
+}
+.cal-window-del {
+  position: absolute;
+  top: 1px;
+  right: 3px;
+  pointer-events: auto;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 4px;
+  cursor: pointer;
+  opacity: 0.25;
+}
+.cal-window-del:hover { opacity: 1; color: var(--urg-crit); }
+
+/* ── Session blocks ── */
+.cal-block {
+  position: absolute;
+  z-index: 10;
+  box-sizing: border-box;
+  padding: 2px 5px 2px 6px;
+  border: 1px solid var(--grid-border);
+  border-left-width: 3px;
+  border-radius: 3px;
+  background: var(--bg-panel);
+  overflow: hidden;
+  cursor: grab;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.07);
+  font-size: 11px;
+  line-height: 1.25;
+}
+.cal-block:hover { border-color: var(--accent); border-left-width: 3px; z-index: 11; }
+.cal-block:active { cursor: grabbing; }
+.cal-block--d1 {
+  border-left-color: var(--urg-crit);
+  background: color-mix(in srgb, var(--urg-crit) 6%, var(--bg-panel));
+}
+.cal-block--d2 {
+  border-left-color: var(--urg-mid);
+  background: color-mix(in srgb, var(--urg-mid) 6%, var(--bg-panel));
+}
+.cal-block--d3 {
+  border-left-color: var(--good);
+  background: color-mix(in srgb, var(--good) 6%, var(--bg-panel));
+}
+.cal-block--d0 { border-left-color: var(--grid-border); }
+.cal-block.is-done { opacity: 0.55; }
+.cal-block.is-fixed { border-style: dashed; border-left-style: solid; }
+.cal-block.is-drag-source { opacity: 0.35; }
+
+.cal-block-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.cal-block-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--ink);
+}
+.cal-block-meta {
+  color: var(--muted);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.cal-block-check {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  border: 1px solid var(--grid-border);
+  border-radius: 2px;
+  background: var(--paper);
+  color: #fff;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.cal-block-check:hover { border-color: var(--accent); }
+.cal-block-check.is-done {
+  background: var(--good);
+  border-color: var(--good);
+}
+.cal-depth-pill {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0 4px;
+  border-radius: 2px;
+  color: var(--ink-2);
+  background: color-mix(in srgb, var(--muted-2) 15%, transparent);
+}
+.cal-depth-pill--d1 {
+  color: var(--urg-crit);
+  background: color-mix(in srgb, var(--urg-crit) 12%, transparent);
+}
+.cal-depth-pill--d2 {
+  color: var(--urg-mid);
+  background: color-mix(in srgb, var(--urg-mid) 12%, transparent);
+}
+.cal-depth-pill--d3 {
+  color: var(--good);
+  background: color-mix(in srgb, var(--good) 12%, transparent);
+}
+.cal-block-resize {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+/* ── Drag ghosts / selection ── */
+.cal-ghost {
+  position: absolute;
+  left: 2px;
+  right: 3px;
+  z-index: 15;
+  border: 1px dashed var(--accent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  pointer-events: none;
+  padding: 2px 6px;
+  overflow: hidden;
+}
+.cal-ghost--window {
+  border-color: var(--muted);
+  background: color-mix(in srgb, var(--muted-2) 12%, transparent);
+}
+.cal-ghost--move { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.cal-ghost-time {
+  font-size: 10px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Inline quick-create (modifier + drag) */
+.cal-creator-inline { pointer-events: auto; }
+.cal-creator-inline-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  outline: none;
+  padding: 0;
+}
+.cal-creator-inline-input::placeholder { color: var(--muted); }
+.cal-creator-error {
+  display: block;
+  font-size: 10px;
+  color: var(--urg-crit);
+}
+
+/* ── Popovers (creation + session detail) ── */
+.cal-popover {
+  position: fixed;
+  z-index: 1000;
+  background: var(--bg-panel);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  font-size: 12px;
+}
+.cal-popover-kicker {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+.cal-popover-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cal-popover-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.cal-popover-close {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.cal-popover-close:hover { color: var(--ink); }
+.cal-popover-time {
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+.cal-popover-hint { font-size: 11px; color: var(--muted); line-height: 1.45; }
+.cal-popover-error { font-size: 11px; color: var(--urg-crit); }
+.cal-popover-checkline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.cal-popover-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+}
+.cal-popover-actions--spread { justify-content: space-between; align-items: center; }
+.cal-popover-actions-right { display: flex; gap: 8px; }
+
+.cal-complete-btn {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  background: var(--bg-panel);
+  color: var(--ink-2);
+}
+.cal-complete-btn:hover { border-color: var(--good); }
+.cal-complete-btn.is-done {
+  background: color-mix(in srgb, var(--good) 14%, transparent);
+  border-color: var(--good);
+  color: var(--good);
+  font-weight: 600;
+}
+.cal-danger-btn {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  background: var(--bg-panel);
+  color: var(--urg-crit);
+}
+.cal-danger-btn:hover { border-color: var(--urg-crit); }
+
+/* Depth segmented control (popovers) */
+.cal-depth-seg {
+  display: inline-flex;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  overflow: hidden;
+  align-self: flex-start;
+}
+.cal-depth-seg-btn {
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  cursor: pointer;
+  border: none;
+  background: var(--bg-panel);
+  color: var(--muted);
+}
+.cal-depth-seg-btn + .cal-depth-seg-btn { border-left: 1px solid var(--grid-border); }
+.cal-depth-seg-btn:hover:not(.is-active) { background: var(--bg-hover); color: var(--ink-2); }
+.cal-depth-seg-btn.is-active { background: var(--ink); color: #fff; }
+.cal-depth-seg-btn--d1.is-active { background: var(--urg-crit); }
+.cal-depth-seg-btn--d2.is-active { background: var(--urg-mid); color: #1a1a1a; }
+.cal-depth-seg-btn--d3.is-active { background: var(--good); }
+
+/* ── Unscheduled drawer ── */
+/* Slides open/closed by animating width (§21/§22). Content sits in a
+   fixed-width inner column so text never reflows mid-animation, and the
+   drawer stays mounted so scroll position survives. */
+.cal-drawer {
+  width: 0;
+  flex-shrink: 0;
+  border-left: 0 solid var(--rule);
+  background: var(--bg-panel);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 16px;
+  transition: width 0.18s ease, border-left-width 0.18s ease;
+}
+.cal-drawer.is-open {
+  width: 360px;
+  border-left-width: 1px;
+}
+.cal-drawer-inner { width: 360px; }
+@media (prefers-reduced-motion: reduce) {
+  .cal-drawer { transition: none; }
+}
+.cal-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.cal-drawer-count {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-variant-numeric: tabular-nums;
+}
+.cal-drawer-hint {
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--hair);
+  line-height: 1.45;
+}
+.cal-drawer-empty { padding: 14px 12px; font-size: 12px; color: var(--muted); }
+.cal-drawer-group-title {
+  padding: 10px 12px 4px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+.cal-drawer-item {
+  margin: 3px 8px;
+  padding: 6px 8px 6px 10px;
+  border: 1px solid var(--grid-border);
+  border-left-width: 3px;
+  border-radius: 3px;
+  background: var(--paper);
+  cursor: grab;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cal-drawer-item:hover { border-color: var(--accent); border-left-width: 3px; }
+.cal-drawer-item:active { cursor: grabbing; }
+.cal-drawer-item--d1 { border-left-color: var(--urg-crit); }
+.cal-drawer-item--d2 { border-left-color: var(--urg-mid); }
+.cal-drawer-item--d3 { border-left-color: var(--good); }
+.cal-drawer-item-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cal-drawer-item-meta {
+  font-size: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Dark mode — keep block/popover shadows readable */
+html[data-appearance="dark"] .cal-block { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45); }
+html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55); }
+
+/* -------------------------------------------------------------------------
+   Ordering (P12.1) — section drag + task drop-edge indicators.
+   Same grammar as task-row drag: 2px ink insertion lines, accent-soft source.
+   ---------------------------------------------------------------------- */
+
+/* Task drop below a row — the counterpart of .drag-over's top line; this is
+   what makes "after the last task in a section" a visible, reachable spot. */
+.task-row.drag-over-bottom > td {
+  box-shadow: inset 0 -2px 0 0 var(--ink);
+}
+
+.section-drag-handle {
+  margin-right: 8px;
+}
+
+/* Section-drag insertion line above a section block… */
+.ws-section-row.ws-section-drop-before td {
+  box-shadow: inset 0 2px 0 0 var(--ink);
+}
+/* …and the section being dragged. */
+.ws-section-row.ws-section-drag-source td {
+  background: var(--accent-soft);
+}
+/* Task dragged onto a section header — inserts at the top of that section,
+   so the line sits under the header. */
+.ws-section-row.ws-drop-below td {
+  box-shadow: inset 0 -2px 0 0 var(--ink);
+}
+
+/* Floating name chip that follows the pointer during a section drag. */
+.section-drag-ghost {
+  position: fixed;
+  z-index: 9000;
+  pointer-events: none;
+  padding: 4px 10px;
+  background: var(--ink);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border-radius: 3px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  opacity: 0.95;
+}
+
+/* "Insert after the last section" — zero-height rule at the very bottom. */
+.ws-section-end-indicator td {
+  height: 0;
+  padding: 0;
+  border: none;
+  border-top: 2px solid var(--ink);
+}
+
+/* Empty section body — persists as a visible, droppable region. */
+.ws-section-empty-frozen {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg-panel);
+  padding: 6px 12px 6px 36px;
+  white-space: nowrap;
+  border-right: 2px solid var(--ink-2);
+  border-bottom: 1px solid var(--hair);
+}
+.ws-section-empty-overflow {
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--hair);
+}
+.ws-section-empty-note {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--muted);
+}
+.ws-section-empty-remove {
+  margin-left: 12px;
+  font-family: inherit;
+  font-size: 10px;
+  padding: 1px 7px;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.ws-section-empty-remove:hover {
+  color: var(--urg-crit);
+  border-color: var(--urg-crit);
+}
+.ws-section-empty-row.ws-drop-into td {
+  box-shadow: inset 0 0 0 2px var(--ink);
+  background: var(--accent-soft);
+}
+
+/* -------------------------------------------------------------------------
+   Calendar execution layer (P13.0) — now state, reconciliation, capacity,
+   protected windows. Same restraint as the base calendar: thin markers,
+   token colors, no gamification.
+   ---------------------------------------------------------------------- */
+
+/* The session the current-time line is inside right now. */
+.cal-block.is-now {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+.cal-now-chip {
+  flex-shrink: 0;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: var(--accent);
+  color: #fff;
+  margin-right: 2px;
+}
+
+/* Partial: half-done marker keeps the day's record honest without hiding it. */
+.cal-block.is-partial { opacity: 0.8; }
+.cal-block.is-partial .cal-block-check {
+  color: var(--good);
+  border-color: var(--good);
+  background: transparent;
+}
+
+/* Skipped: displaced work stays visible as history, clearly de-emphasized. */
+.cal-block.is-skipped {
+  opacity: 0.4;
+  border-style: dashed;
+  border-left-style: solid;
+}
+
+/* Advisory depth-mismatch cue (D1 task sitting in a D3 window). */
+.cal-mismatch {
+  flex-shrink: 0;
+  width: 11px;
+  height: 11px;
+  line-height: 11px;
+  text-align: center;
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--caution-text, var(--urg-mid));
+  background: color-mix(in srgb, var(--urg-mid) 18%, transparent);
+  cursor: help;
+}
+
+/* Protected windows — slightly firmer edge, still background-quiet. */
+.cal-window.is-protected { border-left-width: 3px; }
+
+/* This-day-vs-series mini menu on recurring windows. */
+.cal-window-menu {
+  position: absolute;
+  top: 1px;
+  right: 3px;
+  pointer-events: auto;
+  display: inline-flex;
+  gap: 3px;
+  background: var(--bg-panel);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 1px 3px;
+  z-index: 5;
+}
+.cal-window-menu button {
+  font-family: inherit;
+  font-size: 9px;
+  border: none;
+  background: transparent;
+  color: var(--ink-2);
+  padding: 1px 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cal-window-menu button:hover { color: var(--urg-crit); }
+
+/* Popover additions */
+.cal-popover-warn {
+  font-size: 11px;
+  color: var(--caution-text, var(--urg-mid));
+  background: var(--caution-bg, transparent);
+  border: 1px solid var(--caution-border, var(--urg-mid));
+  border-radius: 3px;
+  padding: 4px 8px;
+}
+.cal-popover-actual { color: var(--muted); }
+.cal-popover-effort {
+  font-size: 11px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.cal-popover-actions--wrap {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+.cal-flag-btn {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 9px;
+  cursor: pointer;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  background: var(--bg-panel);
+  color: var(--muted);
+}
+.cal-flag-btn:hover { border-color: var(--accent); color: var(--ink-2); }
+.cal-flag-btn.is-active {
+  border-color: var(--ink-2);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* Inline partial-minutes editor (popover + reconciliation rows). */
+.cal-partial-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.cal-partial-input {
+  width: 64px;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Toolbar review chip — quiet amber until opened. */
+.cal-review-btn {
+  border-color: var(--caution-border, var(--urg-mid));
+  color: var(--caution-text, var(--urg-mid));
+}
+.cal-review-btn.is-active {
+  border-color: var(--caution-border, var(--urg-mid));
+  color: var(--caution-text, var(--urg-mid));
+}
+
+/* Reconciliation panel — fixed under the toolbar's right side. */
+.cal-reconcile {
+  top: 96px;
+  right: 12px;
+  left: auto;
+  width: 360px;
+  max-height: min(60vh, 480px);
+  overflow-y: auto;
+}
+.cal-reconcile-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--hair);
+}
+.cal-reconcile-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.cal-reconcile-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cal-reconcile-time {
+  font-size: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.cal-reconcile-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.cal-reconcile-actions button {
+  font-family: inherit;
+  font-size: 10px;
+  padding: 2px 7px;
+  cursor: pointer;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  background: var(--bg-panel);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.cal-reconcile-actions button:hover { border-color: var(--accent); }
+
+/* -------------------------------------------------------------------------
+   Calendar UX refinement (P13.1) — creation editor, selection, time fields.
+   ---------------------------------------------------------------------- */
+
+/* Calendar-only entries (P14.0): same depth colors, but a round completion
+   marker instead of the Grid-task checkbox — linkage is never color-only. */
+.cal-block-check--entry {
+  border-radius: 50%;
+  border-style: dashed;
+}
+.cal-block-check--entry.is-done {
+  border-style: solid;
+}
+.cal-entry-chip {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0 5px;
+  border: 1px solid var(--grid-border);
+  border-radius: 999px;
+  color: var(--muted);
+  vertical-align: 1px;
+}
+
+/* Selected session (§30): keyboard target for E, visible without hover. */
+.cal-block.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--selection-blue, var(--accent-soft)), 0 1px 3px rgba(0, 0, 0, 0.14);
+  z-index: 12;
+}
+
+/* Pinned selection highlight while the creation UI is open (§3). */
+.cal-ghost--pinned {
+  border-style: solid;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* Richer creation popover (§5–§9). */
+.cal-creator { width: 380px; }
+.cal-creator-tabs { align-self: flex-start; }
+.cal-creator-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.cal-creator-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  min-width: 0;
+}
+.cal-creator-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cal-creator-priority {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.cal-creator-priority input {
+  width: 48px;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Existing-task selector (§7). */
+.cal-task-picker {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  display: flex;
+  flex-direction: column;
+}
+.cal-task-picker-empty {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+}
+.cal-task-picker-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  text-align: left;
+  padding: 6px 9px 6px 11px;
+  border: none;
+  border-left: 3px solid var(--grid-border);
+  border-bottom: 1px solid var(--hair);
+  background: var(--bg-panel);
+  cursor: pointer;
+  font-family: inherit;
+}
+.cal-task-picker-row:last-child { border-bottom: none; }
+.cal-task-picker-row:hover { background: var(--bg-hover); }
+.cal-task-picker-row--d1 { border-left-color: var(--urg-crit); }
+.cal-task-picker-row--d2 { border-left-color: var(--urg-mid); }
+.cal-task-picker-row--d3 { border-left-color: var(--good); }
+.cal-task-picker-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cal-task-picker-meta {
+  font-size: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Start / End / Duration fields (§9) — shared by creation and the editor. */
+.cal-time-fields {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.cal-time-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.cal-time-field input[type="time"] {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+  color-scheme: dark;
+  font-variant-numeric: tabular-nums;
+}
+html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-scheme: light; }
+.cal-time-duration {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ink-2);
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.cal-time-duration input {
+  width: 58px;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Calendar session editor — task-modal chrome at a compact width. */
+.cal-editor-shell { max-width: 520px; }
+
+/* -------------------------------------------------------------------------
+   Calendar V3 (P15.0) — external commitments, replanning, templates.
+   ---------------------------------------------------------------------- */
+
+/* External commitment blocks: outlined + source marker, read-only, Fixed.
+   Distinct from task sessions (checkbox) and entries (round marker) by
+   shape/affordance, not color (§9). */
+.cal-block--ext {
+  cursor: default;
+  border-style: solid;
+  border-left-width: 3px;
+  border-left-color: var(--muted-2);
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--bg-panel) 0 6px,
+    color-mix(in srgb, var(--muted-2) 7%, var(--bg-panel)) 6px 12px
+  );
+}
+.cal-block--ext:hover { border-color: var(--grid-border); border-left-color: var(--muted-2); }
+.cal-block--ext:active { cursor: default; }
+.cal-ext-marker {
+  flex-shrink: 0;
+  font-size: 9px;
+  color: var(--muted);
+}
+
+/* All-day external banners at the top of a day column. */
+.cal-allday {
+  position: absolute;
+  left: 2px;
+  right: 3px;
+  height: 16px;
+  z-index: 9;
+  font-size: 10px;
+  line-height: 16px;
+  padding: 0 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-2);
+  border: 1px solid var(--grid-border);
+  border-left: 3px solid var(--muted-2);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--muted-2) 8%, var(--bg-panel));
+  pointer-events: none;
+}
+
+/* Arm-mode banner (Schedule Remaining placement / template modes). */
+.cal-mode-banner {
+  flex-shrink: 0;
+  padding: 5px 14px;
+  background: var(--accent-soft, var(--bg-hover));
+  border-bottom: 1px solid var(--accent);
+  color: var(--ink);
+  font-size: 12px;
+}
+
+/* Day headers while a template mode is armed. */
+.cal-day-header.is-arm-target {
+  outline: 1px dashed var(--accent);
+  outline-offset: -3px;
+}
+
+/* External-calendar add form. */
+.cal-cal-add {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid var(--hair);
+  padding-top: 8px;
+}
+
+/* Shift plan dialog is wider than the standard confirm. */
+.cal-shift-plan {
+  width: 460px;
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+}
+.cal-reconcile-actions button.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* -------------------------------------------------------------------------
+   Contextual layer (P16.0) — Good Fits Now, coverage warnings, event detail.
+   ---------------------------------------------------------------------- */
+
+.cal-goodfits {
+  border-bottom: 1px solid var(--hair);
+  padding-bottom: 8px;
+}
+.cal-goodfits-gap {
+  padding: 2px 12px 6px;
+  font-size: 11px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.cal-goodfits-item { cursor: default; }
+.cal-goodfits-place {
+  align-self: flex-start;
+  margin-top: 3px;
+}
+
+.cal-coverage-warn {
+  color: var(--caution-text, var(--urg-mid));
+}
+
+.cal-ext-context,
+.cal-ext-links {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cal-ext-links .cal-drawer-group-title { padding: 0; }
+
+/* Protected-window override confirm. */
+.cal-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(0, 0, 0, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cal-confirm {
+  position: static;
+  width: 340px;
+}
+
+/* ── Command palette (V5.1 Part II) ── */
+.cmdk-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(0, 0, 0, 0.22);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 11vh;
+}
+.cmdk {
+  width: min(560px, calc(100vw - 32px));
+  background: var(--bg-panel);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.24);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.cmdk-input {
+  font-family: inherit;
+  font-size: 14px;
+  padding: 12px 14px;
+  border: none;
+  border-bottom: 1px solid var(--rule);
+  outline: none;
+  background: var(--bg-panel);
+  color: var(--ink);
+}
+.cmdk-list {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+}
+.cmdk-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  border: none;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+  border-radius: 4px;
+}
+.cmdk-row.is-active {
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  color: var(--ink);
+}
+.cmdk-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmdk-hint {
+  font-size: 11px;
+  color: var(--muted-2);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.cmdk-empty {
+  padding: 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ── Duplicate menu (V5.1 Part VII) ── */
+.cal-dup-menu {
+  border-top: 1px solid var(--hair);
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cal-dup-date {
+  width: 130px;
+  font-size: 12px;
+  padding: 3px 6px;
+}
+
+/* ── Calendar search (V5.2 Part V) ── */
+.cal-search {
+  top: 56px;
+  right: 16px;
+  width: 400px;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+.cal-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ── Academic importer (V5.3 Part VIII) ── */
+.acad-shell { width: min(760px, calc(100vw - 40px)); }
+.acad-textarea {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  resize: vertical;
+}
+.acad-bulkbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.acad-until {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: auto;
+}
+.acad-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 46vh;
+  overflow-y: auto;
+  padding-top: 6px;
+}
+.acad-row {
+  border: 1px solid var(--hair);
+  border-radius: 4px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.acad-row--approved { opacity: 0.72; }
+.acad-row--rejected { opacity: 0.45; }
+.acad-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.acad-status-mark { width: 14px; text-align: center; }
+.acad-kind {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  flex-shrink: 0;
+}
+.acad-title {
+  font-size: 13px;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: help;
+}
+.acad-when {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.acad-edit-title { flex: 1; }
+.acad-warn {
+  font-size: 12px;
+  color: var(--urg-mid);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.acad-created { font-size: 11px; color: var(--muted-2); }
+.acad-row-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+/* ── Execution report (V5.5 Part XIV) ── */
+.exec-report { display: flex; flex-direction: column; gap: 12px; }
+.exec-toggle { font-size: 12px; color: var(--muted); }
+.exec-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.exec-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--hair);
+  color: var(--ink-2);
+}
+.exec-table tr:last-child td { border-bottom: none; }
+.exec-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.exec-log--skipped td { opacity: 0.55; }
+.exec-log--scheduled td { opacity: 0.7; font-style: italic; }
+.exec-facts { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; }
+.exec-fact {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.exec-fact > span:last-child {
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.exec-insufficient { color: var(--muted-2); font-style: italic; }
+.exec-forecast { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; }
+.exec-week-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 4px 6px;
+  font-family: inherit;
+  font-size: 12px;
+  border: none;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+  border-radius: 3px;
+  text-align: left;
+}
+.exec-week-row:hover, .exec-week-row.is-open {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.exec-week-label {
+  width: 96px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.exec-week-bar {
+  flex: 1;
+  height: 10px;
+  display: flex;
+  background: color-mix(in srgb, var(--hair) 40%, transparent);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.exec-week-bar-fixed { background: var(--muted-2); height: 100%; }
+.exec-week-bar-flex { background: var(--accent); height: 100%; }
+.exec-week-nums {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.exec-week-detail {
+  padding: 4px 6px 8px 112px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.exec-undated { padding: 6px; border-top: 1px solid var(--hair); margin-top: 4px; }
+
+/* ── Dashboard semester signals (V5.5 Part XIII) ── */
+.dash-semester-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+.dash-signal { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.dash-signal-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+}
+.dash-signal-bars {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  height: 56px;
+}
+.dash-signal-week {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  height: 100%;
+  justify-content: flex-end;
+}
+.dash-signal-bar {
+  width: 100%;
+  max-width: 34px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  height: 44px;
+  gap: 1px;
+}
+.dash-signal-bar-flex { background: var(--accent); border-radius: 2px 2px 0 0; }
+.dash-signal-bar-fixed { background: var(--muted-2); border-radius: 0 0 2px 2px; }
+.dash-signal-week-label { font-size: 9px; color: var(--muted-2); }
+.dash-signal-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.dash-signal-copy { font-size: 12px; color: var(--ink-2); line-height: 1.45; }

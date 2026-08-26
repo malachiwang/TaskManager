@@ -369,4 +369,350 @@ def init_db() -> None:
         except Exception:
             pass  # Column already exists.
 
+    # ── Migration 12: Calendar (P12.0) — depth, estimates, sessions, windows ──
+    # Additive only. Tasks gain optional cognitive-depth (1 deep / 2 focused /
+    # 3 shallow) and an estimated total effort in minutes; both NULL for every
+    # existing task, which must keep behaving exactly as before.
+    #
+    # task_sessions: one row per scheduled work session. A task may have many
+    # sessions (multi-session model) — sessions are attempts/allocations of
+    # time, distinct from task completion. planned_* is the schedule the user
+    # set; actual_* is reserved for execution tracking and never overwrites
+    # planned history. Times are local-naive "YYYY-MM-DDTHH:MM" strings so
+    # range queries are plain string comparisons.
+    #
+    # depth_windows: user-declared cognitive-capacity regions, not tasks.
+    # Exactly one of date (one-off) or weekday (recurring, 0=Mon…6=Sun) is
+    # set. Times are minutes-from-midnight so windows are date-independent.
+    for ddl in (
+        "ALTER TABLE tasks ADD COLUMN depth INTEGER DEFAULT NULL",
+        "ALTER TABLE tasks ADD COLUMN estimated_minutes INTEGER DEFAULT NULL",
+    ):
+        try:
+            conn.execute(ddl)
+            conn.commit()
+        except Exception:
+            pass  # Column already exists.
+
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS task_sessions (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id        INTEGER          REFERENCES tasks(id) ON DELETE CASCADE,
+            title          TEXT    NOT NULL DEFAULT '',
+            depth          INTEGER          DEFAULT NULL,
+            planned_start  TEXT    NOT NULL,
+            planned_end    TEXT    NOT NULL,
+            actual_start   TEXT             DEFAULT NULL,
+            actual_end     TEXT             DEFAULT NULL,
+            actual_minutes INTEGER          DEFAULT NULL,
+            status         TEXT    NOT NULL DEFAULT 'scheduled',
+            is_fixed       INTEGER NOT NULL DEFAULT 0,
+            created_at     TEXT    NOT NULL,
+            updated_at     TEXT    NOT NULL,
+            CHECK (status IN ('scheduled', 'completed', 'partial', 'skipped')),
+            CHECK (is_fixed IN (0, 1)),
+            CHECK (planned_end > planned_start),
+            CHECK (depth IS NULL OR depth IN (1, 2, 3)),
+            CHECK (task_id IS NOT NULL OR TRIM(title) <> '')
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_sessions_task
+            ON task_sessions(task_id);
+
+        CREATE INDEX IF NOT EXISTS idx_sessions_start
+            ON task_sessions(planned_start);
+
+        CREATE TABLE IF NOT EXISTS depth_windows (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            depth         INTEGER NOT NULL,
+            date          TEXT             DEFAULT NULL,
+            weekday       INTEGER          DEFAULT NULL,
+            start_minutes INTEGER NOT NULL,
+            end_minutes   INTEGER NOT NULL,
+            protected     INTEGER NOT NULL DEFAULT 0,
+            created_at    TEXT    NOT NULL,
+            updated_at    TEXT    NOT NULL,
+            CHECK (depth IN (1, 2, 3)),
+            CHECK (protected IN (0, 1)),
+            CHECK (end_minutes > start_minutes),
+            CHECK (start_minutes >= 0 AND end_minutes <= 1440),
+            CHECK ((date IS NULL) != (weekday IS NULL)),
+            CHECK (weekday IS NULL OR (weekday >= 0 AND weekday <= 6))
+        );
+    """)
+    conn.commit()
+
+    # ── Migration 13: section_order (P12.1) — persisted manual section order ──
+    # Sections were previously implicit (derived from task encounter order in
+    # the display_order sort), which made them appear to move when tasks were
+    # created or reordered. This table makes the user's arrangement explicit:
+    # one row per section name, ordered by position. name '' represents the
+    # blank/"(no section)" group. Rows may exist with zero tasks (empty
+    # sections stay listed and remain drop targets).
+    so_existed = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='section_order'"
+    ).fetchone() is not None
+
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS section_order (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT    NOT NULL UNIQUE,
+            position   INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT    NOT NULL,
+            updated_at TEXT    NOT NULL
+        );
+    """)
+    conn.commit()
+
+    # One-time seed (only when the table was just created): capture the order
+    # the user currently sees (encounter order over display_order, id) so the
+    # upgrade preserves the existing visible arrangement exactly.
+    if not so_existed:
+        from datetime import datetime as _dt
+        now_iso = _dt.now().isoformat()
+        rows = conn.execute(
+            "SELECT section FROM tasks WHERE is_active = 1 ORDER BY display_order, id"
+        ).fetchall()
+        seen: set = set()
+        position = 0
+        for r in rows:
+            name = (r["section"] or "").strip()
+            if name in seen:
+                continue
+            seen.add(name)
+            conn.execute(
+                "INSERT INTO section_order (name, position, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?)",
+                (name, position, now_iso, now_iso),
+            )
+            position += 1
+        conn.commit()
+
+    # ── Migration 15: calendar-only entries (P14.0) ──────────────────────────
+    # Calendar records time; the Grid records obligations. A session may now
+    # exist WITHOUT a canonical task: task_id becomes nullable, and unlinked
+    # rows carry their own title and optional depth. Linked rows keep taking
+    # name/depth from the task (their title stays ''). SQLite cannot relax a
+    # NOT NULL constraint in place, so the table is rebuilt once, preserving
+    # ids and all planned/actual/status data.
+    ts_info = conn.execute("PRAGMA table_info(task_sessions)").fetchall()
+    ts_cols = {r[1] for r in ts_info}
+    ts_task_id_notnull = any(r[1] == "task_id" and r[3] == 1 for r in ts_info)
+    if ts_info and ("title" not in ts_cols or ts_task_id_notnull):
+        conn.executescript("""
+            CREATE TABLE task_sessions_new (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id        INTEGER          REFERENCES tasks(id) ON DELETE CASCADE,
+                title          TEXT    NOT NULL DEFAULT '',
+                depth          INTEGER          DEFAULT NULL,
+                planned_start  TEXT    NOT NULL,
+                planned_end    TEXT    NOT NULL,
+                actual_start   TEXT             DEFAULT NULL,
+                actual_end     TEXT             DEFAULT NULL,
+                actual_minutes INTEGER          DEFAULT NULL,
+                status         TEXT    NOT NULL DEFAULT 'scheduled',
+                is_fixed       INTEGER NOT NULL DEFAULT 0,
+                created_at     TEXT    NOT NULL,
+                updated_at     TEXT    NOT NULL,
+                CHECK (status IN ('scheduled', 'completed', 'partial', 'skipped')),
+                CHECK (is_fixed IN (0, 1)),
+                CHECK (planned_end > planned_start),
+                CHECK (depth IS NULL OR depth IN (1, 2, 3)),
+                CHECK (task_id IS NOT NULL OR TRIM(title) <> '')
+            );
+
+            INSERT INTO task_sessions_new (
+                id, task_id, planned_start, planned_end,
+                actual_start, actual_end, actual_minutes,
+                status, is_fixed, created_at, updated_at)
+            SELECT id, task_id, planned_start, planned_end,
+                   actual_start, actual_end, actual_minutes,
+                   status, is_fixed, created_at, updated_at
+            FROM task_sessions;
+
+            DROP TABLE task_sessions;
+            ALTER TABLE task_sessions_new RENAME TO task_sessions;
+
+            CREATE INDEX IF NOT EXISTS idx_sessions_task
+                ON task_sessions(task_id);
+            CREATE INDEX IF NOT EXISTS idx_sessions_start
+                ON task_sessions(planned_start);
+        """)
+        conn.commit()
+
+    # ── Migration 14: depth_window_skips (P13.0) — recurrence exceptions ─────
+    # One row = "this recurring depth window does not apply on this date".
+    # Deleting a weekly window on a single day inserts a skip instead of
+    # destroying the series. ON DELETE CASCADE cleans up with the window.
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS depth_window_skips (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            window_id  INTEGER NOT NULL REFERENCES depth_windows(id) ON DELETE CASCADE,
+            date       TEXT    NOT NULL,
+            created_at TEXT    NOT NULL,
+            UNIQUE (window_id, date)
+        );
+    """)
+    conn.commit()
+
+    # ── Migration 16: external calendars + depth window templates (P15.0) ────
+    # external_calendars: read-only ICS feed sources (Google Calendar secret
+    # iCal address, class schedules, …). external_events: expanded concrete
+    # occurrences, replaced wholesale on each successful sync — replace-all
+    # inside one transaction is what makes refresh duplicate-proof. A failed
+    # sync keeps the previous events and records last_error instead.
+    # depth_window_templates: user-defined reusable window sets; items is a
+    # JSON array of {depth, start_minutes, end_minutes, protected}.
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS external_calendars (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            name           TEXT    NOT NULL,
+            url            TEXT    NOT NULL,
+            visible        INTEGER NOT NULL DEFAULT 1,
+            last_synced_at TEXT             DEFAULT NULL,
+            last_error     TEXT             DEFAULT NULL,
+            created_at     TEXT    NOT NULL,
+            updated_at     TEXT    NOT NULL,
+            CHECK (visible IN (0, 1))
+        );
+
+        CREATE TABLE IF NOT EXISTS external_events (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            calendar_id INTEGER NOT NULL REFERENCES external_calendars(id) ON DELETE CASCADE,
+            uid         TEXT    NOT NULL DEFAULT '',
+            title       TEXT    NOT NULL DEFAULT '',
+            start       TEXT    NOT NULL,
+            end         TEXT    NOT NULL,
+            all_day     INTEGER NOT NULL DEFAULT 0,
+            CHECK (all_day IN (0, 1))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_extev_cal
+            ON external_events(calendar_id);
+        CREATE INDEX IF NOT EXISTS idx_extev_start
+            ON external_events(start);
+
+        CREATE TABLE IF NOT EXISTS depth_window_templates (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT    NOT NULL,
+            items      TEXT    NOT NULL DEFAULT '[]',
+            created_at TEXT    NOT NULL,
+            updated_at TEXT    NOT NULL
+        );
+    """)
+    conn.commit()
+
+    # ── Migration 17: contexts, due dates, event relationships (P16.0) ───────
+    # contexts: lightweight shared real-world context (course, project,
+    # recruiting process). Tasks reference it via context_id (SET NULL on
+    # delete — removing a context never deletes tasks). External event
+    # associations key on (calendar_id, uid) because occurrences are replaced
+    # wholesale on every sync; the uid is the stable series identity.
+    # task_event_links: explicit task ↔ external-event relationships
+    # (related / before / after) with optional relative offset; event_start
+    # remembers the occurrence the user linked so moved/cancelled events are
+    # detectable. tasks.due_date is a DEADLINE (distinct from end_date, which
+    # is lifecycle/finish semantics).
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS contexts (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT    NOT NULL,
+            created_at TEXT    NOT NULL,
+            updated_at TEXT    NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS context_event_links (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            context_id  INTEGER NOT NULL REFERENCES contexts(id) ON DELETE CASCADE,
+            calendar_id INTEGER NOT NULL REFERENCES external_calendars(id) ON DELETE CASCADE,
+            uid         TEXT    NOT NULL,
+            created_at  TEXT    NOT NULL,
+            UNIQUE (calendar_id, uid)
+        );
+
+        CREATE TABLE IF NOT EXISTS task_event_links (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id        INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            calendar_id    INTEGER NOT NULL REFERENCES external_calendars(id) ON DELETE CASCADE,
+            uid            TEXT    NOT NULL,
+            relation       TEXT    NOT NULL DEFAULT 'related',
+            offset_minutes INTEGER          DEFAULT NULL,
+            event_start    TEXT             DEFAULT NULL,
+            created_at     TEXT    NOT NULL,
+            updated_at     TEXT    NOT NULL,
+            CHECK (relation IN ('related', 'before', 'after'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_tel_task ON task_event_links(task_id);
+        CREATE INDEX IF NOT EXISTS idx_tel_event ON task_event_links(calendar_id, uid);
+    """)
+    conn.commit()
+
+    for ddl in (
+        "ALTER TABLE tasks ADD COLUMN due_date TEXT DEFAULT NULL",
+        "ALTER TABLE tasks ADD COLUMN context_id INTEGER DEFAULT NULL "
+        "REFERENCES contexts(id) ON DELETE SET NULL",
+    ):
+        try:
+            conn.execute(ddl)
+            conn.commit()
+        except Exception:
+            pass  # Column already exists.
+
+    # ── Migration 18: calendar-entry contexts (V5.0 Part I) ──────────────────
+    # Calendar-only entries may carry a context/course association. Relational
+    # metadata only: assigning or clearing it never changes the entry's
+    # schedule, depth, status, or linkage. Linked sessions keep taking context
+    # from their task — s.context_id is meaningful only while task_id is NULL.
+    # SET NULL keeps entries alive when a context is deleted.
+    try:
+        conn.execute(
+            "ALTER TABLE task_sessions ADD COLUMN context_id INTEGER DEFAULT NULL "
+            "REFERENCES contexts(id) ON DELETE SET NULL"
+        )
+        conn.commit()
+    except Exception:
+        pass  # Column already exists.
+
+    # ── Migration 19: academic importer candidates (V5.3 Part VIII) ──────────
+    # Candidate records extracted from pasted syllabi/schedules. Deliberately
+    # ISOLATED from canonical tables (§23/§55): a candidate becomes a task or
+    # calendar entry only through an explicit approval, and rejecting or
+    # deleting candidates never touches anything canonical. source_text keeps
+    # the exact line that produced each candidate (§27). weekdays is a JSON
+    # array for recurring class/office-hour rows. duplicate_of/date_conflict
+    # record what dedup found at import time (§30/§31).
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS academic_batches (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            context_id  INTEGER          REFERENCES contexts(id) ON DELETE SET NULL,
+            source_name TEXT    NOT NULL DEFAULT '',
+            created_at  TEXT    NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS academic_candidates (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id       INTEGER NOT NULL REFERENCES academic_batches(id) ON DELETE CASCADE,
+            context_id     INTEGER          REFERENCES contexts(id) ON DELETE SET NULL,
+            kind           TEXT    NOT NULL,
+            title          TEXT    NOT NULL,
+            date           TEXT             DEFAULT NULL,
+            start_minutes  INTEGER          DEFAULT NULL,
+            end_minutes    INTEGER          DEFAULT NULL,
+            weekdays       TEXT    NOT NULL DEFAULT '[]',
+            source_text    TEXT    NOT NULL DEFAULT '',
+            status         TEXT    NOT NULL DEFAULT 'pending',
+            duplicate_of   TEXT             DEFAULT NULL,
+            date_conflict  TEXT             DEFAULT NULL,
+            created_record TEXT             DEFAULT NULL,
+            created_at     TEXT    NOT NULL,
+            updated_at     TEXT    NOT NULL,
+            CHECK (status IN ('pending', 'approved', 'rejected'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_acand_batch
+            ON academic_candidates(batch_id);
+    """)
+    conn.commit()
+
     conn.close()

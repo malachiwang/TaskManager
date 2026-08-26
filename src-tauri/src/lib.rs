@@ -5,9 +5,10 @@ use tauri_plugin_shell::{
     ShellExt,
 };
 
-/// Keeps the sidecar process alive for the lifetime of the app.
-/// Dropping CommandChild sends SIGKILL to the process, so we hold it in
-/// managed state and let Tauri drop it on exit.
+/// Keeps the sidecar process alive for the lifetime of the app, and gives the
+/// exit handler something to terminate. tauri-plugin-shell's CommandChild has
+/// no Drop handler, so the child is NOT cleaned up automatically — see the
+/// RunEvent::Exit handler at the bottom of run().
 struct SidecarChild(Mutex<Option<CommandChild>>);
 
 pub fn run() {
@@ -87,6 +88,31 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // Terminate the sidecar when the app quits.
+            //
+            // Without this the sidecar outlives the app: tauri-plugin-shell's
+            // CommandChild has no Drop handler, so holding it in managed state
+            // never stops it — on quit it is reparented to launchd and keeps
+            // port 8765 bound. The next launch's sidecar then fails to bind and
+            // exits, leaving the new window talking to the stale backend.
+            //
+            // SIGTERM, not CommandChild::kill(): kill() sends SIGKILL, which
+            // terminates the PyInstaller bootloader but orphans the uvicorn
+            // process it spawned — that orphan is the one holding the port. The
+            // bootloader forwards SIGTERM to its child, so both exit cleanly.
+            if let tauri::RunEvent::Exit = event {
+                let state = app_handle.state::<SidecarChild>();
+                let child = state.0.lock().unwrap().take();
+                if let Some(child) = child {
+                    let pid = child.pid();
+                    let _ = std::process::Command::new("/bin/kill")
+                        .args(["-TERM", &pid.to_string()])
+                        .status();
+                    eprintln!("[taskos] sent SIGTERM to sidecar (pid {pid}) on exit");
+                }
+            }
+        });
 }

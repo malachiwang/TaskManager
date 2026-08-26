@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { fetchDashboard, fetchSnapshotPressure, fetchTasks } from '../api.js';
+import SemesterSignals from './SemesterSignals.jsx';
 import { urgencyClass, urgencyReason, urgencyLabel, URGENCY_BANDS } from '../urgency.js';
+import { displayTitle } from '../linkUtils.js';
 import {
   getDoNowTasks,
   getQuickWinTasks,
@@ -150,7 +152,7 @@ function TaskDiagnosisCard({ task, prefs, onDismiss, onSnooze }) {
       )}
       <div className="dashboard-diag-head">
         <span className={`dashboard-diag-urg ${urgencyClass(task.urgency)}`}>{(task.urgency ?? 0).toFixed(1)}</span>
-        <span className="dashboard-diag-name">{task.name}</span>
+        <span className="dashboard-diag-name">{displayTitle(task.name)}</span>
         <span className="dashboard-diag-meta">
           {task.section || '—'}{task.category ? ` · ${task.category}` : ''}
         </span>
@@ -443,7 +445,7 @@ function ActionTable({ rows, emptyText, reasonPrefix }) {
                 <UrgencyBar value={t.urgency} />
               </div>
             </td>
-            <td className="dash-task-name">{t.name}</td>
+            <td className="dash-task-name">{displayTitle(t.name)}</td>
             <td className="dash-muted">{t.section || '—'}</td>
             <td className="dash-num">{(t.days_overdue ?? 0) > 0 ? `${t.days_overdue}d` : '—'}</td>
             <td className="dash-num">{t.interval_days}d</td>
@@ -701,6 +703,10 @@ export default function Dashboard({ onOpenReports }) {
       </div>{/* /dashboard-command-panel */}
 
       <div className="ws-panels">
+        {/* ── Semester signals (V5.5 §49) — forward-looking, actionable only;
+            renders nothing when there is nothing worth attention. ── */}
+        <SemesterSignals tasks={tasks} />
+
         {/* ── Do Now (primary) ── */}
         <div className={`ws-frame ws-frame--full dashboard-donow${hidden('doNow') ? ' dashboard-hidden' : ''}`}>
           <div className="ws-frame-header">
@@ -744,7 +750,7 @@ export default function Dashboard({ onOpenReports }) {
                       onClick={() => handleSnooze(task.id, activeRecTypes)}>Snooze 30d</button>
                   </span>
                   <span className={`dash-urg-num ${urgencyClass(task.urgency)}`}>{task.urgency.toFixed(1)}</span>
-                  <span className="dashboard-triage-name">{task.name}</span>
+                  <span className="dashboard-triage-name">{displayTitle(task.name)}</span>
                   <span className="dashboard-diagnosis-chips">
                     {chips.map((c) => <span key={c} className="dashboard-diagnosis-chip">{c}</span>)}
                   </span>
@@ -776,7 +782,7 @@ export default function Dashboard({ onOpenReports }) {
                   <ul className="dashboard-reducer-list">
                     {pressureReducers.map(({ task, fill, relief }) => (
                       <li key={task.id}>
-                        <span className="dashboard-reducer-name" title={task.name}>{task.name}</span>
+                        <span className="dashboard-reducer-name" title={displayTitle(task.name)}>{displayTitle(task.name)}</span>
                         <span className="dashboard-reducer-bar"><span className="dashboard-reducer-fill" style={{ width: `${fill}%` }} /></span>
                         <span className={`dashboard-relief dashboard-relief--${relief.toLowerCase()}`}>{relief}</span>
                       </li>
@@ -820,7 +826,7 @@ export default function Dashboard({ onOpenReports }) {
                       <li key={task.id}>
                         <button className="dashboard-rec-btn" title="Hidden from Dashboard only · does not edit the task"
                           onClick={() => handleDismiss(task.id, 'frequency_mismatch')}>Dismiss</button>
-                        <span className="dashboard-mini-name">{task.name} <span className="dash-muted">· every {task.interval_days}d</span></span>
+                        <span className="dashboard-mini-name">{displayTitle(task.name)} <span className="dash-muted">· every {task.interval_days}d</span></span>
                         <span className="dashboard-mini-sugg">{suggestion}</span>
                       </li>
                     ))}
@@ -846,7 +852,7 @@ export default function Dashboard({ onOpenReports }) {
                           <li key={t.id}>
                             <button className="dashboard-rec-btn" title="Hidden from Dashboard only · does not edit the task"
                               onClick={() => handleDismiss(t.id, 'uncategorized')}>Dismiss</button>
-                            <span className="dashboard-mini-name">{t.name}</span>
+                            <span className="dashboard-mini-name">{displayTitle(t.name)}</span>
                             <span className={`dash-urg-num ${urgencyClass(t.urgency)}`}>{t.urgency.toFixed(1)}</span>
                           </li>
                         ))}
@@ -866,7 +872,7 @@ export default function Dashboard({ onOpenReports }) {
                       <li key={t.id}>
                         <button className="dashboard-rec-btn" title="Hidden from Dashboard only · does not edit the task"
                           onClick={() => handleDismiss(t.id, 'move_to_reading')}>Dismiss</button>
-                        <span className="dashboard-mini-name">{t.name}</span>
+                        <span className="dashboard-mini-name">{displayTitle(t.name)}</span>
                         <span className={`dash-urg-num ${urgencyClass(t.urgency)}`}>{t.urgency.toFixed(1)}</span>
                         <span className="dashboard-mini-sugg">Consider tracking in Reading Sheet.</span>
                       </li>
@@ -886,7 +892,7 @@ export default function Dashboard({ onOpenReports }) {
                   <ul className="dashboard-mini-list">
                     {importantNeglected.map((t) => (
                       <li key={t.id}>
-                        <span className="dashboard-mini-name">{t.name} <span className="dash-muted">· P{t.priority}</span></span>
+                        <span className="dashboard-mini-name">{displayTitle(t.name)} <span className="dash-muted">· P{t.priority}</span></span>
                         <span className={`dash-urg-num ${urgencyClass(t.urgency)}`}>{t.urgency.toFixed(1)}</span>
                         <span className="dash-muted">{(t.days_overdue ?? 0) > 0 ? `overdue ${t.days_overdue}d` : `stale ${t.days_since}d`}</span>
                       </li>

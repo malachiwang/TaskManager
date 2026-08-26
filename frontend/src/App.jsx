@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import TaskGrid from './components/TaskGrid.jsx';
+import CalendarView from './components/CalendarView.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import Archive from './components/Archive.jsx';
 import Settings from './components/Settings.jsx';
@@ -15,10 +16,15 @@ export default function App() {
   //   activeSheet — the primary spreadsheet surface (Tasks | Reading), chosen
   //     from the bottom worksheet-tab bar. Its value is preserved while a tool
   //     view is open, so returning from a tool lands back on the last sheet.
-  //   activeTool  — a supporting utility view (Dashboard | Archive | Settings)
-  //     opened from the top toolbar; null means "show the active sheet".
+  //   activeTool  — a supporting utility view (Calendar | Dashboard | Reports |
+  //     Archive | Settings) opened from the top toolbar; null means "show the
+  //     active sheet".
   const [activeSheet, setActiveSheet] = useState('tasks');
   const [activeTool, setActiveTool] = useState(null);
+
+  // Schedule-from-Grid (P16.0 §13/§15): a Grid task handed to the Calendar,
+  // which arms its placement mode and then consumes the request.
+  const [calendarPlaceTask, setCalendarPlaceTask] = useState(null);
 
   // Boot gate (P8.0B) — the surfaces (TaskGrid, ReadingSheet, …) each own their
   // inline data loading, so there is no global data store to wait on. What is
@@ -29,23 +35,50 @@ export default function App() {
   // then reveal the app. A hard cap guarantees we never trap the user on the
   // loading screen — if the backend stays down we still reveal the shell and
   // let each surface show its own error state.
+  //
+  // The cap is an INDEPENDENT timer, armed once when the effect starts. It used
+  // to be an elapsed-time check inside the probe's catch block, which is not a
+  // real deadline: a backend that accepts the connection but never answers left
+  // `await fetchHealth()` pending forever, so the catch block — and therefore
+  // the check — never ran, and the loading screen stayed up indefinitely.
+  // fetchHealth is now bounded too (HEALTH_TIMEOUT_MS), so each attempt
+  // settles; the standalone timer is the backstop that does not depend on it.
   const [booting, setBooting] = useState(true);
   useEffect(() => {
-    let cancelled = false;
-    const startedAt = Date.now();
     const MAX_WAIT_MS = 6000;
+    const RETRY_MS = 400;
+    let done = false;
+    let retryTimer = null;
+    let hardStopTimer = null;
+
+    // Reveal the shell at most once, and stop everything after. Also guards
+    // against setState from a probe that lands after unmount or after the cap.
+    function reveal() {
+      if (done) return;
+      done = true;
+      clearTimeout(retryTimer);
+      clearTimeout(hardStopTimer);
+      setBooting(false);
+    }
+
+    hardStopTimer = setTimeout(reveal, MAX_WAIT_MS);
+
     async function probe() {
       try {
         await fetchHealth();
-        if (!cancelled) setBooting(false);
+        reveal();
       } catch {
-        if (cancelled) return;
-        if (Date.now() - startedAt >= MAX_WAIT_MS) setBooting(false);
-        else setTimeout(probe, 400);
+        if (done) return;
+        retryTimer = setTimeout(probe, RETRY_MS);
       }
     }
     probe();
-    return () => { cancelled = true; };
+
+    return () => {
+      done = true;
+      clearTimeout(retryTimer);
+      clearTimeout(hardStopTimer);
+    };
   }, []);
 
   // Apply saved appearance on mount (P10.1: visual theme + mode + accent +
@@ -79,6 +112,7 @@ export default function App() {
           </div>
           {/* Utility/tool views — not primary sheets. */}
           <nav className="app-utility-nav" aria-label="Tools">
+            <button className={`tab${activeTool === 'calendar' ? ' active' : ''}`} onClick={() => setActiveTool('calendar')}>Calendar</button>
             <button className={`tab${activeTool === 'dashboard' ? ' active' : ''}`} onClick={() => setActiveTool('dashboard')}>Dashboard</button>
             <button className={`tab${activeTool === 'report' ? ' active' : ''}`} onClick={() => setActiveTool('report')}>Reports</button>
             <button className={`tab${activeTool === 'archive' ? ' active' : ''}`} onClick={() => setActiveTool('archive')}>Archive</button>
@@ -88,8 +122,21 @@ export default function App() {
       </header>
 
       <main className="app-main" data-tab={showingTool ? activeTool : activeSheet}>
-        {!showingTool && activeSheet === 'tasks' && <TaskGrid />}
+        {!showingTool && activeSheet === 'tasks' && (
+          <TaskGrid
+            onScheduleTask={(task) => {
+              setCalendarPlaceTask(task);
+              setActiveTool('calendar');
+            }}
+          />
+        )}
         {!showingTool && activeSheet === 'reading' && <ReadingSheet />}
+        {activeTool === 'calendar' && (
+          <CalendarView
+            placeRequest={calendarPlaceTask}
+            onPlaceRequestConsumed={() => setCalendarPlaceTask(null)}
+          />
+        )}
         {activeTool === 'dashboard' && <Dashboard onOpenReports={() => setActiveTool('report')} />}
         {activeTool === 'report' && <MonthlyReport onOpenDashboard={() => setActiveTool('dashboard')} />}
         {activeTool === 'archive' && <Archive />}

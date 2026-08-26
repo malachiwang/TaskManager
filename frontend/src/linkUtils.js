@@ -61,6 +61,28 @@ export function spliceMarkdownLink(text, start, end, label, rawUrl) {
   };
 }
 
+// Human-readable one-line title for COMPACT surfaces (dashboard cards,
+// report tables, calendar blocks, drawers). Display-only — callers must
+// never write this back to the record; the canonical name keeps its full
+// markdown/link payload for the Grid and full Task editor.
+//   [label](url)            → label
+//   Labelhttps://… (glued)  → Label            (legacy malformed titles)
+//   https://long/url        → host + short path
+export function displayTitle(raw) {
+  const value = String(raw ?? '');
+  if (!value) return '';
+  let out = value.replace(new RegExp(MARKDOWN_LINK_RE.source, 'g'), (m, label, url) =>
+    normalizeLinkLabel(label, '') || displayLinkLabel(url));
+  out = out.replace(new RegExp(URL_RE.source, 'gi'), (m, offset, str) => {
+    const url = stripTrailingPunct(m);
+    const trailing = m.slice(url.length);
+    const glued = offset > 0 && /\S/.test(str[offset - 1]);
+    return (glued ? '' : displayLinkLabel(normalizeHref(url) ?? url)) + trailing;
+  });
+  out = out.replace(/\s+/g, ' ').trim();
+  return out || value.trim();
+}
+
 export function displayLinkLabel(url) {
   try {
     const u = new URL(url);
