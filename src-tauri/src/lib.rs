@@ -20,21 +20,56 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(SidecarChild(Mutex::new(None)))
         .setup(|app| {
-            // Compute the platform app-data directory for the packaged DB.
-            // On macOS: ~/Library/Application Support/com.taskos.desktop/
-            let db_path = app
-                .path()
-                .app_data_dir()
-                .map_err(|e| format!("could not resolve app data directory: {e}"))?
-                .join("taskos.db");
+            // Canonical local database (P17 §4): ~/.taskmanager/taskos.db —
+            // the same path the dev backend documents, so the packaged app and
+            // development share exactly one dataset and the "old app vs new
+            // app" split cannot recur. Pre-P17 packaged builds stored the DB
+            // in the platform app-data dir; if the canonical file does not
+            // exist yet but that legacy DB does, adopt it by copying the DB
+            // plus its WAL/SHM companions (safe: this app has not opened it
+            // yet). When both exist, the canonical file wins and the legacy
+            // copy is left untouched.
+            let db_path = match std::env::var("HOME") {
+                Ok(home) => {
+                    let canonical_dir = std::path::PathBuf::from(&home).join(".taskmanager");
+                    std::fs::create_dir_all(&canonical_dir)
+                        .map_err(|e| format!("could not create {}: {e}", canonical_dir.display()))?;
+                    let canonical = canonical_dir.join("taskos.db");
+                    if !canonical.exists() {
+                        if let Ok(legacy_dir) = app.path().app_data_dir() {
+                            if legacy_dir.join("taskos.db").exists() {
+                                for ext in ["", "-wal", "-shm"] {
+                                    let src = legacy_dir.join(format!("taskos.db{ext}"));
+                                    if src.exists() {
+                                        let dst = canonical_dir.join(format!("taskos.db{ext}"));
+                                        if let Err(e) = std::fs::copy(&src, &dst) {
+                                            eprintln!("[taskos] legacy DB copy failed ({}): {e}", src.display());
+                                        }
+                                    }
+                                }
+                                eprintln!(
+                                    "[taskos] adopted legacy database from {}",
+                                    legacy_dir.display()
+                                );
+                            }
+                        }
+                    }
+                    canonical
+                }
+                // No HOME (never the case on macOS) — keep the old app-data
+                // behavior rather than failing to launch.
+                Err(_) => {
+                    let dir = app
+                        .path()
+                        .app_data_dir()
+                        .map_err(|e| format!("could not resolve app data directory: {e}"))?;
+                    std::fs::create_dir_all(&dir)
+                        .map_err(|e| format!("could not create app data directory: {e}"))?;
+                    dir.join("taskos.db")
+                }
+            };
 
             eprintln!("[taskos] db_path = {}", db_path.display());
-
-            // Ensure the directory exists before the sidecar tries to open it.
-            if let Some(parent) = db_path.parent() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| format!("could not create app data directory: {e}"))?;
-            }
 
             // Spawn the Python/FastAPI sidecar.
             // Tauri resolves: <Contents/MacOS>/taskos-server  (strips target-triple suffix)

@@ -728,13 +728,15 @@ export default function TaskModal({ task, sectionSuggestions = [], initialValues
                 </div>
               </div>
               <div className="task-modal-field">
-                <label className="task-modal-label" htmlFor="tm-lastdone">Manual last done</label>
+                <label className="task-modal-label" htmlFor="tm-due-date">Due date</label>
                 <TaskDatePicker
-                  id="tm-lastdone"
-                  value={form.manual_last_done_override}
-                  onChange={(v) => set('manual_last_done_override', v)}
+                  id="tm-due-date"
+                  value={form.due_date}
+                  onChange={(v) => set('due_date', v)}
                 />
-                <div className="task-modal-field-hint">MM/DD/YYYY</div>
+                <div className="task-modal-field-hint">
+                  Deadline for Calendar coverage math — distinct from End date.
+                </div>
               </div>
               <div className="task-modal-field">
                 <label className="task-modal-label" htmlFor="tm-active-from">Active from</label>
@@ -746,15 +748,13 @@ export default function TaskModal({ task, sectionSuggestions = [], initialValues
                 <div className="task-modal-field-hint">MM/DD/YYYY</div>
               </div>
               <div className="task-modal-field">
-                <label className="task-modal-label" htmlFor="tm-due-date">Due date</label>
+                <label className="task-modal-label" htmlFor="tm-lastdone">Manual last done</label>
                 <TaskDatePicker
-                  id="tm-due-date"
-                  value={form.due_date}
-                  onChange={(v) => set('due_date', v)}
+                  id="tm-lastdone"
+                  value={form.manual_last_done_override}
+                  onChange={(v) => set('manual_last_done_override', v)}
                 />
-                <div className="task-modal-field-hint">
-                  Deadline for Calendar coverage math — distinct from End date.
-                </div>
+                <div className="task-modal-field-hint">MM/DD/YYYY</div>
               </div>
               <div className="task-modal-field">
                 <label className="task-modal-label" htmlFor="tm-end-date">End date</label>

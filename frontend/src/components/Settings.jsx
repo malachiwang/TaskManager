@@ -895,9 +895,16 @@ D = days_since   I = interval_days`}</pre>
                 tracker. FastAPI backend, SQLite storage, React/Vite frontend. Built as a
                 personal productivity instrument.
               </p>
+              {/* Build identity (P17 §5) — the one place to check whether a
+                  packaged app is stale relative to the source tree. */}
+              <p style={{ marginTop: '8px', fontVariantNumeric: 'tabular-nums' }}>
+                Build: <code>{typeof __BUILD_INFO__ !== 'undefined' ? __BUILD_INFO__.commit : 'dev'}</code>
+                {typeof __BUILD_INFO__ !== 'undefined' ? ` · built ${__BUILD_INFO__.date}` : ''}
+              </p>
               <p style={{ marginTop: '8px' }}>
-                All data is stored in <code>taskos.db</code> at the project root. Gitignored,
-                never leaves your machine. No cloud, no account, no external runtime dependencies.
+                All data is stored locally in <code>~/.taskmanager/taskos.db</code> — one
+                canonical database shared by the desktop app and development. Never leaves
+                your machine. No cloud, no account, no external runtime dependencies.
               </p>
               <p style={{ marginTop: '8px', color: 'var(--muted)' }}>
                 Personal tool — not a public SaaS product. No notifications, no mobile, no
