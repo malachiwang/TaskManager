@@ -71,6 +71,33 @@ pub fn run() {
 
             eprintln!("[taskos] db_path = {}", db_path.display());
 
+            // Reclaim the sidecar port from a stale taskos-server (P17).
+            // A force-quit, crash, or plain SIGTERM to the UI never reaches
+            // the RunEvent::Exit handler below, so the old sidecar survives
+            // holding 8765 — and this instance's sidecar would fail to bind,
+            // leaving the window talking to a stale backend. Only processes
+            // whose command line is a taskos-server binary are touched.
+            if let Ok(out) = std::process::Command::new("/usr/sbin/lsof")
+                .args(["-ti", "tcp:8765"])
+                .output()
+            {
+                for pid in String::from_utf8_lossy(&out.stdout).split_whitespace() {
+                    let cmd = std::process::Command::new("/bin/ps")
+                        .args(["-o", "command=", "-p", pid])
+                        .output()
+                        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+                        .unwrap_or_default();
+                    if cmd.contains("taskos-server") {
+                        eprintln!("[taskos] reclaiming port 8765 from stale sidecar (pid {pid})");
+                        let _ = std::process::Command::new("/bin/kill")
+                            .args(["-TERM", pid])
+                            .status();
+                    }
+                }
+                // Give a reclaimed port a moment to release before binding.
+                std::thread::sleep(std::time::Duration::from_millis(400));
+            }
+
             // Spawn the Python/FastAPI sidecar.
             // Tauri resolves: <Contents/MacOS>/taskos-server  (strips target-triple suffix)
             let (mut rx, child) = app
