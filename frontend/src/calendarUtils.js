@@ -204,6 +204,39 @@ export function shiftPlannedDays(planned, deltaDays) {
   return `${addDaysIso(plannedDate(planned), deltaDays)}T${planned.slice(11, 16)}`;
 }
 
+// ---------------------------------------------------------------------------
+// Recurrence (Calendar Recurring Tasks) — human-readable rule summaries.
+// Weekdays use the backend convention 0=Mon…6=Sun. Mirrors backend
+// recurrence.describe() so live previews match saved labels.
+// ---------------------------------------------------------------------------
+
+const RECUR_DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const RECUR_DAY_FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday',
+  'Friday', 'Saturday', 'Sunday'];
+
+export function describeRecurrence({ weekdays = [], interval_weeks: interval = 1, until_date: until = null, count = null }) {
+  const days = [...new Set(weekdays)].sort((a, b) => a - b);
+  if (days.length === 0) return '';
+  let label;
+  if (days.length === 7 && interval === 1) {
+    label = 'Every day';
+  } else if (days.join(',') === '0,1,2,3,4' && interval === 1) {
+    label = 'Every weekday';
+  } else {
+    const dayPart = days.length === 1
+      ? RECUR_DAY_FULL[days[0]]
+      : days.map((d) => RECUR_DAY_SHORT[d]).join(', ');
+    label = interval === 1 ? `Every ${dayPart}` : `Every ${interval} weeks on ${dayPart}`;
+  }
+  if (until) {
+    const d = isoToDate(until);
+    label += ` · until ${MONTH_NAMES[d.getMonth()]} ${d.getDate()}`;
+  } else if (count) {
+    label += ` · ${count}×`;
+  }
+  return label;
+}
+
 // Whole minutes between two planned datetimes (end - start, floor 0).
 export function plannedDiffMinutes(startPlanned, endPlanned) {
   const ms = new Date(endPlanned) - new Date(startPlanned);

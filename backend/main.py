@@ -27,6 +27,7 @@ from fastapi.responses import Response
 from backend import academic
 from backend import database as db_config
 from backend import nl as nl_parser
+from backend import recurrence as recurrence_engine
 from backend import reports as reports_engine
 from backend.database import get_connection, init_db
 from backend.logic import (
@@ -712,6 +713,16 @@ def update_task(
                     "DELETE FROM completions WHERE task_id = ? AND completion_date > ?",
                     (task_id, end_date_val),
                 )
+                # Finished semantics for calendar recurrence: generation
+                # already stops past end_date; also drop still-scheduled,
+                # never-executed generated occurrences beyond it. Executed
+                # history (completed/partial/skipped, any actuals) stays.
+                conn.execute(
+                    "DELETE FROM task_sessions WHERE task_id = ? AND series_id IS NOT NULL "
+                    "AND occurrence_date > ? AND status = 'scheduled' "
+                    "AND actual_start IS NULL AND actual_end IS NULL AND actual_minutes IS NULL",
+                    (task_id, end_date_val),
+                )
             # Hiatus interval bookkeeping (P11.0) — only on an actual status
             # transition, so re-saving a task without changing status never
             # re-creates a deliberately deleted interval.
@@ -1254,6 +1265,13 @@ def list_sessions(
         params.extend([end + "T23:59", start + "T00:00"])
     query += " ORDER BY s.planned_start, s.id"
     conn = get_connection()
+    if start and end:
+        # Lazy, bounded recurrence materialization: occurrences due inside
+        # the requested window (plus series-start→today, for reconciliation)
+        # become real rows before the read. Duplicate-proof by construction —
+        # slot identity is (series_id, occurrence_date).
+        recurrence_engine.materialize_window(
+            conn, date.fromisoformat(start), date.fromisoformat(end), date.today())
     rows = conn.execute(query, params).fetchall()
     conn.close()
     return [_session_dict(r) for r in rows]
@@ -1407,6 +1425,16 @@ def update_session(session_id: int, body: SessionPatch):
         conn.close()
         raise
 
+    # Moving/resizing one recurring occurrence is a recurrence exception:
+    # the row detaches (series-level edits leave it alone) but keeps its
+    # slot identity, so the series never regenerates that date. Completion/
+    # actual/status changes do NOT detach — reconciling an occurrence is
+    # execution, not a schedule exception.
+    if session.get("series_id") is not None and (
+        "planned_start" in updates or "planned_end" in updates
+    ):
+        updates["series_detached"] = 1
+
     if updates:
         updates["updated_at"] = datetime.now().isoformat()
         set_clause = ", ".join(f"{col} = ?" for col in updates)
@@ -1424,17 +1452,445 @@ def update_session(session_id: int, body: SessionPatch):
 
 
 @app.delete("/sessions/{session_id}")
-def delete_session(session_id: int):
-    """Remove a session. The underlying task and its completions are untouched."""
+def delete_session(session_id: int, scope: str = "occurrence"):
+    """Remove a session. The underlying task and its completions are untouched.
+
+    For a recurring occurrence, scope selects how much of the series goes:
+      occurrence — delete just this row and record a recurrence skip so the
+                   slot never regenerates (default; also the plain one-off
+                   path, where the skip is simply not needed)
+      following  — end the series the day before this occurrence and remove
+                   its still-scheduled future rows
+      all        — remove the whole series and every never-executed row
+    Executed truth (completed/partial/skipped rows, anything with actual
+    data) is never deleted by 'following'/'all'.
+    """
+    if scope not in ("occurrence", "following", "all"):
+        raise HTTPException(status_code=422, detail="scope must be occurrence, following, or all")
     conn = get_connection()
-    row = conn.execute("SELECT id FROM task_sessions WHERE id = ?", (session_id,)).fetchone()
+    row = conn.execute("SELECT * FROM task_sessions WHERE id = ?", (session_id,)).fetchone()
     if not row:
         conn.close()
         raise HTTPException(status_code=404, detail="Session not found")
+    session = dict(row)
+    series_id = session.get("series_id")
+    if scope != "occurrence" and series_id is None:
+        conn.close()
+        raise HTTPException(status_code=422, detail="Session is not part of a recurrence series")
+
+    occ_date = session.get("occurrence_date") or session["planned_start"][:10]
+    now = datetime.now().isoformat()
     with conn:
-        conn.execute("DELETE FROM task_sessions WHERE id = ?", (session_id,))
+        if scope == "occurrence":
+            if series_id is not None:
+                conn.execute(
+                    "INSERT OR IGNORE INTO recurrence_skips (series_id, date, created_at) "
+                    "VALUES (?, ?, ?)",
+                    (series_id, occ_date, now),
+                )
+            conn.execute("DELETE FROM task_sessions WHERE id = ?", (session_id,))
+        elif scope == "following":
+            new_until = (date.fromisoformat(occ_date) - timedelta(days=1)).isoformat()
+            conn.execute(
+                "UPDATE recurrence_series SET until_date = ?, updated_at = ? WHERE id = ?",
+                (new_until, now, series_id),
+            )
+            recurrence_engine.prune_unexecuted(conn, series_id, occ_date, include_detached=True)
+        else:  # all
+            recurrence_engine.prune_unexecuted(conn, series_id, "0000-01-01", include_detached=True)
+            # History rows keep existing via ON DELETE SET NULL; skips cascade.
+            conn.execute("DELETE FROM recurrence_series WHERE id = ?", (series_id,))
     conn.close()
-    return {"deleted": session_id}
+    return {"deleted": session_id, "scope": scope}
+
+
+# ---------------------------------------------------------------------------
+# Calendar recurrence series
+#
+# A series is a local recurring SCHEDULE ("every Tuesday 3–4 PM") for either
+# sessions of one canonical task or a calendar-only entry. This is scheduling
+# recurrence — deliberately distinct from the Grid's tasks.interval_days
+# pressure recurrence, and never offered for external ICS commitments (their
+# recurrence belongs to the source calendar).
+#
+# Occurrences are ordinary task_sessions rows materialized lazily by
+# GET /sessions (see recurrence.materialize_window). Every occurrence stays
+# individually executable — complete/partial/skip/move/reconcile touch only
+# that row.
+# ---------------------------------------------------------------------------
+
+class SeriesBody(BaseModel):
+    # from_session_id adopts an existing block as the series anchor: identity
+    # (task/title/depth/context/fixed) and any omitted rule fields come from
+    # that session — the one-click "Repeat weekly" path.
+    from_session_id: Optional[int] = None
+    task_id: Optional[int] = None
+    title: Optional[str] = None
+    depth: Optional[int] = None
+    context_id: Optional[int] = None
+    is_fixed: Optional[bool] = None
+    weekdays: Optional[list] = None       # 0=Mon…6=Sun
+    interval_weeks: int = 1
+    start_date: Optional[str] = None
+    start_minutes: Optional[int] = None
+    duration_minutes: Optional[int] = None
+    until_date: Optional[str] = None
+    count: Optional[int] = None
+
+
+class SeriesPatch(BaseModel):
+    # scope 'all' edits the rule in place (future planned occurrences follow,
+    # history and detached exceptions stay). scope 'following' splits the
+    # series at from_date, Google Calendar-style.
+    scope: str = "all"
+    from_date: Optional[str] = None
+    weekdays: Optional[list] = None
+    interval_weeks: Optional[int] = None
+    start_minutes: Optional[int] = None
+    duration_minutes: Optional[int] = None
+    until_date: Optional[str] = None      # '' clears (never ends)
+    count: Optional[int] = None           # 0 clears
+    is_fixed: Optional[bool] = None
+    # Entry-series identity edits (linked series take these from the task).
+    title: Optional[str] = None
+    depth: Optional[int] = None
+    context_id: Optional[int] = None
+
+
+def _series_dict(row) -> dict:
+    s = dict(row)
+    s["weekdays"] = recurrence_engine.parse_weekdays(s["weekdays"])
+    s["label"] = recurrence_engine.describe(s)
+    return s
+
+
+_SERIES_SELECT = """
+    SELECT rs.*, t.name AS task_name
+    FROM recurrence_series rs
+    LEFT JOIN tasks t ON t.id = rs.task_id
+    WHERE (rs.task_id IS NULL OR t.is_active = 1)
+"""
+
+
+def _validate_series_rule(weekdays, interval_weeks, start_minutes,
+                          duration_minutes, until_date, count) -> None:
+    if not weekdays:
+        raise HTTPException(status_code=422, detail="weekdays must not be empty")
+    for w in weekdays:
+        if not isinstance(w, int) or not 0 <= w <= 6:
+            raise HTTPException(status_code=422, detail="weekdays must be integers 0 (Mon) … 6 (Sun)")
+    if interval_weeks < 1:
+        raise HTTPException(status_code=422, detail="interval_weeks must be >= 1")
+    if not 0 <= start_minutes < 1440:
+        raise HTTPException(status_code=422, detail="start_minutes must be 0…1439")
+    if duration_minutes < 1:
+        raise HTTPException(status_code=422, detail="duration_minutes must be >= 1")
+    if until_date is not None:
+        _validate_iso_date(until_date, "until_date")
+    if count is not None and count < 1:
+        raise HTTPException(status_code=422, detail="count must be >= 1")
+
+
+@app.get("/recurrence-series")
+def list_recurrence_series():
+    """All recurrence series (small table; the client joins by series_id)."""
+    conn = get_connection()
+    rows = conn.execute(_SERIES_SELECT + " ORDER BY rs.id").fetchall()
+    conn.close()
+    return [_series_dict(r) for r in rows]
+
+
+@app.post("/recurrence-series", status_code=201)
+def create_recurrence_series(body: SeriesBody):
+    """Create a recurrence series — never a canonical task (the Grid task
+    count is untouched; §1). Occurrences materialize on the next sessions
+    fetch."""
+    conn = get_connection()
+    anchor = None
+    if body.from_session_id is not None:
+        row = conn.execute(
+            "SELECT * FROM task_sessions WHERE id = ?", (body.from_session_id,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Session not found")
+        anchor = dict(row)
+        if anchor["series_id"] is not None:
+            conn.close()
+            raise HTTPException(status_code=409, detail="Session already belongs to a series")
+
+    # Identity: from the anchor session when adopting, else from the body.
+    if anchor is not None:
+        task_id = anchor["task_id"]
+        title = anchor["title"] or ""
+        depth_val = anchor["depth"]
+        context_val = anchor["context_id"]
+        is_fixed = anchor["is_fixed"] if body.is_fixed is None else int(body.is_fixed)
+    else:
+        task_id = body.task_id
+        title = (body.title or "").strip()
+        depth_val = _normalize_depth(body.depth)
+        context_val = body.context_id or None
+        is_fixed = int(body.is_fixed or False)
+        if task_id is not None:
+            title, depth_val, context_val = "", None, None
+    if task_id is None and not title:
+        conn.close()
+        raise HTTPException(
+            status_code=422,
+            detail="Provide task_id (task series) or a non-empty title (entry series)")
+
+    # Rule: omitted fields default from the anchor session's planned block.
+    start_date = body.start_date
+    start_minutes = body.start_minutes
+    duration_minutes = body.duration_minutes
+    weekdays = body.weekdays
+    if anchor is not None:
+        a_start = anchor["planned_start"]
+        if start_date is None:
+            start_date = a_start[:10]
+        if start_minutes is None:
+            start_minutes = int(a_start[11:13]) * 60 + int(a_start[14:16])
+        if duration_minutes is None:
+            duration_minutes = _session_minutes(a_start, anchor["planned_end"])
+    if start_date is None or start_minutes is None or duration_minutes is None:
+        conn.close()
+        raise HTTPException(
+            status_code=422,
+            detail="start_date, start_minutes and duration_minutes are required without from_session_id")
+    _validate_iso_date(start_date, "start_date")
+    if weekdays is None:
+        weekdays = [date.fromisoformat(start_date).weekday()]
+    try:
+        _validate_series_rule(weekdays, body.interval_weeks, start_minutes,
+                              duration_minutes, body.until_date, body.count)
+        if task_id is not None and not conn.execute(
+            "SELECT id FROM tasks WHERE id = ? AND is_active = 1", (task_id,)
+        ).fetchone():
+            raise HTTPException(status_code=404, detail="Task not found")
+        if context_val is not None and not conn.execute(
+            "SELECT id FROM contexts WHERE id = ?", (context_val,)
+        ).fetchone():
+            raise HTTPException(status_code=404, detail="Context not found")
+    except HTTPException:
+        conn.close()
+        raise
+    weekdays = sorted(set(weekdays))
+
+    now = datetime.now().isoformat()
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO recurrence_series (task_id, title, depth, context_id, is_fixed, "
+            "interval_weeks, weekdays, start_date, start_minutes, duration_minutes, "
+            "until_date, count, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (task_id, title, depth_val, context_val, is_fixed,
+             body.interval_weeks, json.dumps(weekdays), start_date, start_minutes,
+             duration_minutes, body.until_date, body.count, now, now),
+        )
+        series_id = cur.lastrowid
+        if anchor is not None:
+            # Adopt the anchor block as its date's occurrence. If its planned
+            # times differ from the rule's, it is already an exception.
+            occ = anchor["planned_start"][:10]
+            exp_start, exp_end = recurrence_engine._planned_strings(
+                date.fromisoformat(occ), start_minutes, duration_minutes)
+            detached = int(anchor["planned_start"] != exp_start or anchor["planned_end"] != exp_end)
+            conn.execute(
+                "UPDATE task_sessions SET series_id = ?, occurrence_date = ?, "
+                "series_detached = ?, updated_at = ? WHERE id = ?",
+                (series_id, occ, detached, now, anchor["id"]),
+            )
+    row = conn.execute(_SERIES_SELECT + " AND rs.id = ?", (series_id,)).fetchone()
+    conn.close()
+    return _series_dict(row)
+
+
+@app.patch("/recurrence-series/{series_id}")
+def update_recurrence_series(series_id: int, body: SeriesPatch):
+    """Edit a series rule.
+
+    scope='all': the rule changes in place; still-scheduled future
+    occurrences are re-planned, while executed history and individually
+    moved (detached) occurrences are never rewritten (§43).
+    scope='following' (with from_date): the series is split — the existing
+    series ends the day before from_date and a new series carries the edited
+    rule forward. Prior history keeps its original times (§42).
+    """
+    if body.scope not in ("all", "following"):
+        raise HTTPException(status_code=422, detail="scope must be all or following")
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM recurrence_series WHERE id = ?", (series_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Series not found")
+    series = dict(row)
+
+    try:
+        merged = dict(series)
+        merged["weekdays"] = (body.weekdays
+                              if body.weekdays is not None
+                              else recurrence_engine.parse_weekdays(series["weekdays"]))
+        if body.interval_weeks is not None:
+            merged["interval_weeks"] = body.interval_weeks
+        if body.start_minutes is not None:
+            merged["start_minutes"] = body.start_minutes
+        if body.duration_minutes is not None:
+            merged["duration_minutes"] = body.duration_minutes
+        if body.until_date is not None:
+            merged["until_date"] = body.until_date or None
+        if body.count is not None:
+            merged["count"] = body.count or None
+        if body.is_fixed is not None:
+            merged["is_fixed"] = int(body.is_fixed)
+        _validate_series_rule(merged["weekdays"], merged["interval_weeks"],
+                              merged["start_minutes"], merged["duration_minutes"],
+                              merged["until_date"], merged["count"])
+        if series["task_id"] is not None and (
+            body.title is not None or body.depth is not None or body.context_id is not None
+        ):
+            raise HTTPException(
+                status_code=422, detail="Linked series take name/depth/context from the task")
+        if body.title is not None:
+            if not body.title.strip():
+                raise HTTPException(status_code=422, detail="title must not be blank")
+            merged["title"] = body.title.strip()
+        if body.depth is not None:
+            merged["depth"] = _normalize_depth(body.depth)
+        if body.context_id is not None:
+            if body.context_id == 0:
+                merged["context_id"] = None
+            else:
+                if not conn.execute(
+                    "SELECT id FROM contexts WHERE id = ?", (body.context_id,)
+                ).fetchone():
+                    raise HTTPException(status_code=404, detail="Context not found")
+                merged["context_id"] = body.context_id
+        if body.scope == "following":
+            if not body.from_date:
+                raise HTTPException(status_code=422, detail="from_date is required for scope=following")
+            _validate_iso_date(body.from_date, "from_date")
+    except HTTPException:
+        conn.close()
+        raise
+    merged["weekdays"] = sorted(set(merged["weekdays"]))
+
+    now = datetime.now().isoformat()
+    if body.scope == "all":
+        with conn:
+            conn.execute(
+                "UPDATE recurrence_series SET weekdays = ?, interval_weeks = ?, "
+                "start_minutes = ?, duration_minutes = ?, until_date = ?, count = ?, "
+                "is_fixed = ?, title = ?, depth = ?, context_id = ?, updated_at = ? "
+                "WHERE id = ?",
+                (json.dumps(merged["weekdays"]), merged["interval_weeks"],
+                 merged["start_minutes"], merged["duration_minutes"],
+                 merged["until_date"], merged["count"], merged["is_fixed"],
+                 merged["title"], merged["depth"], merged["context_id"], now, series_id),
+            )
+            # Re-plan the future under the new rule: today onward, scheduled,
+            # never-executed, not individually moved. Next fetch regenerates.
+            today_iso = date.today().isoformat()
+            recurrence_engine.prune_unexecuted(conn, series_id, today_iso)
+            if merged["until_date"]:
+                # A shortened end also removes moved-but-unexecuted plans
+                # beyond the series' new end.
+                after_end = (date.fromisoformat(merged["until_date"]) + timedelta(days=1)).isoformat()
+                recurrence_engine.prune_unexecuted(conn, series_id, after_end, include_detached=True)
+        out = conn.execute(_SERIES_SELECT + " AND rs.id = ?", (series_id,)).fetchone()
+        conn.close()
+        return _series_dict(out)
+
+    # scope == "following": split at from_date.
+    split = body.from_date
+    prev_until = (date.fromisoformat(split) - timedelta(days=1)).isoformat()
+    old_until = series["until_date"]
+    truncated_until = min(old_until, prev_until) if old_until else prev_until
+    new_count = None
+    if body.count is not None:
+        new_count = merged["count"]  # explicit override (0 cleared to None)
+    elif series["count"]:
+        consumed = len(recurrence_engine.occurrence_dates(
+            series, date.fromisoformat(series["start_date"]),
+            date.fromisoformat(prev_until)))
+        new_count = max(0, int(series["count"]) - consumed)
+    with conn:
+        conn.execute(
+            "UPDATE recurrence_series SET until_date = ?, updated_at = ? WHERE id = ?",
+            (truncated_until, now, series_id),
+        )
+        new_series_id = None
+        if new_count is None or new_count > 0:
+            cur = conn.execute(
+                "INSERT INTO recurrence_series (task_id, title, depth, context_id, is_fixed, "
+                "interval_weeks, weekdays, start_date, start_minutes, duration_minutes, "
+                "until_date, count, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (series["task_id"], merged["title"], merged["depth"], merged["context_id"],
+                 merged["is_fixed"], merged["interval_weeks"], json.dumps(merged["weekdays"]),
+                 split, merged["start_minutes"], merged["duration_minutes"],
+                 merged["until_date"] if body.until_date is not None else old_until,
+                 new_count, now, now),
+            )
+            new_series_id = cur.lastrowid
+            # Skips and moved-but-unexecuted exceptions from the split point
+            # onward carry over to the new series; executed history stays
+            # with the old one, untouched.
+            conn.execute(
+                "UPDATE recurrence_skips SET series_id = ? WHERE series_id = ? AND date >= ?",
+                (new_series_id, series_id, split),
+            )
+            conn.execute(
+                "UPDATE task_sessions SET series_id = ? WHERE series_id = ? "
+                "AND occurrence_date >= ? AND series_detached = 1 AND status = 'scheduled' "
+                "AND actual_start IS NULL AND actual_end IS NULL AND actual_minutes IS NULL",
+                (new_series_id, series_id, split),
+            )
+        recurrence_engine.prune_unexecuted(conn, series_id, split)
+    old_row = conn.execute(_SERIES_SELECT + " AND rs.id = ?", (series_id,)).fetchone()
+    new_row = (conn.execute(_SERIES_SELECT + " AND rs.id = ?", (new_series_id,)).fetchone()
+               if new_series_id else None)
+    conn.close()
+    return {
+        "series": _series_dict(old_row),
+        "new_series": _series_dict(new_row) if new_row else None,
+    }
+
+
+@app.delete("/recurrence-series/{series_id}")
+def delete_recurrence_series(series_id: int, from_date: Optional[str] = None):
+    """Stop or remove a series.
+
+    With from_date: the series ends the day before from_date ("stop starting
+    today") — future never-executed rows go, history stays.
+    Without: the whole series is removed; executed occurrences survive as
+    ordinary history rows (series_id becomes NULL).
+    """
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM recurrence_series WHERE id = ?", (series_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Series not found")
+    now = datetime.now().isoformat()
+    if from_date:
+        _validate_iso_date(from_date, "from_date")
+        new_until = (date.fromisoformat(from_date) - timedelta(days=1)).isoformat()
+        with conn:
+            conn.execute(
+                "UPDATE recurrence_series SET until_date = ?, updated_at = ? WHERE id = ?",
+                (new_until, now, series_id),
+            )
+            recurrence_engine.prune_unexecuted(conn, series_id, from_date, include_detached=True)
+        out = conn.execute(_SERIES_SELECT + " AND rs.id = ?", (series_id,)).fetchone()
+        conn.close()
+        return _series_dict(out)
+    with conn:
+        recurrence_engine.prune_unexecuted(conn, series_id, "0000-01-01", include_detached=True)
+        conn.execute("DELETE FROM recurrence_series WHERE id = ?", (series_id,))
+    conn.close()
+    return {"deleted": series_id}
 
 
 class DepthWindowBody(BaseModel):

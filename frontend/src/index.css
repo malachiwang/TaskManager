@@ -7429,11 +7429,22 @@ select.task-modal-input {
 .cal-popover-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px 8px;
   margin-top: 2px;
+  /* The popover owns its controls: rows reflow rather than letting any
+     button escape the fixed-width modal. Buttons wrap as whole units
+     (white-space below), never clip mid-label. */
+  flex-wrap: wrap;
+  min-width: 0;
 }
 .cal-popover-actions--spread { justify-content: space-between; align-items: center; }
-.cal-popover-actions-right { display: flex; gap: 8px; }
+.cal-popover-actions-right {
+  display: flex;
+  gap: 6px 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.cal-popover-actions button { white-space: nowrap; }
 
 .cal-complete-btn {
   font-family: inherit;
@@ -7726,6 +7737,98 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
   color: var(--caution-text, var(--urg-mid));
   background: color-mix(in srgb, var(--urg-mid) 18%, transparent);
   cursor: help;
+}
+
+/* Restrained recurrence marker on generated blocks (Calendar recurrence).
+   Same footprint family as the mismatch cue — informative, never dominant. */
+.cal-repeat-marker {
+  flex-shrink: 0;
+  font-size: 10px;
+  line-height: 11px;
+  color: var(--muted);
+  cursor: help;
+}
+
+/* Repeat chip row in the creation popover: Weekly one click away (§4). */
+.cal-creator-repeat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.cal-creator-repeat-label {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Live human-readable rule summary (§10) — creator, popover, and editor. */
+.cal-repeat-preview {
+  color: var(--ink-2, var(--ink));
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom rule panel in the editor: weekdays, interval, end condition. */
+.cal-repeat-custom {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.cal-repeat-days {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.cal-repeat-day {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 8px;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--muted);
+  cursor: pointer;
+}
+.cal-repeat-day--on {
+  background: var(--accent-soft, var(--bg-hover));
+  border-color: var(--accent);
+  color: var(--ink);
+  font-weight: 600;
+}
+.cal-repeat-interval {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-2, var(--ink));
+}
+.cal-repeat-interval input {
+  width: 52px;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.cal-repeat-ends {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cal-repeat-ends input[type="date"] {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
 }
 
 /* Protected windows — slightly firmer edge, still background-quiet. */
@@ -8118,6 +8221,14 @@ html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-sc
   font-size: 12px;
 }
 
+/* Once/Weekly toggle inside the placement banner (§24). */
+.cal-mode-banner-seg {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 10px;
+  vertical-align: middle;
+}
+
 /* Day headers while a template mode is armed. */
 .cal-day-header.is-arm-target {
   outline: 1px dashed var(--accent);
@@ -8190,6 +8301,27 @@ html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-sc
 .cal-confirm {
   position: static;
   width: 340px;
+}
+
+/* Scoped-remove radio list (recurring occurrences). Same wording family as
+   the recurrence-edit scope seg; radios because exactly one scope applies. */
+.cal-remove-scopes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0 2px;
+}
+.cal-remove-scope {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.cal-remove-scope input {
+  accent-color: var(--accent);
+  margin: 0;
 }
 
 /* ── Command palette (V5.1 Part II) ── */

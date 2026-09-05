@@ -435,6 +435,33 @@ accepted date change updates the existing task instead of duplicating.
 Rejected candidates create nothing; import failures never touch canonical
 tables.
 
+### Calendar recurrence (recurring sessions/entries)
+
+A `recurrence_series` row describes a local recurring SCHEDULE ("every
+Tuesday 3–4 PM") for one canonical task's sessions or one calendar-only
+entry — scheduling recurrence, deliberately distinct from the Grid's
+`tasks.interval_days` pressure recurrence, and never offered for external
+ICS commitments. Weekly is a one-click action everywhere a block is created
+(creator popover, quick popover "Repeat weekly", placement banner
+Once/Weekly, NL phrases like "every tuesday", "mwf", "every other thursday",
+"until dec 8"); custom rules add multi-weekday, every-N-weeks, and
+end-by-date/count.
+
+Occurrences are ordinary `task_sessions` rows materialized lazily over the
+fetched window (plus series-start→today for reconciliation), with
+deterministic slot identity `(series_id, occurrence_date)` enforced by a
+partial UNIQUE index — regeneration is duplicate-proof. Every occurrence
+stays individually executable; moving one detaches it (`series_detached`)
+and deleting one records a `recurrence_skips` row (the depth-window-skip
+pattern). Edits offer This occurrence / This and following (series split) /
+All occurrences; executed history and past planned times are never
+rewritten, recurrence never duplicates canonical tasks, and a Finished
+task's end_date stops future generation without touching history.
+Removal follows the same grammar: one-off blocks keep plain "Remove",
+recurring occurrences show "Remove…" and always require an explicit scope
+choice (defaulting to the narrowest, This occurrence) before anything is
+deleted.
+
 ### Execution analytics (Reports · Execution, Dashboard signals)
 
 `/reports/execution`, `/reports/estimates`, `/reports/patterns`, and

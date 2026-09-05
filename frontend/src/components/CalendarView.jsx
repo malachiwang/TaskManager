@@ -13,6 +13,7 @@ import {
   updateTaskEventLink, fetchEventMoveProposal,
   fetchSuggestions, fetchReminders,
   parseNaturalLanguage, searchCalendar,
+  fetchRecurrenceSeries, createRecurrenceSeries, deleteRecurrenceSeries,
 } from '../api.js';
 import {
   SNAP_MINUTES, MIN_SESSION_MINUTES, DEFAULT_SESSION_MINUTES, DAY_MINUTES,
@@ -24,6 +25,7 @@ import {
   formatHourLabel, formatTimeRange, formatTimeOfDay, durationLabel,
   dayHeaderLabel, fullDateLabel, rangeLabel,
   windowsOnDate, layoutBlocks, minutesToPx, pxToMinutes,
+  describeRecurrence,
 } from '../calendarUtils.js';
 import TaskModal from './TaskModal.jsx';
 import CalendarEditor, { TimeRangeFields } from './CalendarEditor.jsx';
@@ -87,6 +89,97 @@ function DepthSeg({ value, onChange, allowNone = true }) {
   );
 }
 
+// Scoped removal dialog for recurring occurrences. Removal on a series must
+// always answer "which part?" — the default is the narrowest scope (This
+// occurrence), never a broad one. The dialog owns its keys: Escape cancels,
+// Enter confirms, arrows move between the (native) radios; calendar
+// shortcuts are suppressed while it is open.
+function RemoveScopeDialog({ session, seriesLabel, onCancel, onConfirm }) {
+  const [scope, setScope] = useState('occurrence');
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
+
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        e.preventDefault();
+        onCancel();
+      } else if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') {
+        e.stopPropagation();
+        e.preventDefault();
+        onConfirm(scopeRef.current);
+      }
+    }
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [onCancel, onConfirm]);
+
+  const dateLabel = fullDateLabel(plannedDate(session.planned_start));
+  const options = [
+    {
+      value: 'occurrence',
+      label: 'This occurrence',
+      hint: `Remove ${dateLabel} only. Future occurrences will remain.`,
+    },
+    {
+      value: 'following',
+      label: 'This and following',
+      hint: `Remove ${dateLabel} and all following occurrences. Earlier history will remain.`,
+    },
+    {
+      value: 'all',
+      label: 'All occurrences',
+      hint: 'Remove this recurring series. Past execution history will be preserved.',
+    },
+  ];
+  const active = options.find((o) => o.value === scope);
+  return (
+    <div className="cal-confirm-overlay" onClick={onCancel}>
+      <div
+        className="cal-popover cal-confirm"
+        role="alertdialog"
+        aria-label="Remove recurring item"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="cal-popover-kicker">Remove recurring item</div>
+        <div className="cal-popover-name">{displayTitle(session.task_name)}</div>
+        {seriesLabel && (
+          <div className="cal-popover-hint cal-repeat-preview">↻ {seriesLabel}</div>
+        )}
+        <div className="cal-remove-scopes" role="radiogroup" aria-label="Removal scope">
+          {options.map((o) => (
+            <label key={o.value} className="cal-remove-scope">
+              <input
+                type="radio"
+                name="cal-remove-scope"
+                value={o.value}
+                checked={scope === o.value}
+                autoFocus={o.value === 'occurrence'}
+                onChange={() => setScope(o.value)}
+              />
+              <span>{o.label}</span>
+            </label>
+          ))}
+        </div>
+        <div className="cal-popover-hint" aria-live="polite">{active.hint}</div>
+        <div className="cal-popover-actions">
+          <button type="button" className="task-modal-cancel" onClick={onCancel}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="cal-danger-btn"
+            onClick={() => onConfirm(scope)}
+          >
+            Remove
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CalendarView({ placeRequest = null, onPlaceRequestConsumed = null }) {
   const [viewMode, setViewMode] = useState('week'); // 'week' | 'day'
   const [anchorIso, setAnchorIso] = useState(() => todayIso());
@@ -95,6 +188,9 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
   const [sessions, setSessions] = useState([]);
   const [upcomingSessions, setUpcomingSessions] = useState([]);
   const [recentSessions, setRecentSessions] = useState([]); // trailing 14d, for reconciliation
+  // Recurrence series (Calendar Recurring Tasks): rules behind recurring
+  // blocks. Blocks join by series_id for the ↻ marker and rule labels.
+  const [recurrenceSeries, setRecurrenceSeries] = useState([]);
   const [windows, setWindows] = useState([]);
   const [completions, setCompletions] = useState({}); // "taskId:date" -> count
   const [loading, setLoading] = useState(true);
@@ -113,6 +209,9 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
   const [partialEdit, setPartialEdit] = useState(null); // { sessionId, minutes }
   const [confirmAction, setConfirmAction] = useState(null); // { message, onConfirm }
   const [windowMenu, setWindowMenu] = useState(null); // { windowId, dateIso }
+  // Scoped removal of a recurring occurrence (never a silent delete):
+  // { sessionId } opens the This occurrence / This + following / All dialog.
+  const [removeFor, setRemoveFor] = useState(null);
 
   // External commitments (P15.0) — read-only ICS calendars. Their load and
   // sync failures never touch core surfaces (§12).
@@ -127,6 +226,9 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
   const [shiftPlan, setShiftPlan] = useState(null);   // { minutes, proposed: [...] }
   const [insteadFor, setInsteadFor] = useState(null); // { session, title, startMin, endMin, error }
   const [placingTask, setPlacingTask] = useState(null); // canonical task awaiting an interval
+  // §24 — [Once]/[Weekly] toggle on the placement banner: Weekly makes the
+  // placed session the anchor of a weekly series (sessions only, never tasks).
+  const [placingWeekly, setPlacingWeekly] = useState(false);
   const [templates, setTemplates] = useState([]);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [templateMode, setTemplateMode] = useState(null); // {type:'apply',tpl} | {type:'save'} | {type:'update',tpl}
@@ -180,6 +282,11 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
   const selectedSession = selected
     ? sessions.find((s) => s.id === selected.sessionId) ?? null
     : null;
+  const seriesById = useMemo(() => {
+    const map = {};
+    for (const rs of recurrenceSeries) map[rs.id] = rs;
+    return map;
+  }, [recurrenceSeries]);
 
   // Command palette (V5.1 Part II) + duplicate menu (Part VII) + density
   // (Part VI). Density is persisted; the module pixel scale and the CSS var
@@ -252,7 +359,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
     nudgeBaseRef.current = null; // server truth supersedes any keyboard base
     try {
       const today = todayIso();
-      const [tasksData, rangeSessions, upcoming, recent, windowsData, completionRows] =
+      const [tasksData, rangeSessions, upcoming, recent, windowsData, completionRows, seriesData] =
         await Promise.all([
           fetchTasks(),
           fetchSessions(rangeStart, rangeEnd),
@@ -260,11 +367,13 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
           fetchSessions(addDaysIso(today, -14), today),
           fetchDepthWindows(),
           fetchCompletions(rangeStart, rangeEnd),
+          fetchRecurrenceSeries(),
         ]);
       setTasks(tasksData);
       setSessions(rangeSessions);
       setUpcomingSessions(upcoming);
       setRecentSessions(recent);
+      setRecurrenceSeries(seriesData);
       setWindows(windowsData);
       const compMap = {};
       for (const row of completionRows) {
@@ -348,6 +457,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
     setQuickOpen(false);
     setConfirmAction(null);
     setWindowMenu(null);
+    setRemoveFor(null);
     setPartialEdit(null);
     setReconcileOpen(false);
     setCalsOpen(false);
@@ -355,6 +465,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
     setShiftPlan(null);
     setInsteadFor(null);
     setPlacingTask(null);
+    setPlacingWeekly(false);
     setTemplatesOpen(false);
     setTemplateMode(null);
     setTemplateRename(null);
@@ -415,7 +526,8 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
       if (paletteOpen) return; // the palette owns its own keys (incl. Escape)
       const tag = e.target.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable) return;
-      if (editingTask || editorSessionId || newTaskOpen || importOpen) return;
+      // The scoped-remove dialog owns its own keys (Escape/Enter/radios).
+      if (editingTask || editorSessionId || newTaskOpen || importOpen || removeFor) return;
       if (e.key === 'Escape') {
         // Staged dismissal (§4): transient UI first, selection second.
         updateDrag(null);
@@ -472,7 +584,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
     confirmAction, windowMenu, partialEdit, reconcileOpen, calsOpen, shiftOpen,
     shiftPlan, insteadFor, placingTask, templatesOpen, templateMode, remindersOpen,
     extDetail, paletteOpen, dupOpen, newTaskOpen, searchOpen, importOpen,
-    goToday, shiftPeriod, updateDrag]);
+    removeFor, goToday, shiftPeriod, updateDrag]);
 
   // ── Pointer → slot math ────────────────────────────────────────────────────
   const pointToSlot = useCallback((clientX, clientY) => {
@@ -561,14 +673,19 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
           ? Math.max(d.endMin, startMin + MIN_SESSION_MINUTES)
           : Math.min(DAY_MINUTES, startMin + dur);
         const task = placingTask;
+        const weekly = placingWeekly;
         setPlacingTask(null);
+        setPlacingWeekly(false);
         const commit = async () => {
           try {
-            await createSession({
+            const created = await createSession({
               task_id: task.id,
               planned_start: combinePlanned(d.dateIso, startMin),
               planned_end: combinePlannedEnd(d.dateIso, endMin),
             });
+            // §24 — Weekly armed in the placement banner: the placed block
+            // anchors a weekly series of the SAME canonical task.
+            if (weekly) await createRecurrenceSeries({ from_session_id: created.id });
           } catch (err) {
             console.error('schedule remaining failed:', err);
           }
@@ -594,6 +711,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
           dateIso: d.dateIso, startMin, endMin,
           title: '', depth: 0, isFixed: false,
           search: '',
+          repeat: null, // Calendar recurrence rule; null = one-off
           saving: false, error: '',
         });
       }
@@ -1252,6 +1370,15 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
   // ── Creation ───────────────────────────────────────────────────────────────
   // Default drag creation makes a CALENDAR-ONLY entry (P14.0) — nothing is
   // written to the Grid. "Add to main Grid…" is the explicit promotion path.
+
+  // Creator repeat rule (Calendar recurrence): null = one-off; otherwise
+  // { weekdays, interval_weeks, until_date?, count? }. The created block
+  // anchors the series (§22 — one extra click vs a one-off block).
+  async function attachCreatorRepeat(sessionId, repeat) {
+    if (!repeat) return;
+    await createRecurrenceSeries({ from_session_id: sessionId, ...repeat });
+  }
+
   async function commitCreateEntry() {
     const c = creator;
     if (!c || c.saving) return;
@@ -1262,7 +1389,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
     }
     setCreator((cc) => (cc ? { ...cc, saving: true, error: '' } : cc));
     try {
-      await createSession({
+      const entry = await createSession({
         title,
         depth: c.depth || null,
         context_id: c.nlContextId || null, // NL-matched course (V5.2), if any
@@ -1270,6 +1397,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
         planned_end: combinePlannedEnd(c.dateIso, c.endMin),
         is_fixed: !!c.isFixed,
       });
+      await attachCreatorRepeat(entry.id, c.repeat);
       setCreator(null);
       await loadData();
     } catch (err) {
@@ -1314,17 +1442,20 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
 
   // Existing-task mode (§7/§33): schedules ONE new session for the chosen
   // canonical task in the selected interval — never a duplicate task record.
+  // With a repeat rule armed, the session anchors a series (§23): the
+  // canonical task count stays unchanged, sessions recur.
   async function scheduleExistingTask(task) {
     const c = creator;
     if (!c || c.saving) return;
     const commit = async () => {
       setCreator((cc) => (cc ? { ...cc, saving: true, error: '' } : cc));
       try {
-        await createSession({
+        const created = await createSession({
           task_id: task.id,
           planned_start: combinePlanned(c.dateIso, c.startMin),
           planned_end: combinePlannedEnd(c.dateIso, c.endMin),
         });
+        await attachCreatorRepeat(created.id, c.repeat);
         setCreator(null);
         await loadData();
       } catch (err) {
@@ -1369,15 +1500,27 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
     }
   }
 
-  async function removeSession(sessionId) {
+  async function removeSession(sessionId, scope = 'occurrence') {
     setSelected(null);
     setSessions((prev) => prev.filter((s) => s.id !== sessionId));
     try {
-      await deleteSession(sessionId);
+      await deleteSession(sessionId, scope);
     } catch (err) {
       console.error('delete session failed:', err);
     }
     loadData();
+  }
+
+  // Scoped removal entry point: one-off blocks remove directly (unchanged
+  // semantics); recurring occurrences ALWAYS go through the scope dialog —
+  // "Remove" on a series must answer: which part of the series?
+  function requestRemove(s) {
+    setDupOpen(false);
+    if (s.series_id == null) {
+      removeSession(s.id);
+      return;
+    }
+    setRemoveFor({ sessionId: s.id });
   }
 
   // Depth change routes to the right canonical home: the task when linked,
@@ -1567,6 +1710,15 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
         depth: p.depth ?? 0,
         isFixed: !!p.is_fixed,
         search: p.task_name || '',
+        // Parsed repeat pattern (§36) — shown in the Repeat control and the
+        // assumptions line for confirmation before anything is created.
+        repeat: p.recurrence
+          ? {
+            weekdays: p.recurrence.weekdays,
+            interval_weeks: p.recurrence.interval_weeks,
+            until_date: p.recurrence.until_date || null,
+          }
+          : null,
         nlNotes: p.notes || [],
         nlContextId: p.context_id || null,
         nlContextName: p.context_name || null,
@@ -1640,8 +1792,33 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
       kind: 'task', mode: 'popover', tab: 'new',
       dateIso, startMin, endMin: Math.min(DAY_MINUTES, startMin + DEFAULT_SESSION_MINUTES),
       title: '', depth: 0, isFixed: false, search: '',
+      repeat: null,
       saving: false, error: '',
     });
+  }
+
+  // One-click weekly recurrence for an existing block (§20) — the block
+  // becomes the anchor of a weekly series on its own weekday and time.
+  async function repeatWeekly(s) {
+    try {
+      await createRecurrenceSeries({ from_session_id: s.id });
+    } catch (err) {
+      console.error('repeat weekly failed:', err);
+    }
+    setQuickOpen(false);
+    await loadData();
+  }
+
+  // Stop recurrence from tomorrow on (§38): today's plan and all history
+  // stay; nothing generates afterwards.
+  async function stopRecurrence(s) {
+    if (!s.series_id) return;
+    try {
+      await deleteRecurrenceSeries(s.series_id, addDaysIso(todayIso(), 1));
+    } catch (err) {
+      console.error('stop recurrence failed:', err);
+    }
+    await loadData();
   }
 
   function buildPaletteCommands() {
@@ -1722,6 +1899,29 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
           });
         }
       }
+      // Recurrence commands (§37) — only where they apply: local blocks,
+      // never external commitments (those aren't sessions and never reach
+      // this branch).
+      if (s.series_id == null) {
+        cmds.push({
+          id: 'sel-repeat-weekly', label: 'Repeat weekly',
+          keywords: 'recur recurring every series',
+          run: () => repeatWeekly(s),
+        });
+      } else {
+        cmds.push(
+          {
+            id: 'sel-edit-recurrence', label: 'Edit recurrence…',
+            keywords: 'repeat series rule weekly',
+            run: () => { setQuickOpen(false); setEditorSessionId(s.id); },
+          },
+          {
+            id: 'sel-stop-recurrence', label: 'Stop recurrence',
+            keywords: 'repeat end series cancel',
+            run: () => stopRecurrence(s),
+          },
+        );
+      }
       cmds.push(
         {
           id: 'sel-dup-tomorrow', label: 'Duplicate session · tomorrow',
@@ -1732,8 +1932,11 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
           keywords: 'another again', run: () => duplicateSession(s, 7),
         },
         {
-          id: 'sel-remove', label: linkedTask ? 'Remove session' : 'Remove entry',
-          keywords: 'delete', run: () => removeSession(s.id),
+          id: 'sel-remove',
+          label: s.series_id != null
+            ? 'Remove…'
+            : (linkedTask ? 'Remove session' : 'Remove entry'),
+          keywords: 'delete', run: () => requestRemove(s),
         },
       );
     }
@@ -1876,6 +2079,14 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
               className="cal-mismatch"
               title={`D${depth} task in D${mismatch.depth} window`}
             >!</span>
+          )}
+          {s.series_id != null && (
+            <span
+              className="cal-repeat-marker"
+              title={seriesById[s.series_id]?.label
+                ? `Repeats: ${seriesById[s.series_id].label}`
+                : 'Recurring'}
+            >↻</span>
           )}
           {depth != null && <span className={`cal-depth-pill cal-depth-pill--d${depth}`}>D{depth}</span>}
         </div>
@@ -2036,6 +2247,60 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
           endMin={creator.endMin}
           onChange={setTimes}
         />
+        {/* Repeat (Calendar recurrence §4/§22): Weekly is one click; the
+            created block anchors the series. Finer rules (multi-day,
+            interval, end date) live in the block's editor. */}
+        {(() => {
+          const wd = weekdayOfIso(creator.dateIso);
+          const presets = [
+            ['Weekly', { weekdays: [wd], interval_weeks: 1 }],
+            ['Daily', { weekdays: [0, 1, 2, 3, 4, 5, 6], interval_weeks: 1 }],
+            ['Weekdays', { weekdays: [0, 1, 2, 3, 4], interval_weeks: 1 }],
+          ];
+          const matches = (rule) => creator.repeat
+            && !creator.repeat.until_date && !creator.repeat.count
+            && (creator.repeat.interval_weeks || 1) === rule.interval_weeks
+            && JSON.stringify(creator.repeat.weekdays) === JSON.stringify(rule.weekdays);
+          return (
+            <>
+              <div className="cal-creator-repeat" role="group" aria-label="Repeat">
+                <span className="cal-creator-repeat-label">Repeat</span>
+                <button
+                  type="button"
+                  className={`cal-flag-btn${!creator.repeat ? ' is-active' : ''}`}
+                  aria-pressed={!creator.repeat}
+                  onClick={() => setCreator((c) => (c ? { ...c, repeat: null } : c))}
+                >
+                  None
+                </button>
+                {presets.map(([label, rule]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    className={`cal-flag-btn${matches(rule) ? ' is-active' : ''}`}
+                    aria-pressed={matches(rule)}
+                    title={label === 'Weekly'
+                      ? 'Every week, same weekday and time'
+                      : `Repeat ${label.toLowerCase()} at this time`}
+                    onClick={() => setCreator((c) => (c ? { ...c, repeat: rule } : c))}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {creator.repeat && (
+                <div className="cal-popover-hint cal-repeat-preview">
+                  ↻ {describeRecurrence({
+                    weekdays: creator.repeat.weekdays,
+                    interval_weeks: creator.repeat.interval_weeks || 1,
+                    until_date: creator.repeat.until_date || null,
+                    count: creator.repeat.count || null,
+                  })} · {formatTimeRange(creator.startMin, creator.endMin)}
+                </div>
+              )}
+            </>
+          );
+        })()}
         {/* NL interpretation transparency (V5.2 §10) — what was matched and
             what was assumed, shown BEFORE anything is created. */}
         {creator.nlContextName && (
@@ -2212,6 +2477,11 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
             </>
           )}
         </div>
+        {s.series_id != null && seriesById[s.series_id] && (
+          <div className="cal-popover-hint cal-repeat-preview">
+            ↻ Repeats: {seriesById[s.series_id].label}
+          </div>
+        )}
         {task?.estimated_minutes ? (
           <div className="cal-popover-effort">
             Effort: {durationLabel(task.logged_minutes ?? 0)} logged ·{' '}
@@ -2301,6 +2571,16 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
             >
               {s.is_fixed ? 'Fixed' : 'Flexible'}
             </button>
+            {s.series_id == null && (
+              <button
+                type="button"
+                className="cal-flag-btn"
+                title="Repeat this block every week — same weekday and time; the task or entry is never duplicated"
+                onClick={() => repeatWeekly(s)}
+              >
+                ↻ Repeat weekly
+              </button>
+            )}
             <button
               type="button"
               className={`cal-flag-btn${dupOpen ? ' is-active' : ''}`}
@@ -2323,10 +2603,12 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
             <button
               type="button"
               className="cal-danger-btn"
-              title="Remove this scheduled session — the task itself is untouched"
-              onClick={() => removeSession(s.id)}
+              title={s.series_id != null
+                ? 'Remove… — choose this occurrence, this and following, or all occurrences'
+                : 'Remove this scheduled session — the task itself is untouched'}
+              onClick={() => requestRemove(s)}
             >
-              Remove
+              {s.series_id != null ? 'Remove…' : 'Remove'}
             </button>
           </div>
         </div>
@@ -2629,6 +2911,29 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
               : templateMode.type === 'update'
                 ? `Click a day header to update “${templateMode.tpl.name}” from that day's windows · Esc cancels`
                 : 'Click a day header to save its depth windows as a template · Esc cancels'}
+          {placingTask && (
+            /* §24 — recurrence at placement time: Weekly makes the placed
+               block a weekly series anchor, no editor hunt afterwards. */
+            <span className="cal-mode-banner-seg" role="group" aria-label="Placement repeat">
+              <button
+                type="button"
+                className={`cal-flag-btn${!placingWeekly ? ' is-active' : ''}`}
+                aria-pressed={!placingWeekly}
+                onClick={() => setPlacingWeekly(false)}
+              >
+                Once
+              </button>
+              <button
+                type="button"
+                className={`cal-flag-btn${placingWeekly ? ' is-active' : ''}`}
+                aria-pressed={placingWeekly}
+                title="Repeat the placed session every week at the placed time"
+                onClick={() => setPlacingWeekly(true)}
+              >
+                ↻ Weekly
+              </button>
+            </span>
+          )}
         </div>
       )}
 
@@ -3567,6 +3872,27 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
       />
 
       {/* Protected-window override (§8) — always permits scheduling. */}
+      {/* Scoped removal of a recurring occurrence — Remove… never deletes
+          without an explicit scope choice. */}
+      {removeFor && (() => {
+        const rs = sessions.find((x) => x.id === removeFor.sessionId)
+          ?? recentSessions.find((x) => x.id === removeFor.sessionId)
+          ?? upcomingSessions.find((x) => x.id === removeFor.sessionId);
+        if (!rs) return null;
+        return (
+          <RemoveScopeDialog
+            session={rs}
+            seriesLabel={rs.series_id != null ? seriesById[rs.series_id]?.label : null}
+            onCancel={() => setRemoveFor(null)}
+            onConfirm={(scope) => {
+              setRemoveFor(null);
+              setQuickOpen(false);
+              removeSession(rs.id, scope);
+            }}
+          />
+        );
+      })()}
+
       {confirmAction && (
         <div className="cal-confirm-overlay" onClick={() => setConfirmAction(null)}>
           <div className="cal-popover cal-confirm" role="alertdialog" aria-label="Protected window"
@@ -3603,6 +3929,9 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
           <CalendarEditor
             session={editorSession}
             task={editorTask}
+            series={editorSession.series_id != null
+              ? seriesById[editorSession.series_id] ?? null
+              : null}
             sectionSuggestions={sectionSuggestions}
             contexts={contexts}
             onClose={() => setEditorSessionId(null)}

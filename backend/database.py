@@ -715,4 +715,78 @@ def init_db() -> None:
     """)
     conn.commit()
 
+    # ── Migration 20: Calendar recurrence series ─────────────────────────────
+    # recurrence_series: one row per local recurring schedule ("every Tuesday
+    # 3–4 PM"). It describes SCHEDULING (recurring sessions/entries), never
+    # Grid obligation — tasks.interval_days keeps its own meaning. Exactly one
+    # identity: task_id set (recurring sessions of one canonical task) or
+    # task_id NULL + title (recurring calendar-only entry). weekdays is a JSON
+    # array (0=Mon…6=Sun, matching depth_windows); interval_weeks 1 = weekly.
+    # End condition: until_date (inclusive) and/or count (occurrence slots
+    # from start_date); both NULL = never ends.
+    #
+    # Occurrences are ordinary task_sessions rows materialized lazily over the
+    # fetched calendar window: series_id ties them to the rule and
+    # occurrence_date is the deterministic slot identity — the partial UNIQUE
+    # index makes regeneration duplicate-proof by construction. series_detached
+    # marks an occurrence the user moved/edited individually; series-level
+    # edits leave detached rows alone. Deleting one occurrence records a
+    # recurrence_skips row (same pattern as depth_window_skips) so the slot is
+    # never regenerated. History rows keep series_id via ON DELETE SET NULL —
+    # destroying a series must never destroy executed truth.
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS recurrence_series (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id          INTEGER          REFERENCES tasks(id) ON DELETE CASCADE,
+            title            TEXT    NOT NULL DEFAULT '',
+            depth            INTEGER          DEFAULT NULL,
+            context_id       INTEGER          DEFAULT NULL REFERENCES contexts(id) ON DELETE SET NULL,
+            is_fixed         INTEGER NOT NULL DEFAULT 0,
+            interval_weeks   INTEGER NOT NULL DEFAULT 1,
+            weekdays         TEXT    NOT NULL DEFAULT '[]',
+            start_date       TEXT    NOT NULL,
+            start_minutes    INTEGER NOT NULL,
+            duration_minutes INTEGER NOT NULL,
+            until_date       TEXT             DEFAULT NULL,
+            count            INTEGER          DEFAULT NULL,
+            created_at       TEXT    NOT NULL,
+            updated_at       TEXT    NOT NULL,
+            CHECK (is_fixed IN (0, 1)),
+            CHECK (interval_weeks >= 1),
+            CHECK (start_minutes >= 0 AND start_minutes < 1440),
+            CHECK (duration_minutes > 0),
+            CHECK (count IS NULL OR count >= 1),
+            CHECK (depth IS NULL OR depth IN (1, 2, 3)),
+            CHECK (task_id IS NOT NULL OR TRIM(title) <> '')
+        );
+
+        CREATE TABLE IF NOT EXISTS recurrence_skips (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            series_id  INTEGER NOT NULL REFERENCES recurrence_series(id) ON DELETE CASCADE,
+            date       TEXT    NOT NULL,
+            created_at TEXT    NOT NULL,
+            UNIQUE (series_id, date)
+        );
+    """)
+    conn.commit()
+
+    for ddl in (
+        "ALTER TABLE task_sessions ADD COLUMN series_id INTEGER DEFAULT NULL "
+        "REFERENCES recurrence_series(id) ON DELETE SET NULL",
+        "ALTER TABLE task_sessions ADD COLUMN occurrence_date TEXT DEFAULT NULL",
+        "ALTER TABLE task_sessions ADD COLUMN series_detached INTEGER NOT NULL DEFAULT 0",
+    ):
+        try:
+            conn.execute(ddl)
+            conn.commit()
+        except Exception:
+            pass  # Column already exists.
+
+    conn.executescript("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_series_occurrence
+            ON task_sessions(series_id, occurrence_date)
+            WHERE series_id IS NOT NULL AND occurrence_date IS NOT NULL;
+    """)
+    conn.commit()
+
     conn.close()

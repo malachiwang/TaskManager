@@ -8,6 +8,10 @@ confirmation before anything is created (§10). Nothing here writes.
 
 Recognized, in consumption order (character spans are consumed so leftover
 text becomes the title):
+  recurrence "every tuesday" · "every tue and thu" · "every other thursday" ·
+             "every 2 weeks" · "every week"/"weekly" · "every day"/"daily" ·
+             "every weekday"/"weekdays" · "mwf"/"tth" ·
+             "until dec 8" / "until 12/8" (end date)
   dates      2026-09-03 · 9/3 · sep 3 / september 3 · today · tonight ·
              tomorrow · weekday names (next occurrence; today counts)
   times      7-9pm · 9am · 3:30pm · 19:30 · "at 3" (bare hour: 8–11 → AM,
@@ -84,6 +88,83 @@ def parse_nl(q, now_dt, contexts=None, tasks=None):
                 return m
         return None
 
+    # ── recurrence (before dates — "every tuesday" must not read as a date) ─
+    # Produces {'weekdays', 'interval_weeks', 'until_date'}; weekdays may stay
+    # empty until the target date resolves ("every week" = weekly on that day).
+    wd_alt = "|".join(WEEKDAYS)
+    recurrence = None
+    m = search_once(r"\b(?:until|through)\s+(" + "|".join(MONTHS) + r")\.?\s+(\d{1,2})\b")
+    until_date = None
+    if not m:
+        m = search_once(r"\b(?:until|through)\s+(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?\b")
+        if m:
+            year = int(m.group(3)) if m.group(3) else now_dt.year
+            if year < 100:
+                year += 2000
+            try:
+                until_date = now_dt.date().replace(
+                    year=year, month=int(m.group(1)), day=int(m.group(2)))
+                if until_date < now_dt.date() and not m.group(3):
+                    until_date = until_date.replace(year=year + 1)
+                consume(m.span())
+            except ValueError:
+                pass
+    else:
+        try:
+            until_date = now_dt.date().replace(
+                month=MONTHS[m.group(1).lower()], day=int(m.group(2)))
+            if until_date < now_dt.date():
+                until_date = until_date.replace(year=until_date.year + 1)
+            consume(m.span())
+        except ValueError:
+            pass
+
+    m = search_once(r"\bevery\s+other\s+(" + wd_alt + r")\b")
+    if m:
+        recurrence = {"weekdays": [WEEKDAYS[m.group(1).lower()]], "interval_weeks": 2}
+        consume(m.span())
+    if recurrence is None:
+        m = search_once(
+            r"\bevery\s+((?:" + wd_alt + r")(?:\s*(?:,|and|&|\+|/)\s*(?:" + wd_alt + r"))*)\b")
+        if m:
+            days = sorted({WEEKDAYS[w] for w in re.findall(wd_alt, m.group(1), re.I)})
+            recurrence = {"weekdays": days, "interval_weeks": 1}
+            consume(m.span())
+    if recurrence is None:
+        m = search_once(r"\bevery\s+weekday\b|\bweekdays\b")
+        if m:
+            recurrence = {"weekdays": [0, 1, 2, 3, 4], "interval_weeks": 1}
+            consume(m.span())
+    if recurrence is None:
+        m = search_once(r"\bevery\s+day\b|\bdaily\b")
+        if m:
+            recurrence = {"weekdays": [0, 1, 2, 3, 4, 5, 6], "interval_weeks": 1}
+            consume(m.span())
+    if recurrence is None:
+        m = search_once(r"\bevery\s+(\d+)\s+weeks?\b")
+        if m:
+            recurrence = {"weekdays": [], "interval_weeks": max(1, int(m.group(1)))}
+            consume(m.span())
+    if recurrence is None:
+        m = search_once(r"\bevery\s+week\b|\bweekly\b")
+        if m:
+            recurrence = {"weekdays": [], "interval_weeks": 1}
+            consume(m.span())
+    if recurrence is None:
+        m = search_once(r"\bmwf\b")
+        if m:
+            recurrence = {"weekdays": [0, 2, 4], "interval_weeks": 1}
+            consume(m.span())
+    if recurrence is None:
+        m = search_once(r"\bt(?:u|u?e)?s?th\b")  # tth / tuth / tueth
+        if m:
+            recurrence = {"weekdays": [1, 3], "interval_weeks": 1}
+            consume(m.span())
+    if recurrence is not None and until_date is not None:
+        recurrence["until_date"] = until_date.isoformat()
+    elif until_date is not None:
+        notes.append("'until' given without a repeat pattern — ignored")
+
     # ── date ────────────────────────────────────────────────────────────────
     target_date = None
     m = search_once(r"\b(20\d{2})-(\d{2})-(\d{2})\b")
@@ -136,9 +217,18 @@ def parse_nl(q, now_dt, contexts=None, tasks=None):
             if ahead == 0:
                 notes.append("interpreted as today")
             consume(m.span())
+    if target_date is None and recurrence and recurrence["weekdays"]:
+        # Recurring with no explicit start: first matching weekday (today
+        # counts) anchors the series.
+        ahead = min((w - now_dt.weekday()) % 7 for w in recurrence["weekdays"])
+        target_date = now_dt.date() + timedelta(days=ahead)
     if target_date is None:
         target_date = now_dt.date()
         notes.append("no date given — assumed today")
+    if recurrence is not None and not recurrence["weekdays"]:
+        # "every week" / "every 2 weeks" with no day named: the target date's
+        # weekday carries the series.
+        recurrence["weekdays"] = [target_date.weekday()]
 
     # ── time range / single time ────────────────────────────────────────────
     start_min = None
@@ -198,6 +288,11 @@ def parse_nl(q, now_dt, contexts=None, tasks=None):
         m = search_once(r"\b(?:for\s+)?(\d+(?:\.\d+)?)\s*h(?:ours?|rs?)?\b")
         if m:
             duration = round(float(m.group(1)) * 60)
+            consume(m.span())
+    if duration is None:
+        m = search_once(r"\b(?:for\s+)?(?:half\s+an\s+hour|an?\s+hour)\b")
+        if m:
+            duration = 30 if "half" in m.group(0).lower() else 60
             consume(m.span())
     if duration is None:
         m = search_once(r"\b(?:for\s+)?(\d+)\s*m(?:in(?:utes?)?)?\b")
@@ -265,6 +360,17 @@ def parse_nl(q, now_dt, contexts=None, tasks=None):
         elif len(cands) > 1:
             notes.append(f"{len(cands)} existing tasks match — pick one explicitly")
 
+    if recurrence is not None:
+        recurrence.setdefault("until_date", None)
+        day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        days_label = ", ".join(day_names[w] for w in recurrence["weekdays"])
+        iv = recurrence["interval_weeks"]
+        label = f"repeats every {days_label}" if iv == 1 else \
+            f"repeats every {iv} weeks on {days_label}"
+        if recurrence["until_date"]:
+            label += f" until {recurrence['until_date']}"
+        notes.append(label)
+
     return {
         "title": title,
         "date": target_date.isoformat(),
@@ -280,5 +386,8 @@ def parse_nl(q, now_dt, contexts=None, tasks=None):
         # Calendar-only remains the default outcome (§11); the UI may switch
         # to the existing-task tab when task_id matched, but the user chooses.
         "kind": "entry",
+        # Parsed repeat pattern, shown for confirmation before anything is
+        # created; None for one-off phrasing.
+        "recurrence": recurrence,
         "notes": notes,
     }

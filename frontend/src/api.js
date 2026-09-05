@@ -418,9 +418,66 @@ export async function updateSession(id, fields) {
   return res.json();
 }
 
-export async function deleteSession(id) {
-  const res = await fetch(`${BASE}/sessions/${id}`, { method: 'DELETE' });
+// scope (recurring occurrences only): 'occurrence' (default — removes this
+// one and records a skip so it never regenerates), 'following', or 'all'.
+export async function deleteSession(id, scope = 'occurrence') {
+  const res = await fetch(`${BASE}/sessions/${id}?scope=${scope}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(`deleteSession failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Calendar recurrence series — recurring scheduled sessions/entries.
+// Never creates or duplicates canonical tasks.
+// ---------------------------------------------------------------------------
+
+export async function fetchRecurrenceSeries() {
+  const res = await fetch(`${BASE}/recurrence-series`);
+  if (!res.ok) throw new Error(`fetchRecurrenceSeries failed: ${res.status}`);
+  return res.json();
+}
+
+// fields: { from_session_id } adopts an existing block as the anchor (the
+// one-click "Repeat weekly" path — omitted rule fields default from the
+// block); optional weekdays, interval_weeks, until_date, count.
+export async function createRecurrenceSeries(fields) {
+  const res = await fetch(`${BASE}/recurrence-series`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) {
+    let detail = `createRecurrenceSeries failed: ${res.status}`;
+    try { const b = await res.json(); if (b.detail) detail = b.detail; } catch {}
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+// fields: { scope: 'all'|'following', from_date?, weekdays?, interval_weeks?,
+// start_minutes?, duration_minutes?, until_date?, count?, is_fixed?, ... }
+export async function updateRecurrenceSeries(id, fields) {
+  const res = await fetch(`${BASE}/recurrence-series/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) {
+    let detail = `updateRecurrenceSeries failed: ${res.status}`;
+    try { const b = await res.json(); if (b.detail) detail = b.detail; } catch {}
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+// fromDate: stop the series starting that day (history stays); omitted =
+// remove the whole series (executed occurrences survive as plain history).
+export async function deleteRecurrenceSeries(id, fromDate = null) {
+  const url = fromDate
+    ? `${BASE}/recurrence-series/${id}?from_date=${fromDate}`
+    : `${BASE}/recurrence-series/${id}`;
+  const res = await fetch(url, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`deleteRecurrenceSeries failed: ${res.status}`);
   return res.json();
 }
 
