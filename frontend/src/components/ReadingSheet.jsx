@@ -1,3 +1,4 @@
+import HeaderUtilities from './HeaderUtilities.jsx';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   fetchReadingBooks,
@@ -344,14 +345,6 @@ export default function ReadingSheet({ searchTarget, onTargetConsumed }) {
 
   return (
     <>
-      <div className="ws-grid-shelf">
-        <div className="ws-shelf-left">
-          <button className="ws-shelf-btn ws-shelf-btn--primary" onClick={openAdd}>
-            {viewMode === 'tobuy' ? '+ Add Book to Buy' : '+ Add Book'}
-          </button>
-        </div>
-      </div>
-
       <div className="ws-sheet-header">
         <div className="ws-sheet-header-left">
           <div className="ws-sheet-title">Reading</div>
@@ -365,7 +358,7 @@ export default function ReadingSheet({ searchTarget, onTargetConsumed }) {
             <span>{counts.tobuy || 0} to buy</span>
           </div>
         </div>
-        <div className="ws-sheet-header-right">
+        <HeaderUtilities>
           <div className="ws-kbd-help-anchor">
             <button
               ref={helpBtnRef}
@@ -387,10 +380,13 @@ export default function ReadingSheet({ searchTarget, onTargetConsumed }) {
               />
             )}
           </div>
-        </div>
+        </HeaderUtilities>
       </div>
 
       <div className="ws-filter-bar">
+          <button className="ws-shelf-btn ws-shelf-btn--primary" onClick={openAdd}>
+            {viewMode === 'tobuy' ? '+ Add Book to Buy' : '+ Add Book'}
+          </button>
         <div className="ws-filter-seg" role="group" aria-label="Library or to-buy view">
           <button
             className={`ws-filter-seg-btn${viewMode === 'library' ? ' ws-filter-seg-btn--active' : ''}`}
@@ -482,8 +478,8 @@ export default function ReadingSheet({ searchTarget, onTargetConsumed }) {
                     <td className="rd-col-buynotes" title={book.purchase_notes}>{book.purchase_notes || '—'}</td>
                     <td className="rd-col-actions">
                       <div className="rd-action-group">
-                        <button className="action-btn" onClick={() => markBought(book)} title="Mark bought — moves to the library as an unread book">BOUGHT</button>
-                        <button className="action-btn" onClick={() => openEdit(book)} title="Book details">EDIT</button>
+                        <button className="action-btn" onClick={() => markBought(book)} title="Mark bought — moves to the library as an unread book">Bought</button>
+                        <button className="action-btn" onClick={() => openEdit(book)} title="Book details">Edit</button>
                       </div>
                     </td>
                   </tr>
@@ -553,12 +549,12 @@ export default function ReadingSheet({ searchTarget, onTargetConsumed }) {
                     </td>
                     <td className="rd-col-actions">
                       <div className="rd-action-group">
-                        <button className="action-btn" onClick={() => openEdit(book)} title="Book details">EDIT</button>
+                        <button className="action-btn" onClick={() => openEdit(book)} title="Book details">Edit</button>
                         {book.status === 'active' && (
-                          <button className="action-btn" onClick={() => changeStatus(book, 'finished')} title="Mark finished">FINISH</button>
+                          <button className="action-btn" onClick={() => changeStatus(book, 'finished')} title="Mark finished">Finish</button>
                         )}
                         {book.status === 'archived' && (
-                          <button className="action-btn" onClick={() => changeStatus(book, 'active')} title="Reactivate">REACTIVATE</button>
+                          <button className="action-btn" onClick={() => changeStatus(book, 'active')} title="Reactivate">Reactivate</button>
                         )}
                       </div>
                     </td>

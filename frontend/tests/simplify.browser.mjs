@@ -2,6 +2,9 @@
 // TM_TEST_URL points to Vite proxying that database; PLAYWRIGHT_MODULE may name
 // an already installed Playwright module, so the project needs no new dependency.
 import assert from 'node:assert/strict';
+import { mkdirSync } from 'node:fs';
+const artifacts = process.env.TM_TEST_ARTIFACTS || '/tmp/tm-simplify-02-evidence';
+mkdirSync(artifacts, { recursive: true });
 import { KEYBINDS } from '../src/keybinds.js';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || process.argv[2] || 'playwright');
 const browser = await chromium.launch({ headless: true });
@@ -26,10 +29,18 @@ try {
   await page.addInitScript(() => localStorage.setItem('taskos-saved-views', JSON.stringify({version:1, views:[{id:'old', name:'Hidden', filter:'active', groupMode:'section', searchQuery:'no matching task'}]})));
   await page.goto(process.env.TM_TEST_URL || 'http://127.0.0.1:15173');
   await button('+ Add Task').waitFor();
-  assert.deepEqual(await page.getByRole('navigation', { name: 'Pages', exact: true }).getByRole('button').allTextContents(), ['Main', 'Reports', 'Settings']);
-  assert.deepEqual(await page.getByRole('navigation', { name: 'Main views' }).getByRole('button').allTextContents(), ['Grid', 'Reading', 'Calendar']);
+  assert.deepEqual(await page.getByRole('navigation', { name: 'Pages', exact: true }).getByRole('button').allTextContents(), ['Main', 'Grid', 'Reading', 'Calendar', 'Reports', 'Settings']);
+  assert.deepEqual(await page.getByRole('group', { name: 'Main views' }).getByRole('button').allTextContents(), ['Grid', 'Reading', 'Calendar']);
   assert.equal(await page.evaluate(() => localStorage.getItem('taskos-saved-views')), null);
   assert.equal(await button('Edit Task').isDisabled(), true);
+  assert.equal(await page.locator('.main-subnav, .ws-grid-shelf, .ws-inspector-strip, .ws-selection-hint').count(), 0);
+  const navBoxes = await page.getByRole('navigation', {name:'Pages', exact:true}).getByRole('button').evaluateAll(nodes => nodes.map(n => n.getBoundingClientRect().y));
+  assert.ok(navBoxes.every(y => Math.abs(y - navBoxes[0]) < 1));
+  const utility = page.locator('.header-utilities');
+  assert.equal(await utility.getByRole('combobox', {name:'Search workspace'}).count(), 1);
+  const searchBox = await search.boundingBox(), helpBox = await utility.getByRole('button', {name:'Keyboard shortcuts',exact:true}).boundingBox();
+  assert.ok(searchBox.x + searchBox.width <= helpBox.x && helpBox.x - searchBox.x - searchBox.width < 16);
+  assert.equal(await page.locator('.app-header #workspace-search').count(), 0);
   assert.equal(await button('Archive Sheet').count(), 0);
   assert.equal(await button('Export CSV').count(), 0);
   assert.equal(await page.locator('.sheet-tabbar').count(), 0);
@@ -42,17 +53,28 @@ try {
   await button('Edit Task').click();
   await page.locator('#tm-name').waitFor();
   assert.equal(await page.locator('#tm-name').inputValue(), 'Current active task');
-  await button('Cancel').click();
+  const editName = `Current active task edited ${Date.now()}`;
+  await page.locator('#tm-name').fill(editName);
+  await button('Save Changes').click();
+  await page.locator('#tm-name').waitFor({state:'hidden'});
+  await page.reload();await button('+ Add Task').waitFor();
+  await openSearch(editName);
+  await button('Edit Task').click();
+  assert.equal(await page.locator('#tm-name').inputValue(), editName);
+  await page.locator('#tm-name').fill('Current active task');
+  await button('Save Changes').click();
+  await page.locator('#tm-name').waitFor({state:'hidden'});
   await button('+ Add Task').click();
   await page.locator('#tm-name').waitFor();
   assert.equal(await page.locator('#tm-name').inputValue(), '');
   await button('Cancel').click();
-  console.log('PASS navigation, empty status filter, search reveal, Add/Edit editors');
+  console.log('PASS navigation, empty status filter, search reveal, Add/Edit editors and saved task edit after reload');
 
   await openSearch('January note needle');
   await page.locator('.ws-sheet-range').filter({ hasText: '2025' }).waitFor();
   assert.match(await page.locator('.ws-sheet-range').innerText(), /Jan 1.*Jan 31, 2025/i);
   await button('Reports').click();
+  assert.deepEqual(await page.getByRole('navigation', {name:'Pages',exact:true}).getByRole('button').allTextContents(), ['Main','Reports','Settings']);
   await button('Today').waitFor();
   await button('History').click();
   await button('Execution').click();
@@ -62,7 +84,9 @@ try {
   await page.locator('[data-history-task]').waitFor();
   assert.match(await page.locator('.month-history').innerText(), /Original historical task/);
   assert.match(await page.locator('.month-history').innerText(), /January note needle/);
+  assert.equal(await page.locator('.sheet-date-controls').getByRole('combobox', {name:'Monthly history'}).count(), 1);
   await page.getByRole('combobox', { name: 'Monthly history' }).selectOption('');
+  assert.equal(await page.locator('.month-history').count(), 0);
   console.log('PASS report views, retained month, historical note and snapshot navigation');
 
   await openSearch('Checkpoint needle');
@@ -141,23 +165,24 @@ try {
 
   await button('Main').click(); await button('Grid').click();
   await button('+ Add Task').waitFor();
-  await page.screenshot({ path: '/tmp/tm-simplify-ui/desktop.png', fullPage: true });
+  await page.screenshot({ path: `${artifacts}/regression-desktop.png`, fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await button('+ Add Task').waitFor();
-  await page.screenshot({ path: '/tmp/tm-simplify-ui/narrow-grid.png' });
+  await page.screenshot({ path: `${artifacts}/regression-narrow-grid.png` });
   await page.locator('.grid-wrapper').evaluate(el => { el.scrollLeft = el.scrollWidth; });
   assert.ok(await page.locator('.date-cell').evaluateAll(cells => cells.some(c => { const r = c.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; })));
   await button('Settings').click();
   assert.equal(await search.isVisible(), true);
   assert.equal(await button('Main').isVisible(), true);
-  await page.screenshot({ path: '/tmp/tm-simplify-ui/narrow.png' });
+  await page.screenshot({ path: `${artifacts}/regression-narrow.png` });
   await button('Export…').scrollIntoViewIfNeeded();
-  await page.screenshot({ path: '/tmp/tm-simplify-ui/narrow-settings.png' });
+  await page.screenshot({ path: `${artifacts}/regression-narrow-settings.png` });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   assert.deepEqual(errors, []);
   console.log('PASS desktop/narrow screenshots; no browser runtime errors');
 } catch (error) {
+  console.log('Browser errors:', errors.map(e => String(e)));
   console.log('UI failure state:', (await page.locator('body').innerText()).slice(0,2500));
-  await page.screenshot({path:'/tmp/tm-simplify-ui/failure.png'});
+  await page.screenshot({path:`${artifacts}/failure.png`});
   throw error;
 } finally { await browser.close(); }

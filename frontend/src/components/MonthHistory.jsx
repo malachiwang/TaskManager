@@ -1,18 +1,31 @@
 import { useEffect, useState } from 'react';
 import { fetchArchives, fetchArchive } from '../api.js';
 
-// Read-only compatibility for historical task versions that only exist in snapshots.
-export default function MonthHistory({ month, selectedId, onSelect, targetId }) {
+// Secondary date control, present only for months with retained legacy versions.
+export function MonthHistorySelect({ month, selectedId, onSelect }) {
   const [records, setRecords] = useState([]);
-  const [snapshot, setSnapshot] = useState(null);
   const [error, setError] = useState('');
-  const start = `${month.year}-${String(month.month).padStart(2, '0')}-01`;
-  const end = `${month.year}-${String(month.month).padStart(2, '0')}-31`;
   useEffect(() => {
     let alive = true;
     fetchArchives().then(rows => { if (alive) setRecords(rows); }).catch(e => { if (alive) setError(e.message); });
     return () => { alive = false; };
   }, []);
+  const start = `${month.year}-${String(month.month).padStart(2, '0')}-01`;
+  const end = `${month.year}-${String(month.month).padStart(2, '0')}-31`;
+  const options = records.filter(r => r.start_date <= end && r.end_date >= start);
+  if (error) return <span className="month-version-error" role="alert" title={error}>Saved versions unavailable</span>;
+  if (!options.length && selectedId === null) return null;
+  return <select className="month-version-select" aria-label="Monthly history" title="Saved versions for this month"
+    value={selectedId ?? ''} onChange={e => onSelect(e.target.value ? Number(e.target.value) : null)}>
+    <option value="">{selectedId === null ? 'Saved versions…' : 'Current records'}</option>
+    {options.map(r => <option key={r.id} value={r.id}>{r.name} · {r.archived_at.slice(0, 10)}</option>)}
+  </select>;
+}
+
+// Frozen metadata, pressure, counts and notes remain read only.
+export default function MonthHistory({ selectedId, targetId }) {
+  const [snapshot, setSnapshot] = useState(null);
+  const [error, setError] = useState('');
   useEffect(() => {
     let alive = true;
     setSnapshot(null); setError('');
@@ -24,7 +37,6 @@ export default function MonthHistory({ month, selectedId, onSelect, targetId }) 
   useEffect(() => {
     if (snapshot && targetId) document.querySelector(`tr[data-history-task="${targetId}"]`)?.scrollIntoView({ block: 'center' });
   }, [snapshot, targetId]);
-  const options = records.filter(r => r.start_date <= end && r.end_date >= start);
   const dates = [];
   if (snapshot) {
     const d = new Date(`${snapshot.start_date}T00:00:00Z`);
@@ -32,12 +44,8 @@ export default function MonthHistory({ month, selectedId, onSelect, targetId }) 
       dates.push(d.toISOString().slice(0, 10)); d.setUTCDate(d.getUTCDate() + 1);
     }
   }
-  if (!options.length && selectedId === null && !error) return null;
-  return <section className="month-history" aria-label="Monthly history">
-    <label>History <select aria-label="Monthly history" value={selectedId ?? ''} onChange={e => onSelect(e.target.value ? Number(e.target.value) : null)}>
-      <option value="">Current records</option>
-      {options.map(r => <option key={r.id} value={r.id}>{r.name} · {r.archived_at.slice(0, 10)} · saved version #{r.id}</option>)}
-    </select></label>
+  if (selectedId === null) return null;
+  return <section className="month-history" aria-label="Saved monthly version">
     {error && <p role="alert">Could not load history: {error}</p>}
     {selectedId !== null && !snapshot && !error && <p role="status">Loading history…</p>}
     {snapshot && <>

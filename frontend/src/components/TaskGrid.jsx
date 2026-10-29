@@ -1,3 +1,4 @@
+import HeaderUtilities from './HeaderUtilities.jsx';
 import { useState, useEffect, useCallback, useMemo, Fragment, useRef } from 'react';
 import {
   fetchTasks,
@@ -28,7 +29,7 @@ import KeyboardHelp from './KeyboardHelp.jsx';
 import { FILTERS, FILTER_LABELS, PRIMARY_FILTERS, taskPassesFilter } from '../filters.js';
 import { GROUP_MODES, groupTasks, uniqueSections } from '../grouping.js';
 import { matchKeybind, resolveKeybinds, jumpDigit, isTypingTarget, canDismiss } from '../keybinds.js';
-import MonthHistory from './MonthHistory.jsx';
+import MonthHistory, { MonthHistorySelect } from './MonthHistory.jsx';
 import GroupSelect from './GroupSelect.jsx';
 
 // ---------------------------------------------------------------------------
@@ -1926,16 +1927,6 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth, setViewMont
 
   return (
     <>
-      {/* ── Tier 1: Operations shelf — ink dark, primary actions only ── */}
-      <div className="ws-grid-shelf">
-        <div className="ws-shelf-left">
-          <button className="ws-shelf-btn ws-shelf-btn--primary" onClick={openAdd} disabled={historyId !== null}>+ Add Task</button>
-          <button className="ws-shelf-btn" disabled={!selectedTask || historyId !== null} onClick={() => openEdit(selectedTask)}
-            title={selectedTask ? `Edit ${selectedTask.name}` : 'Select a task in the grid first'}>Edit Task</button>
-          {!selectedTask && <span className="ws-selection-hint">Select a task to edit</span>}
-        </div>
-      </div>
-
       {/* ── Tier 2: Sheet header — paper surface, identity + nav + status ── */}
       <div className="ws-sheet-header">
         <div className="ws-sheet-header-left">
@@ -1948,13 +1939,16 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth, setViewMont
             <span>{tasks.length} total</span>
           </div>
         </div>
+        <div className="sheet-date-controls">
         <div className="ws-sheet-header-nav">
-          <button className="ws-sheet-nav" onClick={goToPrevMonth}>‹</button>
+          <button className="ws-sheet-nav" aria-label="Previous month" onClick={goToPrevMonth}>‹</button>
           <button className="ws-sheet-nav ws-sheet-nav--today" onClick={goToCurrentMonth}>Today</button>
           <span className="ws-sheet-range">{monthRangeLabel(viewMonth.year, viewMonth.month)}</span>
-          <button className="ws-sheet-nav" onClick={goToNextMonth}>›</button>
+          <button className="ws-sheet-nav" aria-label="Next month" onClick={goToNextMonth}>›</button>
         </div>
-        <div className="ws-sheet-header-right">
+        <MonthHistorySelect month={viewMonth} selectedId={historyId} onSelect={setHistoryId} />
+        </div>
+        <HeaderUtilities>
           <div className="ws-kbd-help-anchor">
             <button
               ref={helpBtnRef}
@@ -1976,13 +1970,20 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth, setViewMont
               />
             )}
           </div>
-        </div>
+        </HeaderUtilities>
       </div>
 
-      <MonthHistory month={viewMonth} selectedId={historyId} onSelect={setHistoryId} targetId={revealedTaskId} />
+      <MonthHistory selectedId={historyId} targetId={revealedTaskId} />
       <div className="live-grid" hidden={historyId !== null}>
       {/* ── Filter bar — status scope + secondary toggles + search (P10.0) ── */}
       <div className="ws-filter-bar">
+        <div className="task-actions">
+          <button className="ws-shelf-btn ws-shelf-btn--primary" onClick={openAdd}>+ Add Task</button>
+          <button className="ws-shelf-btn" disabled={!selectedTask} onClick={() => openEdit(selectedTask)}
+            aria-describedby={!selectedTask ? 'edit-task-guidance' : undefined}
+            title={selectedTask ? `Edit ${selectedTask.name}` : 'Select a task in the grid first'}>Edit Task</button>
+          {!selectedTask && <span id="edit-task-guidance" className="sr-only">Select a task in the grid first</span>}
+        </div>
         <div className="ws-filter-seg" role="group" aria-label="Task status scope">
           {PRIMARY_FILTERS.map((f) => (
             <button
@@ -2014,9 +2015,9 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth, setViewMont
       </div>
 
       {/* ── Inspector strip — compositionally framed EditBar ── */}
-      <div className="ws-inspector-strip">
+      {selectedCell && <div className="ws-inspector-strip">
         <div className="ws-inspector-badge">
-          {rangeSelection && rangeSelection.count > 1 ? '▸ range' : selectedCell ? '▸ cell' : '○ inspector'}
+          {rangeSelection && rangeSelection.count > 1 ? '▸ range' : '▸ cell'}
         </div>
         <div className="ws-inspector-body">
           <EditBar
@@ -2040,7 +2041,7 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth, setViewMont
             onRangeRestore={handleRestoreCells}
           />
         </div>
-      </div>
+      </div>}
 
       <div className="ws-grid-canvas">
       <div
@@ -2053,10 +2054,10 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth, setViewMont
             <tr>
               <th className="meta-col sticky-col col-actions" style={thStyle('col-actions')}></th>
               <th className="meta-col sticky-col col-urg" title="Urgency" style={thStyle('col-urg')}>
-                Urgency{rh('col-urg')}
+                Urg.{rh('col-urg')}
               </th>
               <th className="meta-col sticky-col col-pri" title="Priority" style={thStyle('col-pri')}>
-                Priority{rh('col-pri')}
+                Pri.{rh('col-pri')}
               </th>
               <th className="meta-col sticky-col col-status" style={thStyle('col-status')}>
                 Status{rh('col-status')}
@@ -2074,7 +2075,7 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth, setViewMont
                 Subtask{rh('col-sub')}
               </th>
               <th className="meta-col scroll-meta-col col-freq" title="Frequency (days)" style={thStyle('col-freq')}>
-                Frequency{rh('col-freq')}
+                Freq.{rh('col-freq')}
               </th>
               <th className="meta-col scroll-meta-col col-days" title="Days since last done" style={thStyle('col-days')}>
                 Days{rh('col-days')}

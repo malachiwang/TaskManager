@@ -53,6 +53,10 @@ export default function WorkspaceSearch({ onOpen }) {
     return () => window.removeEventListener('keydown', focusSearch);
   }, []);
 
+  useEffect(() => {
+    if (open) document.getElementById(`workspace-result-${index}`)?.scrollIntoView({ block: 'nearest' });
+  }, [index, open]);
+
   function select(result) {
     if (!result) return;
     onOpen(result); setOpen(false); setQuery(''); input.current?.blur();

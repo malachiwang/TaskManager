@@ -7,7 +7,7 @@ import MonthlyReport from './components/MonthlyReport.jsx';
 import TopBarNetwork from './components/TopBarNetwork.jsx';
 import LoadingScreen from './components/LoadingScreen.jsx';
 import { fetchHealth } from './api.js';
-import WorkspaceSearch from './components/WorkspaceSearch.jsx';
+import { WorkspaceNavigation } from './components/HeaderUtilities.jsx';
 import { initAppearance } from './appearance.js';
 
 export default function App() {
@@ -102,6 +102,7 @@ export default function App() {
   if (booting) return <LoadingScreen />;
 
   return (
+    <WorkspaceNavigation.Provider value={navigate}>
     <div className="app">
       <header className="app-header">
         {/* Background-only network signature — pointer-events:none, behind
@@ -112,24 +113,23 @@ export default function App() {
             <span className="app-title">TaskManager</span>
             <span className="app-tagline">Local Workspace</span>
           </div>
-          <WorkspaceSearch onOpen={navigate} />
           <nav className="app-utility-nav" aria-label="Pages">
-            {['main', 'reports', 'settings'].map((id) => (
-              <button key={id} className={`tab${page === id ? ' active' : ''}`} aria-current={page === id ? 'page' : undefined} onClick={() => setPage(id)}>
+            <button className={`tab${page === 'main' ? ' active' : ''}`} aria-current={page === 'main' ? 'page' : undefined} onClick={() => setPage('main')}>Main</button>
+            {page === 'main' && <div className="main-views" role="group" aria-label="Main views">
+              {['grid', 'reading', 'calendar'].map(id => <button key={id}
+                className={`tab child-tab${mainView === id ? ' active' : ''}`}
+                aria-current={mainView === id ? 'page' : undefined} onClick={() => setMainView(id)}>
                 {id[0].toUpperCase() + id.slice(1)}
-              </button>
-            ))}
+              </button>)}
+            </div>}
+            {['reports', 'settings'].map(id => <button key={id} className={`tab${page === id ? ' active' : ''}`}
+              aria-current={page === id ? 'page' : undefined} onClick={() => setPage(id)}>
+              {id[0].toUpperCase() + id.slice(1)}
+            </button>)}
           </nav>
         </div>
       </header>
 
-      {page === 'main' && <nav className="main-subnav" aria-label="Main views">
-        {['grid', 'reading', 'calendar'].map((id) => (
-          <button key={id} className={`tab${mainView === id ? ' active' : ''}`} aria-current={mainView === id ? 'page' : undefined} onClick={() => setMainView(id)}>
-            {id[0].toUpperCase() + id.slice(1)}
-          </button>
-        ))}
-      </nav>}
       <main className="app-main" data-tab={page === 'main' ? mainView : page}>
         {page === 'main' && mainView === 'grid' && <TaskGrid
           viewMonth={gridMonth} setViewMonth={setGridMonth}
@@ -145,5 +145,6 @@ export default function App() {
         {page === 'settings' && <Settings sheetMonth={gridMonth} />}
       </main>
     </div>
+    </WorkspaceNavigation.Provider>
   );
 }
