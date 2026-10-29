@@ -470,7 +470,7 @@ function nowLabel() {
 // Dashboard
 // ---------------------------------------------------------------------------
 
-export default function Dashboard({ onOpenReports }) {
+export default function Dashboard({ onOpenReports, embedded = false }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [tasks, setTasks] = useState(null);
@@ -596,7 +596,7 @@ export default function Dashboard({ onOpenReports }) {
 
   return (
     <div className="ws-dashboard">
-      <div className="ws-dash-header">
+      {!embedded && <div className="ws-dash-header">
         <div className="ws-dash-header-left">
           <div className="ws-dash-title">Dashboard</div>
           <div className="ws-dash-sub">
@@ -606,7 +606,7 @@ export default function Dashboard({ onOpenReports }) {
               <>
                 {' · '}
                 <button type="button" className="ws-dash-crosslink" onClick={onOpenReports}>
-                  for patterns over time, open Reports →
+                  View history →
                 </button>
               </>
             )}
@@ -615,6 +615,7 @@ export default function Dashboard({ onOpenReports }) {
         <div className="ws-dash-now">{nowLabel()}</div>
       </div>
 
+      }
       {/* ── Top command panel — contained + inset to align with lower panels ── */}
       <div className="dashboard-command-panel">
 

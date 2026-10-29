@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { normalizeSafeUrl } from '../linkUtils.js';
 
-const STATUS_OPTIONS = ['active', 'finished', 'archived'];
-const STATUS_LABELS = { active: 'Active', finished: 'Finished', archived: 'Archived' };
+const STATUS_OPTIONS = ['active', 'finished'];
+const STATUS_LABELS = { active: 'Active', finished: 'Finished', archived: 'Hidden' };
 
 // Book priority scale (P11.0): 1–5, calmer than task urgency. Labels drive the
 // badge tooltip and the colored chips here and in ReadingSheet rows.
@@ -182,7 +182,7 @@ export default function ReadingBookModal({ book, onSave, onDelete, onClose, init
                 <div className="task-modal-field task-modal-field--full">
                   <label className="task-modal-label">Status</label>
                   <div className="task-modal-seg" role="group" aria-label="Status">
-                    {STATUS_OPTIONS.map((s) => (
+                    {(form.status === 'archived' ? [...STATUS_OPTIONS, 'archived'] : STATUS_OPTIONS).map((s) => (
                       <button key={s} type="button"
                         className={`task-modal-seg-btn${form.status === s ? ' task-modal-seg-btn--active' : ''}`}
                         onClick={() => set('status', s)}>
@@ -219,8 +219,7 @@ export default function ReadingBookModal({ book, onSave, onDelete, onClose, init
             {isEdit && onDelete && confirmDelete ? (
               <div className="task-modal-confirm-zone">
                 <span className="task-modal-confirm-copy">
-                  This permanently removes the book and its page history. To keep
-                  history, use Archive instead.
+                  This permanently removes the book and its page history.
                 </span>
                 <div className="task-modal-confirm-actions">
                   <button type="button" className="task-modal-cancel" onClick={() => setConfirmDelete(false)}>Cancel</button>
@@ -231,9 +230,6 @@ export default function ReadingBookModal({ book, onSave, onDelete, onClose, init
               <>
                 {isEdit && onDelete && (
                   <button type="button" className="task-modal-delete-btn" onClick={() => setConfirmDelete(true)}>Delete Book</button>
-                )}
-                {!isEdit && (
-                  <span className="task-modal-footer-note">Changes save to local SQLite reading record</span>
                 )}
                 <div className="task-modal-actions">
                   <button type="button" className="task-modal-cancel" onClick={onClose}>Cancel</button>

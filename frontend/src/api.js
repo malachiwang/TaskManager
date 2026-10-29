@@ -165,12 +165,6 @@ export async function fetchArchives() {
   return res.json();
 }
 
-export async function createArchive(name, startDate, endDate) {
-  const params = new URLSearchParams({ name, start_date: startDate, end_date: endDate });
-  const res = await fetch(`${BASE}/archives?${params}`, { method: 'POST' });
-  if (!res.ok) throw new Error(`createArchive failed: ${res.status}`);
-  return res.json();
-}
 
 export async function fetchArchive(id) {
   const res = await fetch(`${BASE}/archives/${id}`);
@@ -178,18 +172,7 @@ export async function fetchArchive(id) {
   return res.json();
 }
 
-export async function renameArchive(id, name) {
-  const params = new URLSearchParams({ name });
-  const res = await fetch(`${BASE}/archives/${id}?${params}`, { method: 'PATCH' });
-  if (!res.ok) throw new Error(`renameArchive failed: ${res.status}`);
-  return res.json();
-}
 
-export async function deleteArchive(id) {
-  const res = await fetch(`${BASE}/archives/${id}`, { method: 'DELETE' });
-  if (!res.ok) throw new Error(`deleteArchive failed: ${res.status}`);
-  return res.json();
-}
 
 // ---------------------------------------------------------------------------
 // Export downloads — fetch → blob → programmatic click.

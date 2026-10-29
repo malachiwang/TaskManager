@@ -395,7 +395,7 @@ class TestHiatusBackup:
         t = create_task(client)
         client.patch(f"/tasks/{t['id']}", params={"status": "hiatus"})
         data = client.get("/export/backup.json").json()
-        assert data["schema_version"] == 6
+        assert data["schema_version"] == 7
         assert len(data["task_hiatus_periods"]) == 1
         assert data["task_hiatus_periods"][0]["task_id"] == t["id"]
 

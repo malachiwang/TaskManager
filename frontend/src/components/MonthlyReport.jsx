@@ -1,3 +1,4 @@
+import Dashboard from './Dashboard.jsx';
 import { useState, useEffect, useMemo } from 'react';
 import { fetchTasks, fetchCompletions, fetchSnapshotPressure, fetchReadingBooks, fetchHiatusPeriodsInRange } from '../api.js';
 import ExecutionReport from './ExecutionReport.jsx';
@@ -36,13 +37,14 @@ function fmtDate(iso) {
   return `${m}/${d}`;
 }
 
-export default function MonthlyReport({ onOpenDashboard }) {
+export default function MonthlyReport({ savedState = {}, onStateChange }) {
   const now = new Date();
   // Period = mode (week/month/quarter/year) + an anchor date inside it (P10.0).
-  const [period, setPeriod] = useState({ mode: 'month', anchor: now });
+  const [period, setPeriod] = useState(savedState.period || { mode: 'month', anchor: now });
   // View: 'history' = the pressure/completions report below; 'execution' =
   // planned-vs-actual + calibration + forecast (V5.5). Same period selector.
-  const [view, setView] = useState('history');
+  const [view, setView] = useState(savedState.view || 'today');
+  useEffect(() => { onStateChange?.({ period, view }); }, [period, view, onStateChange]);
   const [tasks, setTasks] = useState(null);
   const [tasksError, setTasksError] = useState(null);
   const [completions, setCompletions] = useState(null);
@@ -165,19 +167,12 @@ export default function MonthlyReport({ onOpenDashboard }) {
         <div className="ws-dash-header-left">
           <div className="ws-dash-title">Reports</div>
           <div className="ws-dash-sub">
-            what happened over time · historical trends, completion patterns, pressure changes, reading progress
-            {onOpenDashboard && (
-              <>
-                {' · '}
-                <button type="button" className="ws-dash-crosslink" onClick={onOpenDashboard}>
-                  for what to do next, open Dashboard →
-                </button>
-              </>
-            )}
+            Current priorities, history, and execution
           </div>
         </div>
         <div className="report-period">
           <div className="report-period-modes" role="group" aria-label="Report view">
+            <button className={`report-mode-btn${view === 'today' ? ' report-mode-btn--active' : ''}`} aria-pressed={view === 'today'} onClick={() => setView('today')}>Today</button>
             <button
               className={`report-mode-btn${view === 'history' ? ' report-mode-btn--active' : ''}`}
               aria-pressed={view === 'history'}
@@ -194,6 +189,7 @@ export default function MonthlyReport({ onOpenDashboard }) {
               Execution
             </button>
           </div>
+          {view !== 'today' && <>
           <div className="report-period-modes" role="group" aria-label="Report period">
             {PERIOD_MODES.map((m) => (
               <button
@@ -212,12 +208,14 @@ export default function MonthlyReport({ onOpenDashboard }) {
           </button>
           <span className="report-period-label">{label}</span>
           <button className="report-nav" onClick={() => shiftPeriod(1)}>›</button>
+          </>}
         </div>
       </div>
 
+      {view === 'today' && <Dashboard onOpenReports={() => setView('history')} embedded />}
       {view === 'execution' && <ExecutionReport start={start} end={end} />}
 
-      <div className="report-body" style={view === 'execution' ? { display: 'none' } : undefined}>
+      <div className="report-body" style={view !== 'history' ? { display: 'none' } : undefined}>
 
         {/* Summary tiles */}
         <div className="report-summary">

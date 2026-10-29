@@ -9,15 +9,15 @@ import {
 } from '../api.js';
 import ReadingBookModal, { PRIORITY_LABELS } from './ReadingBookModal.jsx';
 import KeyboardHelp from './KeyboardHelp.jsx';
-import { matchKeybind, resolveKeybinds } from '../keybinds.js';
+import { matchKeybind, resolveKeybinds, canDismiss } from '../keybinds.js';
 import { normalizeSafeUrl } from '../linkUtils.js';
 import { handleSafeLinkClick } from '../openExternalLink.js';
 
-const STATUS_LABELS = { active: 'Active', finished: 'Finished', archived: 'Archived' };
+const STATUS_LABELS = { active: 'Active', finished: 'Finished', archived: 'Hidden' };
 const FILTERS = [
   { key: 'active',   label: 'Active' },
   { key: 'finished', label: 'Finished' },
-  { key: 'archived', label: 'Archived' },
+  { key: 'archived', label: 'Hidden' },
   { key: 'all',      label: 'All' },
 ];
 const STALE_DAYS = 21; // subtle "not updated recently" indicator threshold
@@ -47,7 +47,7 @@ function formatDate(iso) {
   return y === cur ? `${m}/${d}` : `${m}/${d}/${String(y).slice(2)}`;
 }
 
-export default function ReadingSheet() {
+export default function ReadingSheet({ searchTarget, onTargetConsumed }) {
   const [books, setBooks] = useState([]);
   const [entriesByBook, setEntriesByBook] = useState({});
   const [loading, setLoading] = useState(true);
@@ -65,13 +65,12 @@ export default function ReadingSheet() {
   const [draftPage, setDraftPage] = useState('');
   const [draftDate, setDraftDate] = useState(getToday());
 
-  // Power-user flow (P10.1): selected row, local search, keyboard delete
+  // Power-user flow (P10.1): selected row, keyboard delete
   // confirmation, and the shared shortcut help panel.
+  const [selectedEntryId, setSelectedEntryId] = useState(null);
   const [selectedBookId, setSelectedBookId] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [helpOpen, setHelpOpen] = useState(false);
-  const searchInputRef = useRef(null);
   const helpBtnRef = useRef(null);
   const helpPanelRef = useRef(null);
   const helpCloseBtnRef = useRef(null);
@@ -100,20 +99,31 @@ export default function ReadingSheet() {
 
   useEffect(() => { load(); }, [load]);
 
-  const q = searchQuery.trim().toLowerCase();
-  const matchesSearch = (b) => !q
-    || (b.title  && b.title.toLowerCase().includes(q))
-    || (b.author && b.author.toLowerCase().includes(q))
-    || (b.status && b.status.toLowerCase().includes(q));
+  useEffect(() => {
+    if (loading || searchTarget?.kind !== 'reading') return;
+    const book = books.find(b => b.id === searchTarget.id);
+    if (!book) return;
+    setFilter('all'); setViewMode(book.to_buy ? 'tobuy' : 'library');
+    setSelectedBookId(book.id);
+    setSelectedEntryId(searchTarget.entryId ?? null);
+    // The existing editor includes the book metadata; dated matches reveal their checkpoint below.
+    if (!searchTarget.entryId) { setEditingBook(book); setModalOpen(true); }
+    const frame = requestAnimationFrame(() => {
+      document.querySelector(`[data-reading-entry="${searchTarget.entryId}"]`)?.scrollIntoView({ block: 'center' });
+      onTargetConsumed();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [loading, books, searchTarget, onTargetConsumed]);
+
   // Mode split first (to-buy books never mix into the library list), then
-  // status filter (library only) and search. To Buy sorts by priority desc.
+  // status filter (library only). To Buy sorts by priority desc.
   const modeBooks = books.filter((b) => (viewMode === 'tobuy' ? !!b.to_buy : !b.to_buy));
   const visible = viewMode === 'tobuy'
-    ? modeBooks.filter(matchesSearch).slice().sort(
+    ? modeBooks.slice().sort(
         (a, b) => (b.priority ?? 3) - (a.priority ?? 3)
           || (a.title || '').localeCompare(b.title || ''),
       )
-    : modeBooks.filter((b) => (filter === 'all' || b.status === filter) && matchesSearch(b));
+    : modeBooks.filter((b) => filter === 'all' || b.status === filter);
   const counts = books.reduce((acc, b) => {
     if (b.to_buy) acc.tobuy = (acc.tobuy || 0) + 1;
     else acc[b.status] = (acc[b.status] || 0) + 1;
@@ -168,7 +178,7 @@ export default function ReadingSheet() {
 
   // Row selection does not carry across views — the visible id set changes.
   useEffect(() => {
-    setSelectedBookId(null);
+    if (searchTarget?.kind !== 'reading') { setSelectedBookId(null); setSelectedEntryId(null); }
     setConfirmDeleteId(null);
   }, [viewMode]);
 
@@ -232,7 +242,7 @@ export default function ReadingSheet() {
       const kb = resolvedKb;
 
       // Escape — pre-guard so it also works from inside modal inputs.
-      if (e.key === 'Escape') {
+      if (canDismiss(e, kb.CLEAR_SELECTION, s.modalOpen)) {
         if (s.modalOpen) { closeModal(); return; }
         const tag = document.activeElement?.tagName?.toLowerCase();
         const isTyping = ['input', 'textarea', 'select'].includes(tag)
@@ -265,16 +275,11 @@ export default function ReadingSheet() {
         openEdit(s.selectedBook);
         return;
       }
-      if (matchKeybind(e, kb.READING_FOCUS_SEARCH)) {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-        return;
-      }
 
       // Enter — open the checkpoint form for the selected book (page input
       // autofocuses, so typing the page number flows naturally). To-buy books
       // have no checkpoints, so Enter is a no-op in the To Buy view.
-      if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (matchKeybind(e, kb.READING_CHECKPOINT)) {
         if (s.selectedBookId == null || s.addingFor != null || s.viewMode === 'tobuy') return;
         e.preventDefault();
         startAdd(s.selectedBookId);
@@ -283,7 +288,7 @@ export default function ReadingSheet() {
 
       // Delete/Backspace — arm the inline delete confirmation for the
       // selected book. Nothing is deleted until the strip is confirmed.
-      if ((e.key === 'Delete' || e.key === 'Backspace') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (matchKeybind(e, kb.READING_DELETE) || matchKeybind(e, kb.READING_BACKSPACE)) {
         if (s.selectedBookId == null) return;
         e.preventDefault();
         setConfirmDeleteId(s.selectedBookId);
@@ -291,15 +296,15 @@ export default function ReadingSheet() {
       }
 
       // Arrow up/down — move row selection through the visible list.
-      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (matchKeybind(e, kb.MOVE_DOWN) || matchKeybind(e, kb.MOVE_UP)) {
         const ids = s.visibleIds;
         if (!ids.length) return;
         e.preventDefault();
         const idx = ids.indexOf(s.selectedBookId);
         if (idx === -1) {
-          setSelectedBookId(e.key === 'ArrowDown' ? ids[0] : ids[ids.length - 1]);
+          setSelectedBookId(matchKeybind(e, kb.MOVE_DOWN) ? ids[0] : ids[ids.length - 1]);
         } else {
-          const next = e.key === 'ArrowDown'
+          const next = matchKeybind(e, kb.MOVE_DOWN)
             ? Math.min(ids.length - 1, idx + 1)
             : Math.max(0, idx - 1);
           setSelectedBookId(ids[next]);
@@ -355,7 +360,7 @@ export default function ReadingSheet() {
             <span className="ws-meta-sep">·</span>
             <span>{counts.finished || 0} finished</span>
             <span className="ws-meta-sep">·</span>
-            <span>{counts.archived || 0} archived</span>
+            <span>{counts.archived || 0} hidden</span>
             <span className="ws-meta-sep">·</span>
             <span>{counts.tobuy || 0} to buy</span>
           </div>
@@ -411,21 +416,7 @@ export default function ReadingSheet() {
             ))}
           </div>
         )}
-        <input
-          ref={searchInputRef}
-          className="ws-filter-input"
-          type="search"
-          placeholder="Search books…"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Escape') e.target.blur(); }}
-          aria-label="Search books by title, author, or status"
-        />
-        {q && (
-          <span className="ws-filter-count">
-            {visible.length} of {modeBooks.length}
-          </span>
-        )}
+
       </div>
 
       {confirmDeleteId != null && (() => {
@@ -566,18 +557,17 @@ export default function ReadingSheet() {
                         {book.status === 'active' && (
                           <button className="action-btn" onClick={() => changeStatus(book, 'finished')} title="Mark finished">FINISH</button>
                         )}
-                        {book.status !== 'archived' ? (
-                          <button className="action-btn" onClick={() => changeStatus(book, 'archived')} title="Archive (keeps history)">ARCHIVE</button>
-                        ) : (
-                          <button className="action-btn" onClick={() => changeStatus(book, 'active')} title="Reactivate">UNARCHIVE</button>
+                        {book.status === 'archived' && (
+                          <button className="action-btn" onClick={() => changeStatus(book, 'active')} title="Reactivate">REACTIVATE</button>
                         )}
                       </div>
                     </td>
                     <td className="rd-col-checkpoints">
                       <div className="rd-checkpoints">
                         {entries.map((e) => (
-                          <span key={e.id} className="rd-checkpoint" title={`page ${e.page} on ${e.entry_date}${e.note ? ` — ${e.note}` : ''}`}>
+                          <span key={e.id} data-reading-entry={e.id} className={`rd-checkpoint${selectedEntryId === e.id ? ' history-selected' : ''}`} title={`page ${e.page} on ${e.entry_date}${e.note ? ` — ${e.note}` : ''}`}>
                             {e.page}<span className="rd-cp-date">, {formatDate(e.entry_date)}</span>
+                            {selectedEntryId === e.id && e.note && <span> · {e.note}</span>}
                           </span>
                         ))}
                         {addingFor === book.id ? (
@@ -615,7 +605,7 @@ export default function ReadingSheet() {
           )}
           {modeBooks.length > 0 && visible.length === 0 && (
             <div className="grid-status">
-              {q ? `No books match "${searchQuery.trim()}".` : `No ${filter} books.`}
+              {`No ${filter === 'archived' ? 'hidden' : filter} books.`}
             </div>
           )}
         </div>

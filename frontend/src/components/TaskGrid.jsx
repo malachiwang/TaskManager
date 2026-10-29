@@ -8,8 +8,6 @@ import {
   createTask,
   updateTask,
   deleteTask,
-  createArchive,
-  downloadExportSheet,
   fetchNotes,
   upsertNote,
   reorderTasks,
@@ -27,11 +25,10 @@ import TaskRow from './TaskRow.jsx';
 import TaskModal from './TaskModal.jsx';
 import EditBar from './EditBar.jsx';
 import KeyboardHelp from './KeyboardHelp.jsx';
-import { FILTERS, FILTER_LABELS, PRIMARY_FILTERS, SECONDARY_FILTERS, taskPassesFilter } from '../filters.js';
-import FilterMenu from './FilterMenu.jsx';
+import { FILTERS, FILTER_LABELS, PRIMARY_FILTERS, taskPassesFilter } from '../filters.js';
 import { GROUP_MODES, groupTasks, uniqueSections } from '../grouping.js';
-import { matchKeybind, resolveKeybinds } from '../keybinds.js';
-import SavedViewsControl from './SavedViewsControl.jsx';
+import { matchKeybind, resolveKeybinds, jumpDigit, isTypingTarget, canDismiss } from '../keybinds.js';
+import MonthHistory from './MonthHistory.jsx';
 import GroupSelect from './GroupSelect.jsx';
 
 // ---------------------------------------------------------------------------
@@ -252,16 +249,9 @@ function startEdgeAutoscroll(scrollEl, getPointerY, onScrollTick) {
   return () => clearInterval(timer);
 }
 
-export default function TaskGrid({ onScheduleTask = null }) {
+export default function TaskGrid({ onScheduleTask = null, viewMonth, setViewMonth, searchTarget, onTargetConsumed }) {
   // Real today — always fixed regardless of which month is displayed.
   const todayStr = toLocalDate(new Date());
-
-  // Currently displayed month. Shape is { year, month } (1-indexed month).
-  // Future modes (Rolling 30, Custom Range) can extend this state shape.
-  const [viewMonth, setViewMonth] = useState(() => {
-    const now = new Date();
-    return { year: now.getFullYear(), month: now.getMonth() + 1 };
-  });
 
   // Derive full date array from the selected month.
   const dates = useMemo(
@@ -288,16 +278,11 @@ export default function TaskGrid({ onScheduleTask = null }) {
 
   // Filtering / search state — Phase 1, split in P10.0.
   // activeFilter is the primary status scope (All/Active/Hiatus/Finished);
-  // secondaryFilters are on/off toggles (Urgent/Dormant/…) ANDed on top.
+  // Status scope is independent of grouping and workspace search.
   const [activeFilter, setActiveFilter] = useState(FILTERS.ALL);
-  const [secondaryFilters, setSecondaryFilters] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-
-  function toggleSecondaryFilter(f) {
-    setSecondaryFilters((prev) =>
-      prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f],
-    );
-  }
+  const [revealedTaskId, setRevealedTaskId] = useState(null);
+  const [historyId, setHistoryId] = useState(null);
+  useEffect(() => { setHistoryId(null); }, [viewMonth.year, viewMonth.month]);
 
   // Grouping mode — Phase 3. Persisted to localStorage.
   const [groupMode, setGroupMode] = useState(
@@ -409,32 +394,18 @@ export default function TaskGrid({ onScheduleTask = null }) {
     // completion entry never sets end_date, so completing a cell never hides a task.
     const viewYearMonth = `${viewMonth.year}-${String(viewMonth.month).padStart(2, '0')}`;
     let result = tasks.filter(
-      (t) => !t.end_date || t.end_date.slice(0, 7) >= viewYearMonth,
+      (t) => t.id === revealedTaskId || !t.end_date || t.end_date.slice(0, 7) >= viewYearMonth,
     );
     if (activeFilter !== FILTERS.ALL) {
       result = result.filter((t) => taskPassesFilter(t, activeFilter));
     }
-    // Secondary toggles — AND semantics: a task must pass every active toggle.
-    for (const f of secondaryFilters) {
-      result = result.filter((t) => taskPassesFilter(t, f));
-    }
-    if (searchQuery.trim()) {
-      const q = searchQuery.trim().toLowerCase();
-      result = result.filter(
-        (t) =>
-          (t.name    && t.name.toLowerCase().includes(q)) ||
-          (t.subtask && t.subtask.toLowerCase().includes(q)) ||
-          (t.category && t.category.toLowerCase().includes(q)) ||
-          (t.notes   && t.notes.toLowerCase().includes(q)),
-      );
-    }
     return result;
-  }, [tasks, activeFilter, secondaryFilters, searchQuery, viewMonth.year, viewMonth.month]);
+  }, [tasks, activeFilter, revealedTaskId, viewMonth.year, viewMonth.month]);
 
   // Any filter/search hides tasks — empty sections are suppressed then, since
   // a section that merely *looks* empty under a filter is a confusing target.
   const hasActiveFilters =
-    activeFilter !== FILTERS.ALL || secondaryFilters.length > 0 || searchQuery.trim() !== '';
+    activeFilter !== FILTERS.ALL;
 
   // Group filtered tasks by the current groupMode.
   // SECTION mode follows the persisted manual order (P12.1) and renders
@@ -556,7 +527,9 @@ export default function TaskGrid({ onScheduleTask = null }) {
   // `gate` engages the full-surface loading state. Only the initial mount load
   // and the explicit Retry do that; post-mutation refreshes and month changes
   // swap data in place, as before, so the grid does not flash.
+  const loadVersion = useRef(0);
   const loadData = useCallback((options) => {
+    const version = ++loadVersion.current;
     const start = dates[0];
     const end = dates[dates.length - 1];
     if (options?.gate === true) setLoading(true);
@@ -567,6 +540,7 @@ export default function TaskGrid({ onScheduleTask = null }) {
       fetchSections(),
     ])
       .then(([taskList, compList, noteList, overrideList, hiatusList, sectionList]) => {
+        if (version !== loadVersion.current) return;
         setTasks(taskList);
         setSections(sectionList);
         const map = {};
@@ -586,8 +560,8 @@ export default function TaskGrid({ onScheduleTask = null }) {
         setCellOverrides(overrideMap);
         setHiatusPeriods(hiatusList);
       })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+      .catch((err) => { if (version === loadVersion.current) setError(err.message); })
+      .finally(() => { if (version === loadVersion.current) setLoading(false); });
   }, [dates]);
 
   useEffect(() => {
@@ -1306,17 +1280,6 @@ export default function TaskGrid({ onScheduleTask = null }) {
     }
   }, []);
 
-  // Archive is named by selected month (e.g. "2026-05") so it is stable
-  // regardless of what day the button is clicked.
-  async function handleArchive() {
-    const name = `${viewMonth.year}-${String(viewMonth.month).padStart(2, '0')}`;
-    try {
-      await createArchive(name, dates[0], dates[dates.length - 1]);
-    } catch (e) {
-      console.error('archive failed:', e);
-    }
-  }
-
   // ---------------------------------------------------------------------------
   // Month navigation
   // ---------------------------------------------------------------------------
@@ -1361,6 +1324,8 @@ export default function TaskGrid({ onScheduleTask = null }) {
   const cellOverridesRef   = useRef({});
   const hiatusCellsRef     = useRef(new Set());
   const editingOverrideCellRef = useRef(null);
+  const historyIdRef = useRef(historyId);
+  historyIdRef.current = historyId;
   const modalOpenRef       = useRef(false);
   const handlersRef        = useRef({});
   const helpOpenRef        = useRef(false);
@@ -1370,7 +1335,6 @@ export default function TaskGrid({ onScheduleTask = null }) {
   // even if React hasn't re-rendered yet. Cleared on manual panel edit or close.
   const numericBufferRef     = useRef(null);
   const jumpInputRef         = useRef(null);
-  const searchInputRef       = useRef(null);
   const quickJumpEnabledRef  = useRef(quickJumpEnabled);
   const helpBtnRef           = useRef(null);
   const helpPanelRef       = useRef(null);
@@ -1418,13 +1382,35 @@ export default function TaskGrid({ onScheduleTask = null }) {
   useEffect(() => {
     setSelectedCell(null);
     setRangeEnd(null);
-  }, [activeFilter, secondaryFilters]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Clear selectedCell when groupMode changes — render order may change completely.
   useEffect(() => {
     setSelectedCell(null);
     setRangeEnd(null);
   }, [groupMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!searchTarget || searchTarget.kind !== 'task') return;
+    setActiveFilter(FILTERS.ALL);
+    setRevealedTaskId(searchTarget.id);
+    setHistoryId(searchTarget.snapshotId ?? null);
+    setRangeEnd(null);
+    setSelectedMetaCell(null);
+  }, [searchTarget]);
+
+  useEffect(() => {
+    if (!searchTarget || searchTarget.kind !== 'task' || loading || activeFilter !== FILTERS.ALL) return;
+    if (!searchTarget.snapshotId && !flatGroupedTasks.some(t => t.id === searchTarget.id)) return;
+    if (!searchTarget.snapshotId) setSelectedCell({ taskId: searchTarget.id, date: searchTarget.date || dates[0] });
+    const frame = requestAnimationFrame(() => {
+      document.querySelector(`tr[data-task-id="${searchTarget.id}"]`)?.scrollIntoView({ block: 'center', inline: 'nearest' });
+      if (!searchTarget.snapshotId) document.querySelector(`td[data-dc-task="${searchTarget.id}"][data-dc-date="${searchTarget.date || dates[0]}"]`)
+        ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      onTargetConsumed();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [searchTarget, loading, activeFilter, flatGroupedTasks, dates, onTargetConsumed]);
 
   // Close help panel when user clicks outside both the panel and the trigger button.
   useEffect(() => {
@@ -1457,6 +1443,7 @@ export default function TaskGrid({ onScheduleTask = null }) {
   // handler is automatically removed when the user switches to another tab.
   useEffect(() => {
     function onKeyDown(e) {
+      if (historyIdRef.current !== null) return;
       const {
         handleIncrement, handleClear, handleSetCount,
         openAdd, openEdit, setSelectedCell, closeModal, setHelpOpen,
@@ -1484,7 +1471,7 @@ export default function TaskGrid({ onScheduleTask = null }) {
       // Escape — priority: modal > help > range > cell selection. Modal close
       // is pre-guard (works while typing inside a modal input); the rest
       // respect the typing guard.
-      if (matchKeybind(e, kb.CLEAR_SELECTION)) {
+      if (canDismiss(e, kb.CLEAR_SELECTION, modalOpenRef.current)) {
         if (modalOpenRef.current) {
           closeModal();
           return;
@@ -1515,8 +1502,8 @@ export default function TaskGrid({ onScheduleTask = null }) {
       // Shift+digit (0–9) — opens/fills the Jump panel for context-aware Quick Jump.
       // Reserved before typing-to-edit below, so Shift+digits never type into cells.
       // Uses event.code (layout-agnostic) because Shift+3 → '#' in event.key on US keyboards.
-      if (quickJumpEnabledRef.current && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && /^Digit[0-9]$/.test(e.code)) {
-        const digit = e.code[5]; // '0'–'9'
+      if (quickJumpEnabledRef.current && jumpDigit(e, kb) !== null) {
+        const digit = jumpDigit(e, kb); // '0'–'9'
         e.preventDefault();
         numericBufferRef.current = (numericBufferRef.current ?? '') + digit;
         setJumpMode((m) => m === null
@@ -1527,8 +1514,7 @@ export default function TaskGrid({ onScheduleTask = null }) {
       }
 
       // Shift+Arrow — extend the range from the anchor, spreadsheet-style.
-      if (sel && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey
-          && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+      if (sel && ['LEFT', 'RIGHT', 'UP', 'DOWN'].some(d => matchKeybind(e, kb[`RANGE_${d}`]))) {
         e.preventDefault();
         const focus = rangeEndRef.current ?? sel;
         const rIdx = tasks.findIndex((t) => t.id === focus.taskId);
@@ -1536,10 +1522,10 @@ export default function TaskGrid({ onScheduleTask = null }) {
         if (rIdx < 0 || dIdx < 0) return;
         let nr = rIdx;
         let nd = dIdx;
-        if (e.key === 'ArrowLeft')  nd = Math.max(0, dIdx - 1);
-        if (e.key === 'ArrowRight') nd = Math.min(dates.length - 1, dIdx + 1);
-        if (e.key === 'ArrowUp')    nr = Math.max(0, rIdx - 1);
-        if (e.key === 'ArrowDown')  nr = Math.min(tasks.length - 1, rIdx + 1);
+        if (matchKeybind(e, kb.RANGE_LEFT))  nd = Math.max(0, dIdx - 1);
+        if (matchKeybind(e, kb.RANGE_RIGHT)) nd = Math.min(dates.length - 1, dIdx + 1);
+        if (matchKeybind(e, kb.RANGE_UP))    nr = Math.max(0, rIdx - 1);
+        if (matchKeybind(e, kb.RANGE_DOWN))  nr = Math.min(tasks.length - 1, rIdx + 1);
         setRangeEnd({ taskId: tasks[nr].id, date: dates[nd] });
         return;
       }
@@ -1551,7 +1537,8 @@ export default function TaskGrid({ onScheduleTask = null }) {
       // accept typing — delete the checkbox first (Delete/Backspace creates a
       // blank text cell), then type. This keeps single-letter app shortcuts
       // (N/E/? etc.) working while a checkbox cell is selected.
-      if (sel && e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (sel && e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey
+          && !Object.values(kb).some(b => ['global', 'sheet', 'grid'].includes(b.context) && matchKeybind(e, b))) {
         const meta = cellMeta(sel.taskId, sel.date);
         if (meta.isOverride && !meta.disabled) {
           e.preventDefault();
@@ -1562,7 +1549,7 @@ export default function TaskGrid({ onScheduleTask = null }) {
 
       // N — open Add Task modal (no selection required)
       if (matchKeybind(e, kb.NEW_TASK)) {
-        openAdd();
+        e.preventDefault(); openAdd();
         return;
       }
 
@@ -1573,7 +1560,7 @@ export default function TaskGrid({ onScheduleTask = null }) {
         const editTaskId = sel?.taskId ?? selectedMetaCellRef.current?.taskId;
         if (editTaskId == null) return;
         const task = tasks.find((t) => t.id === editTaskId);
-        if (task) openEdit(task);
+        if (task) { e.preventDefault(); openEdit(task); }
         return;
       }
 
@@ -1586,7 +1573,7 @@ export default function TaskGrid({ onScheduleTask = null }) {
       // / — focus the task search box (customizable via FOCUS_SEARCH)
       if (matchKeybind(e, kb.FOCUS_SEARCH)) {
         e.preventDefault();
-        searchInputRef.current?.focus();
+        document.getElementById('workspace-search')?.focus();
         return;
       }
 
@@ -1615,7 +1602,7 @@ export default function TaskGrid({ onScheduleTask = null }) {
       // Delete / Backspace — convert selected cell(s) to blank text cells.
       // Range selection converts every eligible cell; the underlying completion
       // counts are preserved and locked cells are skipped (handleDeleteCells).
-      if ((e.key === 'Delete' || e.key === 'Backspace') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (matchKeybind(e, kb.DELETE_CELL) || matchKeybind(e, kb.BACKSPACE_CELL)) {
         e.preventDefault();
         const range = rangeSelectionRef.current;
         handleDeleteCells(range ? range.cells : [cellMeta(sel.taskId, sel.date)]);
@@ -1756,34 +1743,6 @@ export default function TaskGrid({ onScheduleTask = null }) {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentionally reads from refs
 
-  // Saved views
-  // ---------------------------------------------------------------------------
-
-  function handleApplyView(view) {
-    const validFilter    = Object.values(FILTERS).includes(view.filter)
-      ? view.filter    : FILTERS.ALL;
-    const validGroupMode = Object.values(GROUP_MODES).includes(view.groupMode)
-      ? view.groupMode : GROUP_MODES.SECTION;
-    // Legacy views saved before the primary/secondary split may carry a
-    // secondary filter (Urgent/Dormant/…) as their primary — map it to
-    // All + that toggle so the visible task set is identical.
-    if (SECONDARY_FILTERS.includes(validFilter)) {
-      setActiveFilter(FILTERS.ALL);
-      setSecondaryFilters([validFilter]);
-    } else {
-      setActiveFilter(validFilter);
-      setSecondaryFilters(
-        Array.isArray(view.secondary)
-          ? view.secondary.filter((f) => SECONDARY_FILTERS.includes(f))
-          : [],
-      );
-    }
-    setGroupMode(validGroupMode);
-    setSearchQuery(view.searchQuery || '');
-    setSelectedCell(null);
-    setRangeEnd(null);
-  }
-
   // ---------------------------------------------------------------------------
   // Jump mode handlers (Quick Jump panel)
   // ---------------------------------------------------------------------------
@@ -1796,8 +1755,8 @@ export default function TaskGrid({ onScheduleTask = null }) {
 
   function handleJumpKeyDown(e) {
     // Allow additional Shift+digits to accumulate in the panel while it's open.
-    if (quickJumpEnabled && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && /^Digit[0-9]$/.test(e.code)) {
-      const digit = e.code[5];
+    if (quickJumpEnabled && jumpDigit(e, resolvedKb) !== null) {
+      const digit = jumpDigit(e, resolvedKb);
       e.preventDefault();
       numericBufferRef.current = (numericBufferRef.current ?? '') + digit;
       setJumpMode((m) => ({ ...m, type: 'numeric', value: (m?.value ?? '') + digit, error: '' }));
@@ -1948,6 +1907,8 @@ export default function TaskGrid({ onScheduleTask = null }) {
   // Render
   // ---------------------------------------------------------------------------
 
+  const selectedTask = tasks.find(t => t.id === (selectedCell?.taskId ?? selectedMetaCell?.taskId));
+
   if (loading) return <div className="grid-status">Loading…</div>;
   if (error) return (
     <div className="grid-status error">
@@ -1968,12 +1929,10 @@ export default function TaskGrid({ onScheduleTask = null }) {
       {/* ── Tier 1: Operations shelf — ink dark, primary actions only ── */}
       <div className="ws-grid-shelf">
         <div className="ws-shelf-left">
-          <button className="ws-shelf-btn ws-shelf-btn--primary" onClick={openAdd}>+ Add Task</button>
-          <button className="ws-shelf-btn" onClick={handleArchive}>Archive Sheet</button>
-          <button
-            className="ws-shelf-btn"
-            onClick={() => downloadExportSheet(dates[0], dates[dates.length - 1])}
-          >Export CSV</button>
+          <button className="ws-shelf-btn ws-shelf-btn--primary" onClick={openAdd} disabled={historyId !== null}>+ Add Task</button>
+          <button className="ws-shelf-btn" disabled={!selectedTask || historyId !== null} onClick={() => openEdit(selectedTask)}
+            title={selectedTask ? `Edit ${selectedTask.name}` : 'Select a task in the grid first'}>Edit Task</button>
+          {!selectedTask && <span className="ws-selection-hint">Select a task to edit</span>}
         </div>
       </div>
 
@@ -1996,8 +1955,6 @@ export default function TaskGrid({ onScheduleTask = null }) {
           <button className="ws-sheet-nav" onClick={goToNextMonth}>›</button>
         </div>
         <div className="ws-sheet-header-right">
-          <span className="ws-status-pill ws-status-pill--ok">local</span>
-          <span className="ws-status-pill ws-status-pill--ok">SQLite</span>
           <div className="ws-kbd-help-anchor">
             <button
               ref={helpBtnRef}
@@ -2022,6 +1979,8 @@ export default function TaskGrid({ onScheduleTask = null }) {
         </div>
       </div>
 
+      <MonthHistory month={viewMonth} selectedId={historyId} onSelect={setHistoryId} targetId={revealedTaskId} />
+      <div className="live-grid" hidden={historyId !== null}>
       {/* ── Filter bar — status scope + secondary toggles + search (P10.0) ── */}
       <div className="ws-filter-bar">
         <div className="ws-filter-seg" role="group" aria-label="Task status scope">
@@ -2030,57 +1989,18 @@ export default function TaskGrid({ onScheduleTask = null }) {
               key={f}
               className={`ws-filter-seg-btn${activeFilter === f ? ' ws-filter-seg-btn--active' : ''}`}
               aria-pressed={activeFilter === f}
-              onClick={() => setActiveFilter(f)}
+              onClick={() => { setRevealedTaskId(null); setActiveFilter(f); }}
             >
               {FILTER_LABELS[f]}
             </button>
           ))}
         </div>
-        <FilterMenu active={secondaryFilters} onToggle={toggleSecondaryFilter} />
-        {secondaryFilters.map((f) => (
-          <span key={f} className="ws-filter-chip">
-            {FILTER_LABELS[f]}
-            <button
-              type="button"
-              className="ws-filter-chip-x"
-              aria-label={`Remove ${FILTER_LABELS[f]} filter`}
-              onClick={() => toggleSecondaryFilter(f)}
-            >
-              ×
-            </button>
-          </span>
-        ))}
-        {secondaryFilters.length > 0 && (
-          <button
-            type="button"
-            className="ws-filter-clear"
-            onClick={() => setSecondaryFilters([])}
-          >
-            Clear filters
-          </button>
-        )}
-        <input
-          ref={searchInputRef}
-          className="ws-filter-input"
-          type="search"
-          placeholder="Search tasks…"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Escape') e.target.blur(); }}
-        />
         {filteredTasks.length !== tasks.length && (
           <span className="ws-filter-count">
             {filteredTasks.length} of {tasks.length}
           </span>
         )}
         <GroupSelect value={groupMode} onChange={setGroupMode} />
-        <SavedViewsControl
-          activeFilter={activeFilter}
-          secondaryFilters={secondaryFilters}
-          groupMode={groupMode}
-          searchQuery={searchQuery}
-          onApplyView={handleApplyView}
-        />
         {quickJumpEnabled && (
           <button
             type="button"
@@ -2297,18 +2217,7 @@ export default function TaskGrid({ onScheduleTask = null }) {
         {tasks.length > 0 && filteredTasks.length === 0 && (
           <div className="grid-status">
             No tasks match the current filters.
-            {secondaryFilters.length > 0 && (
-              <>
-                {' '}
-                <button
-                  type="button"
-                  className="ws-filter-clear"
-                  onClick={() => setSecondaryFilters([])}
-                >
-                  Clear filters
-                </button>
-              </>
-            )}
+            <button type="button" className="ws-filter-clear" onClick={() => setActiveFilter(FILTERS.ALL)}>Show all tasks</button>
           </div>
         )}
       </div>
@@ -2347,6 +2256,7 @@ export default function TaskGrid({ onScheduleTask = null }) {
           onSchedule={onScheduleTask ? (task) => { closeModal(); onScheduleTask(task); } : null}
         />
       )}
+      </div>
     </>
   );
 }

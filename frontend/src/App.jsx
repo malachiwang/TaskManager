@@ -1,30 +1,38 @@
 import { useState, useEffect } from 'react';
 import TaskGrid from './components/TaskGrid.jsx';
 import CalendarView from './components/CalendarView.jsx';
-import Dashboard from './components/Dashboard.jsx';
-import Archive from './components/Archive.jsx';
 import Settings from './components/Settings.jsx';
 import ReadingSheet from './components/ReadingSheet.jsx';
 import MonthlyReport from './components/MonthlyReport.jsx';
 import TopBarNetwork from './components/TopBarNetwork.jsx';
 import LoadingScreen from './components/LoadingScreen.jsx';
 import { fetchHealth } from './api.js';
+import WorkspaceSearch from './components/WorkspaceSearch.jsx';
 import { initAppearance } from './appearance.js';
 
 export default function App() {
-  // Navigation is split into two concepts (P5.0-fix1):
-  //   activeSheet — the primary spreadsheet surface (Tasks | Reading), chosen
-  //     from the bottom worksheet-tab bar. Its value is preserved while a tool
-  //     view is open, so returning from a tool lands back on the last sheet.
-  //   activeTool  — a supporting utility view (Calendar | Dashboard | Reports |
-  //     Archive | Settings) opened from the top toolbar; null means "show the
-  //     active sheet".
-  const [activeSheet, setActiveSheet] = useState('tasks');
-  const [activeTool, setActiveTool] = useState(null);
-
-  // Schedule-from-Grid (P16.0 §13/§15): a Grid task handed to the Calendar,
-  // which arms its placement mode and then consumes the request.
+  const [page, setPage] = useState('main');
+  const [mainView, setMainView] = useState('grid');
+  const [gridMonth, setGridMonth] = useState(() => ({ year: new Date().getFullYear(), month: new Date().getMonth() + 1 }));
+  const [calendarState, setCalendarState] = useState({});
+  const [reportState, setReportState] = useState({});
+  const [searchTarget, setSearchTarget] = useState(null);
   const [calendarPlaceTask, setCalendarPlaceTask] = useState(null);
+
+  function navigate(result) {
+    if (result.kind === 'navigation') {
+      setPage(result.page);
+      if (result.view) setMainView(result.view);
+    } else {
+      setPage('main');
+      setMainView(result.kind === 'reading' ? 'reading' : 'grid');
+      if (result.date && result.kind !== 'reading') {
+        const [year, month] = result.date.split('-').map(Number);
+        setGridMonth({ year, month });
+      }
+      setSearchTarget({ ...result, requestId: Date.now() });
+    }
+  }
 
   // Boot gate (P8.0B) — the surfaces (TaskGrid, ReadingSheet, …) each own their
   // inline data loading, so there is no global data store to wait on. What is
@@ -87,15 +95,9 @@ export default function App() {
   // and keeps the implementation self-contained.
   useEffect(() => {
     initAppearance();
+    // Retired views can never reapply hidden filtering. Grouping is independent.
+    localStorage.removeItem('taskos-saved-views');
   }, []);
-
-  const showingTool = activeTool !== null;
-
-  // Selecting a bottom sheet tab leaves any open tool view and shows that sheet.
-  function openSheet(sheet) {
-    setActiveSheet(sheet);
-    setActiveTool(null);
-  }
 
   if (booting) return <LoadingScreen />;
 
@@ -110,50 +112,38 @@ export default function App() {
             <span className="app-title">TaskManager</span>
             <span className="app-tagline">Local Workspace</span>
           </div>
-          {/* Utility/tool views — not primary sheets. */}
-          <nav className="app-utility-nav" aria-label="Tools">
-            <button className={`tab${activeTool === 'calendar' ? ' active' : ''}`} onClick={() => setActiveTool('calendar')}>Calendar</button>
-            <button className={`tab${activeTool === 'dashboard' ? ' active' : ''}`} onClick={() => setActiveTool('dashboard')}>Dashboard</button>
-            <button className={`tab${activeTool === 'report' ? ' active' : ''}`} onClick={() => setActiveTool('report')}>Reports</button>
-            <button className={`tab${activeTool === 'archive' ? ' active' : ''}`} onClick={() => setActiveTool('archive')}>Archive</button>
-            <button className={`tab${activeTool === 'settings' ? ' active' : ''}`} onClick={() => setActiveTool('settings')}>Settings</button>
+          <WorkspaceSearch onOpen={navigate} />
+          <nav className="app-utility-nav" aria-label="Pages">
+            {['main', 'reports', 'settings'].map((id) => (
+              <button key={id} className={`tab${page === id ? ' active' : ''}`} aria-current={page === id ? 'page' : undefined} onClick={() => setPage(id)}>
+                {id[0].toUpperCase() + id.slice(1)}
+              </button>
+            ))}
           </nav>
         </div>
       </header>
 
-      <main className="app-main" data-tab={showingTool ? activeTool : activeSheet}>
-        {!showingTool && activeSheet === 'tasks' && (
-          <TaskGrid
-            onScheduleTask={(task) => {
-              setCalendarPlaceTask(task);
-              setActiveTool('calendar');
-            }}
-          />
-        )}
-        {!showingTool && activeSheet === 'reading' && <ReadingSheet />}
-        {activeTool === 'calendar' && (
-          <CalendarView
-            placeRequest={calendarPlaceTask}
-            onPlaceRequestConsumed={() => setCalendarPlaceTask(null)}
-          />
-        )}
-        {activeTool === 'dashboard' && <Dashboard onOpenReports={() => setActiveTool('report')} />}
-        {activeTool === 'report' && <MonthlyReport onOpenDashboard={() => setActiveTool('dashboard')} />}
-        {activeTool === 'archive' && <Archive />}
-        {activeTool === 'settings' && <Settings />}
+      {page === 'main' && <nav className="main-subnav" aria-label="Main views">
+        {['grid', 'reading', 'calendar'].map((id) => (
+          <button key={id} className={`tab${mainView === id ? ' active' : ''}`} aria-current={mainView === id ? 'page' : undefined} onClick={() => setMainView(id)}>
+            {id[0].toUpperCase() + id.slice(1)}
+          </button>
+        ))}
+      </nav>}
+      <main className="app-main" data-tab={page === 'main' ? mainView : page}>
+        {page === 'main' && mainView === 'grid' && <TaskGrid
+          viewMonth={gridMonth} setViewMonth={setGridMonth}
+          searchTarget={searchTarget} onTargetConsumed={() => setSearchTarget(null)}
+          onScheduleTask={(task) => { setCalendarPlaceTask(task); setMainView('calendar'); }}
+        />}
+        {page === 'main' && mainView === 'reading' && <ReadingSheet searchTarget={searchTarget} onTargetConsumed={() => setSearchTarget(null)} />}
+        {page === 'main' && mainView === 'calendar' && <CalendarView
+          savedState={calendarState} onStateChange={setCalendarState}
+          placeRequest={calendarPlaceTask} onPlaceRequestConsumed={() => setCalendarPlaceTask(null)}
+        />}
+        {page === 'reports' && <MonthlyReport savedState={reportState} onStateChange={setReportState} />}
+        {page === 'settings' && <Settings sheetMonth={gridMonth} />}
       </main>
-
-      {/* Primary sheet tabs — Google-Sheets-style worksheet tabs. */}
-      <nav className="sheet-tabbar" aria-label="Sheets">
-        <button
-          className={`sheet-tab${!showingTool && activeSheet === 'tasks' ? ' sheet-tab-active' : ''}`}
-          onClick={() => openSheet('tasks')}
-        >Tasks</button>
-        <button
-          className={`sheet-tab${!showingTool && activeSheet === 'reading' ? ' sheet-tab-active' : ''}`}
-          onClick={() => openSheet('reading')}
-        >Reading</button>
-      </nav>
     </div>
   );
 }

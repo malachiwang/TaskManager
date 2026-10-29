@@ -8,7 +8,7 @@
 //   resolveKeybinds   — convenience: load + build in one call
 //   matchKeybind      — pure KeyboardEvent comparator
 //   bindingLabel      — human-readable label for display
-//   isReservedBinding — validation: blocks Enter, Esc, Arrows, etc.
+//   isReservedBinding — rejects keys that cannot identify an action
 //   findBindingConflict — validation: detects collisions with other actions
 //   captureEventToBinding — normalizes a KeyboardEvent into a binding object
 
@@ -20,11 +20,10 @@
 //   label        — display fallback for the default binding.
 //   description  — help text shown in Settings and the help panel.
 //   group        — display grouping (Settings / help panel sections).
-//   context      — conflict scope: 'global' | 'grid' | 'reading'. Two actions
+//   context      — global, grid, reading, or sheet (grid + reading). Two actions
 //                  may share a binding only if their contexts differ AND
 //                  neither is 'global' (a global binding must stay unique).
-//   customizable — whether the Settings UI offers rebinding. Non-customizable
-//                  entries carry fixedReason explaining why.
+//   customizable — all keyboard actions offer Change in Settings.
 //   requiresSelection — informational; used by handlers, not the registry.
 //
 // Custom bindings live in localStorage (taskos-keybinds) as {ACTION: binding}
@@ -39,7 +38,7 @@ export const KEYBINDS = {
     label: '↵',
     description: 'Increment completion for selected cell (opens the editor on a text cell)',
     group: 'Task Grid', context: 'grid',
-    customizable: false, fixedReason: 'foundational',
+    customizable: true,
     requiresSelection: true,
   },
   DECREMENT: {
@@ -47,39 +46,39 @@ export const KEYBINDS = {
     label: '⇧↵',
     description: 'Decrement completion for selected cell',
     group: 'Task Grid', context: 'grid',
-    customizable: false, fixedReason: 'foundational',
+    customizable: true,
     requiresSelection: true,
   },
   MOVE_LEFT: {
     key: 'ArrowLeft', shift: false, meta: false, ctrl: false, alt: false,
     label: '←',
     description: 'Move selection left',
-    group: 'Navigation', context: 'global',
-    customizable: false, fixedReason: 'navigation',
+    group: 'Navigation', context: 'sheet',
+    customizable: true,
     requiresSelection: false,
   },
   MOVE_RIGHT: {
     key: 'ArrowRight', shift: false, meta: false, ctrl: false, alt: false,
     label: '→',
     description: 'Move selection right',
-    group: 'Navigation', context: 'global',
-    customizable: false, fixedReason: 'navigation',
+    group: 'Navigation', context: 'sheet',
+    customizable: true,
     requiresSelection: false,
   },
   MOVE_UP: {
     key: 'ArrowUp', shift: false, meta: false, ctrl: false, alt: false,
     label: '↑',
     description: 'Move selection up',
-    group: 'Navigation', context: 'global',
-    customizable: false, fixedReason: 'navigation',
+    group: 'Navigation', context: 'sheet',
+    customizable: true,
     requiresSelection: false,
   },
   MOVE_DOWN: {
     key: 'ArrowDown', shift: false, meta: false, ctrl: false, alt: false,
     label: '↓',
     description: 'Move selection down',
-    group: 'Navigation', context: 'global',
-    customizable: false, fixedReason: 'navigation',
+    group: 'Navigation', context: 'sheet',
+    customizable: true,
     requiresSelection: false,
   },
   EDIT_TASK: {
@@ -99,8 +98,8 @@ export const KEYBINDS = {
   FOCUS_SEARCH: {
     key: '/', shift: false, meta: false, ctrl: false, alt: false,
     label: '/',
-    description: 'Focus the task search box',
-    group: 'Task Grid', context: 'grid',
+    description: 'Focus workspace search',
+    group: 'Global', context: 'global',
     customizable: true, requiresSelection: false,
   },
   CLEAR_SELECTION: {
@@ -108,7 +107,7 @@ export const KEYBINDS = {
     label: 'Esc',
     description: 'Close modal, collapse range, or clear selection',
     group: 'Global', context: 'global',
-    customizable: false, fixedReason: 'cancel',
+    customizable: true,
     requiresSelection: false,
   },
   TOGGLE_HELP: {
@@ -132,14 +131,50 @@ export const KEYBINDS = {
     group: 'Reading', context: 'reading',
     customizable: true, requiresSelection: true,
   },
-  READING_FOCUS_SEARCH: {
-    key: '/', shift: false, meta: false, ctrl: false, alt: false,
-    label: '/',
-    description: 'Focus the reading search box',
-    group: 'Reading', context: 'reading',
-    customizable: true, requiresSelection: false,
-  },
+
 };
+
+// All app keyboard actions are editable; mouse gestures remain documented separately.
+for (const direction of ['LEFT', 'RIGHT', 'UP', 'DOWN']) {
+  KEYBINDS[`RANGE_${direction}`] = {
+    ...KEYBINDS[`MOVE_${direction}`], shift: true, group: 'Navigation', context: 'grid',
+    description: `Extend selection ${direction.toLowerCase()}`, requiresSelection: true,
+  };
+}
+for (let digit = 0; digit <= 9; digit++) {
+  KEYBINDS[`JUMP_${digit}`] = {
+    key: String(digit), shift: true, meta: false, ctrl: false, alt: false,
+    description: `Jump: append digit ${digit} (release Shift or Enter to confirm)`,
+    group: 'Navigation', context: 'grid', customizable: true,
+  };
+}
+for (const [action, key, context, description] of [
+  ['DELETE_CELL', 'Delete', 'grid', 'Convert selected cells to blank text; keep completion history'],
+  ['BACKSPACE_CELL', 'Backspace', 'grid', 'Convert selected cells to blank text (alternate)'],
+  ['READING_CHECKPOINT', 'Enter', 'reading', 'Add a page checkpoint for the selected book'],
+  ['READING_DELETE', 'Delete', 'reading', 'Delete selected book after confirmation'],
+  ['READING_BACKSPACE', 'Backspace', 'reading', 'Delete selected book after confirmation (alternate)'],
+  ['FOCUS_NEXT', 'Tab', 'global', 'Move focus forward'],
+  ['FOCUS_PREVIOUS', 'Tab', 'global', 'Move focus backward'],
+]) {
+  KEYBINDS[action] = { key, shift: action === 'FOCUS_PREVIOUS', meta: false, ctrl: false, alt: false,
+    context, group: context === 'reading' ? 'Reading' : context === 'grid' ? 'DateCells' : 'Global',
+    description, customizable: true };
+}
+
+export function isTypingTarget(target) {
+  return !!target?.closest?.('input, textarea, select, [contenteditable="true"], [role="textbox"]');
+}
+// Native Escape still dismisses editors; a remapped printable cancel never eats text.
+export function canDismiss(event, binding, modalOpen = false) {
+  return (event.key === 'Escape' && (modalOpen || isTypingTarget(event.target))) || (!isTypingTarget(event.target) && matchKeybind(event, binding));
+}
+export function jumpDigit(event, resolved) {
+  for (let digit = 0; digit <= 9; digit++) {
+    if (matchKeybind(event, resolved[`JUMP_${digit}`])) return String(digit);
+  }
+  return null;
+}
 
 // Human copy for fixedReason badges (Settings + help panel).
 export const FIXED_REASON_LABELS = {
@@ -153,7 +188,7 @@ export const FIXED_REASON_LABELS = {
 };
 
 // Display order for groups in Settings and KeyboardHelp.
-export const KB_GROUP_ORDER = ['Global', 'Navigation', 'Task Grid', 'DateCells', 'Reading', 'Fixed gestures'];
+export const KB_GROUP_ORDER = ['Global', 'Navigation', 'Task Grid', 'DateCells', 'Reading', 'Mouse gestures'];
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -170,6 +205,10 @@ function isSymbolKey(key) {
 // normalizeBinding — lowercase letters, coerce booleans, no mutation
 // ---------------------------------------------------------------------------
 export function normalizeBinding(binding) {
+  const shiftedDigits = ')!@#$%^&*(';
+  if (binding.key.length === 1 && shiftedDigits.includes(binding.key)) {
+    binding = { ...binding, key: String(shiftedDigits.indexOf(binding.key)), shift: true };
+  }
   return {
     key:   /^[a-zA-Z]$/.test(binding.key) ? binding.key.toLowerCase() : binding.key,
     shift: !!binding.shift,
@@ -223,12 +262,12 @@ export function bindingLabel(binding) {
 // Symbol keys skip the shift check; see isSymbolKey above.
 // ---------------------------------------------------------------------------
 export function matchKeybind(event, binding) {
+  if (!binding) return false;
   const n = normalizeBinding(binding);
-  if (event.key.toLowerCase() !== n.key.toLowerCase()) return false;
-  if (!isSymbolKey(n.key) && !!event.shiftKey !== n.shift) return false;
-  if (!!event.metaKey !== n.meta) return false;
-  if (!!event.ctrlKey !== n.ctrl) return false;
-  if (!!event.altKey  !== n.alt)  return false;
+  const actual = normalizeBinding({ key: event.key, shift: event.shiftKey, meta: event.metaKey, ctrl: event.ctrlKey, alt: event.altKey });
+  if (actual.key.toLowerCase() !== n.key.toLowerCase()) return false;
+  if (!isSymbolKey(n.key) && actual.shift !== n.shift) return false;
+  if (actual.meta !== n.meta || actual.ctrl !== n.ctrl || actual.alt !== n.alt) return false;
   return true;
 }
 
@@ -251,16 +290,9 @@ export function captureEventToBinding(event) {
 }
 
 // ---------------------------------------------------------------------------
-// isReservedBinding — true if the binding should never be allowed as a custom
-// shortcut. Blocks: multi-char named keys (Enter, Esc, Arrows, etc.), Space,
-// and any combination using Ctrl / Meta / Alt.
-// ---------------------------------------------------------------------------
+// Reject modifier-only/unidentified events. Conflicts are validated separately.
 export function isReservedBinding(binding) {
-  const n = normalizeBinding(binding);
-  if (n.key.length > 1) return true;   // Enter, Escape, ArrowLeft, Tab, F1…
-  if (n.key === ' ')    return true;   // Space
-  if (n.meta || n.ctrl || n.alt) return true;
-  return false;
+  return ['Shift', 'Control', 'Meta', 'Alt', 'CapsLock', 'Unidentified', 'Dead'].includes(binding.key);
 }
 
 // ---------------------------------------------------------------------------
@@ -279,7 +311,9 @@ export function findBindingConflict(binding, forAction, resolved) {
     if (action === forAction) continue;
     if (bindingSignature(b) !== sig) continue;
     const ctx = KEYBINDS[action]?.context ?? 'global';
-    if (ctx === forCtx || ctx === 'global' || forCtx === 'global') return action;
+    if (ctx === forCtx || ctx === 'global' || forCtx === 'global'
+        || (ctx === 'sheet' && ['grid', 'reading'].includes(forCtx))
+        || (forCtx === 'sheet' && ['grid', 'reading'].includes(ctx))) return action;
   }
   return null;
 }
@@ -337,7 +371,7 @@ export function buildResolvedFromOverrides(overrides) {
   for (const [action, binding] of Object.entries(KEYBINDS)) {
     const override = overrides[action];
     if (binding.customizable && override) {
-      result[action] = { ...binding, ...override };
+      result[action] = { ...binding, ...normalizeBinding(override) };
     } else {
       result[action] = binding;
     }
@@ -358,66 +392,10 @@ export function resolveKeybinds() {
 // FIXED_REASON_LABELS and explains why the entry cannot be rebound.
 // ---------------------------------------------------------------------------
 export const FIXED_SHORTCUTS = [
-  {
-    group: 'Navigation',
-    keys: '⇧ + digits',
-    reason: 'navigation',
-    description: 'Opens the Jump panel and fills it live. No selection: Enter confirms row jump N. With selection: Enter confirms date column N. Hold ⇧, type digits, release ⇧ or press ↵.',
-  },
-  {
-    group: 'Navigation',
-    keys: '⇧ + arrows',
-    reason: 'navigation',
-    description: 'Extend the date-cell range selection from the anchor.',
-  },
-  {
-    group: 'DateCells',
-    keys: 'Del / ⌫',
-    reason: 'guarded',
-    description: 'Convert selected cell(s) to blank text cells — completion history is preserved; Restore checkbox reveals it again.',
-  },
-  {
-    group: 'Reading',
-    keys: '↵',
-    reason: 'foundational',
-    description: 'Add a page checkpoint for the selected book.',
-  },
-  {
-    group: 'Reading',
-    keys: 'Del / ⌫',
-    reason: 'guarded',
-    description: 'Delete the selected book (always asks for confirmation first).',
-  },
-  {
-    group: 'Fixed gestures',
-    keys: 'Click ☐ / ✓',
-    reason: 'mouse',
-    description: 'Increment completion count.',
-  },
-  {
-    group: 'Fixed gestures',
-    keys: '⇧Click / drag',
-    reason: 'mouse',
-    description: 'Select a rectangular date-cell range (never toggles).',
-  },
-  {
-    group: 'Fixed gestures',
-    keys: '⌥Click',
-    reason: 'mouse',
-    description: 'Select a date cell without toggling it.',
-  },
-  {
-    group: 'Fixed gestures',
-    keys: 'Dbl-click',
-    reason: 'mouse',
-    description: 'Edit a text cell inline.',
-  },
-  {
-    group: 'Fixed gestures',
-    keys: 'Tab / ⇧Tab',
-    reason: 'accessibility',
-    description: 'Standard focus movement — never remapped.',
-  },
+  { group: 'Mouse gestures', keys: 'Click ☐ / ✓', reason: 'mouse', description: 'Increment completion count.' },
+  { group: 'Mouse gestures', keys: '⇧Click / drag', reason: 'mouse', description: 'Select a rectangular range.' },
+  { group: 'Mouse gestures', keys: '⌥Click', reason: 'mouse', description: 'Select without toggling.' },
+  { group: 'Mouse gestures', keys: 'Dbl-click', reason: 'mouse', description: 'Edit a text cell inline.' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -425,61 +403,10 @@ export const FIXED_SHORTCUTS = [
 // Items with `action` get their label from the resolved binding at render time.
 // Items without `action` use the static `keys` string (combined nav rows).
 // ---------------------------------------------------------------------------
-export const KEYBIND_HELP = [
-  {
-    group: 'Global',
-    items: [
-      { action: 'TOGGLE_HELP',     desc: 'Show or hide keyboard shortcuts' },
-      { action: 'CLEAR_SELECTION', desc: 'Close modal / collapse range / clear selection' },
-    ],
-  },
-  {
-    group: 'Navigation',
-    items: [
-      { keys: '↑ / ↓', desc: 'Move selection between rows' },
-      { keys: '← / →', desc: 'Move selection between dates' },
-      { keys: '⇧ + arrows', desc: 'Extend date-cell range selection' },
-      { keys: '⇧ + digits', desc: 'Opens Jump panel live · release ⇧ or ↵ to confirm · no selection: row N · with selection: date column N' },
-    ],
-  },
-  {
-    group: 'Task Grid',
-    items: [
-      { action: 'INCREMENT',    desc: 'Increment completion for selected date cell' },
-      { action: 'DECREMENT',    desc: 'Decrement completion for selected date cell' },
-      { action: 'EDIT_TASK',    desc: 'Open task details (scheduling, status, priority, notes)' },
-      { action: 'NEW_TASK',     desc: 'Add a new task' },
-      { action: 'FOCUS_SEARCH', desc: 'Focus the task search box' },
-    ],
-  },
-  {
-    group: 'DateCells',
-    note: 'To type into a date cell, first delete the checkbox with Del/⌫. This creates a blank text cell while preserving hidden completion state — then typing edits the text cell.',
-    items: [
-      { keys: 'Del / ⌫',  desc: 'Convert selected cell(s) to blank text cells — completion history is kept; Restore checkbox brings it back' },
-      { keys: 'Type text', desc: 'Edit a TEXT cell in place (replaces its text; Esc cancels). Checkbox cells ignore typing.' },
-      { keys: '↵ on text', desc: 'Open the text-cell editor' },
-    ],
-  },
-  {
-    group: 'Reading',
-    note: 'Shortcuts follow the current view: in the To Buy view, N adds a to-buy book and E/Del act on the selected wishlist row.',
-    items: [
-      { action: 'READING_NEW_BOOK',     desc: 'Add a new book (to-buy book in the To Buy view)' },
-      { action: 'READING_EDIT_BOOK',    desc: 'Edit the selected book' },
-      { action: 'READING_FOCUS_SEARCH', desc: 'Focus the reading search box' },
-      { keys: '↵',        desc: 'Add a page checkpoint for the selected book (library view only)' },
-      { keys: 'Del / ⌫', desc: 'Delete the selected book (asks for confirmation)' },
-    ],
-  },
-  {
-    group: 'Fixed gestures',
-    items: [
-      { keys: 'Click cell',   desc: 'Select date cell (no mutation)' },
-      { keys: 'Click ☐ / ✓', desc: 'Increment completion count' },
-      { keys: '⇧Click / drag', desc: 'Select a rectangular date-cell range (never toggles)' },
-      { keys: '⌥Click',      desc: 'Select a date cell without toggling it' },
-      { keys: 'Dbl-click',    desc: 'Enter inline edit mode for text cells' },
-    ],
-  },
-];
+export const KEYBIND_HELP = KB_GROUP_ORDER.map(group => ({
+  group,
+  items: [
+    ...Object.entries(KEYBINDS).filter(([, b]) => b.group === group).map(([action, b]) => ({ action, desc: b.description })),
+    ...FIXED_SHORTCUTS.filter(b => b.group === group).map(b => ({ keys: b.keys, desc: b.description })),
+  ],
+}));

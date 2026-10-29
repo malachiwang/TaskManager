@@ -1,0 +1,163 @@
+// Run only against disposable fixtures from tests.test_simplify.seed_history.
+// TM_TEST_URL points to Vite proxying that database; PLAYWRIGHT_MODULE may name
+// an already installed Playwright module, so the project needs no new dependency.
+import assert from 'node:assert/strict';
+import { KEYBINDS } from '../src/keybinds.js';
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || process.argv[2] || 'playwright');
+const browser = await chromium.launch({ headless: true });
+const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+const errors = [];
+page.on('pageerror', error => errors.push(error.message));
+const button = name => page.getByRole('button', { name, exact: true });
+const search = page.getByRole('combobox', { name: 'Search workspace' });
+async function openSearch(query, pattern) {
+  await search.fill(query);
+  const option = page.getByRole('option').filter({ hasText: pattern || query }).first();
+  await option.waitFor();
+  await option.click();
+}
+async function bind(description, key) {
+  const row = page.locator('.ws-kbd-shortcut-row').filter({ has: page.locator('.ws-kbd-shortcut-desc', { hasText: description }) }).first();
+  await row.getByRole('button', { name: 'Change', exact: true }).click();
+  await page.keyboard.press(key);
+  await row.getByRole('button', { name: 'Change', exact: true }).waitFor();
+}
+try {
+  await page.addInitScript(() => localStorage.setItem('taskos-saved-views', JSON.stringify({version:1, views:[{id:'old', name:'Hidden', filter:'active', groupMode:'section', searchQuery:'no matching task'}]})));
+  await page.goto(process.env.TM_TEST_URL || 'http://127.0.0.1:15173');
+  await button('+ Add Task').waitFor();
+  assert.deepEqual(await page.getByRole('navigation', { name: 'Pages', exact: true }).getByRole('button').allTextContents(), ['Main', 'Reports', 'Settings']);
+  assert.deepEqual(await page.getByRole('navigation', { name: 'Main views' }).getByRole('button').allTextContents(), ['Grid', 'Reading', 'Calendar']);
+  assert.equal(await page.evaluate(() => localStorage.getItem('taskos-saved-views')), null);
+  assert.equal(await button('Edit Task').isDisabled(), true);
+  assert.equal(await button('Archive Sheet').count(), 0);
+  assert.equal(await button('Export CSV').count(), 0);
+  assert.equal(await page.locator('.sheet-tabbar').count(), 0);
+  await button('Finished').click();
+  await page.getByText('No tasks match the current filters.').waitFor();
+  await openSearch('Current active task');
+  await page.locator('td.selected').first().waitFor();
+  assert.equal(await button('All').getAttribute('aria-pressed'), 'true');
+  assert.equal(await button('Edit Task').isDisabled(), false);
+  await button('Edit Task').click();
+  await page.locator('#tm-name').waitFor();
+  assert.equal(await page.locator('#tm-name').inputValue(), 'Current active task');
+  await button('Cancel').click();
+  await button('+ Add Task').click();
+  await page.locator('#tm-name').waitFor();
+  assert.equal(await page.locator('#tm-name').inputValue(), '');
+  await button('Cancel').click();
+  console.log('PASS navigation, empty status filter, search reveal, Add/Edit editors');
+
+  await openSearch('January note needle');
+  await page.locator('.ws-sheet-range').filter({ hasText: '2025' }).waitFor();
+  assert.match(await page.locator('.ws-sheet-range').innerText(), /Jan 1.*Jan 31, 2025/i);
+  await button('Reports').click();
+  await button('Today').waitFor();
+  await button('History').click();
+  await button('Execution').click();
+  await button('Main').click();
+  assert.match(await page.locator('.ws-sheet-range').innerText(), /Jan 1.*Jan 31, 2025/i);
+  await openSearch('Original historical');
+  await page.locator('[data-history-task]').waitFor();
+  assert.match(await page.locator('.month-history').innerText(), /Original historical task/);
+  assert.match(await page.locator('.month-history').innerText(), /January note needle/);
+  await page.getByRole('combobox', { name: 'Monthly history' }).selectOption('');
+  console.log('PASS report views, retained month, historical note and snapshot navigation');
+
+  await openSearch('Checkpoint needle');
+  await page.locator('[data-reading-entry]').first().waitFor();
+  assert.match(await page.locator('.reading-grid').innerText(), /Historical reading/);
+  await button('Settings').click(); await button('Main').click();
+  assert.equal(await button('Reading').getAttribute('aria-current'), 'page');
+  await openSearch('Book needle', 'Historical reading');
+  await page.locator('#rb-title').waitFor();
+  await button('Cancel').click();
+  await search.fill('NoResultsForThisQuery');
+  await page.getByText('No results found.', { exact: true }).waitFor();
+  await search.press('Escape');
+  assert.equal(await search.getAttribute('aria-expanded'), 'false');
+  await search.fill('Calendar');
+  await page.getByRole('option').filter({ hasText: 'Go to page' }).waitFor();
+  await search.press('ArrowDown'); await search.press('ArrowUp'); await search.press('Enter');
+  assert.equal(await button('Calendar').getAttribute('aria-current'), 'page');
+  console.log('PASS reading checkpoint/book search, no results, Escape, keyboard navigation');
+
+  await button('Settings').click();
+  await button('Export…').click();
+  await button('Full backup (JSON)').waitFor();
+  await button('Spreadsheet (CSV)').waitFor();
+  assert.equal(await page.getByText('Storage & privacy', { exact: true }).count(), 0);
+  assert.equal(await page.locator('.ws-kbd-shortcut-row').filter({ hasText: 'fixed · navigation' }).count(), 0);
+  assert.equal(await button('Change').count(), Object.keys(KEYBINDS).length);
+  await bind('Move selection right', 'Alt+l');
+  await bind('Extend selection right', 'Alt+r');
+  await bind('Increment completion for selected cell', 'Alt+i');
+  await bind('Decrement completion for selected cell', 'Alt+d');
+  await bind('Convert selected cells to blank text; keep completion history', 'Alt+b');
+  await bind('Jump: append digit 3', 'Alt+j');
+  await bind('Close modal, collapse range, or clear selection', 'Alt+x');
+  await bind('Add a new task', 'Alt+n');
+  await page.reload(); await button('Settings').click();
+  assert.match(await page.locator('.ws-kbd-shortcut-row').filter({ hasText: 'Move selection right' }).innerText(), /Alt\+L/);
+  await button('Main').click(); await button('Grid').click();
+  await openSearch('Current active task');
+  await page.locator('td.selected').first().waitFor();
+  const selected = page.locator('td.selected').first();
+  const taskId = await selected.getAttribute('data-dc-task');
+  const date = await selected.getAttribute('data-dc-date');
+  const completionUrl = `${new URL(page.url()).origin}/api/completions?start=${date}&end=${date}`;
+  const count = async () => ((await (await page.request.get(completionUrl)).json()).find(c => c.task_id === Number(taskId))?.completion_count || 0);
+  const before = await count();
+  let changed = page.waitForResponse(r => r.url().includes('/api/completions') && r.request().method() !== 'GET');
+  await page.keyboard.press('Alt+i'); await changed;
+  assert.equal(await count(), before + 1);
+  changed = page.waitForResponse(r => r.url().includes('/api/completions') && r.request().method() !== 'GET');
+  await page.keyboard.press('Alt+d'); await changed;
+  assert.equal(await count(), before);
+  changed = page.waitForResponse(r => r.url().includes('/api/date-cell-overrides') && r.request().method() !== 'GET');
+  await page.keyboard.press('Alt+b'); await changed;
+  assert.equal(await count(), before);
+  // Restore via the same endpoint as the UI; keep fixtures reusable.
+  await page.request.delete(`${new URL(page.url()).origin}/api/date-cell-overrides/${taskId}/${date}`);
+  console.log('PASS rebound completion increment/decrement and text conversion preserve counts');
+  await page.keyboard.press('Alt+j');
+  await page.getByRole('dialog', { name: 'Quick jump' }).waitFor();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Alt+l');
+  await page.keyboard.press('Alt+r');
+  assert.match(await page.locator('.ws-inspector-badge').innerText(), /range/i);
+  await page.keyboard.press('Alt+x');
+  await page.keyboard.press('Alt+x');
+  await page.keyboard.press('Alt+n');
+  await page.locator('#tm-name').waitFor();
+  await page.locator('#tm-name').fill('Normal typing arrows escape');
+  await page.keyboard.press('Alt+x');
+  assert.equal(await page.locator('#tm-name').isVisible(), true);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#tm-name').count(), 0);
+  await button('Settings').click(); await button('Reset all shortcuts').click();
+  console.log('PASS configurable handlers, reload persistence, range/jump, text and modal guards, reset');
+
+  await button('Main').click(); await button('Grid').click();
+  await button('+ Add Task').waitFor();
+  await page.screenshot({ path: '/tmp/tm-simplify-ui/desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await button('+ Add Task').waitFor();
+  await page.screenshot({ path: '/tmp/tm-simplify-ui/narrow-grid.png' });
+  await page.locator('.grid-wrapper').evaluate(el => { el.scrollLeft = el.scrollWidth; });
+  assert.ok(await page.locator('.date-cell').evaluateAll(cells => cells.some(c => { const r = c.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; })));
+  await button('Settings').click();
+  assert.equal(await search.isVisible(), true);
+  assert.equal(await button('Main').isVisible(), true);
+  await page.screenshot({ path: '/tmp/tm-simplify-ui/narrow.png' });
+  await button('Export…').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: '/tmp/tm-simplify-ui/narrow-settings.png' });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  assert.deepEqual(errors, []);
+  console.log('PASS desktop/narrow screenshots; no browser runtime errors');
+} catch (error) {
+  console.log('UI failure state:', (await page.locator('body').innerText()).slice(0,2500));
+  await page.screenshot({path:'/tmp/tm-simplify-ui/failure.png'});
+  throw error;
+} finally { await browser.close(); }

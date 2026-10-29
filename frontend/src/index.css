@@ -3799,7 +3799,7 @@ thead .meta-col {
 }
 
 /* ── App-level grid state: slightly cooler bg behind sheet ── */
-.app-main[data-tab='tasks'],
+.app-main[data-tab='grid'],
 .app-main[data-tab='reading'] {
   background: var(--bg-app);
 }
@@ -8637,3 +8637,57 @@ html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-sc
   color: var(--ink-2);
 }
 .dash-signal-copy { font-size: 12px; color: var(--ink-2); line-height: 1.45; }
+
+/* TM-SIMPLIFY-01: existing palette, compact navigation and search. */
+.main-subnav { display: flex; gap: 4px; padding: 8px 20px; border-bottom: 1px solid var(--grid-border); }
+.workspace-search { position: relative; flex: 1 1 260px; max-width: 480px; min-width: 180px; color: var(--ink-2); z-index: 100; }
+.workspace-search-field { display: flex; background: var(--bg-panel); border: 1px solid var(--grid-border); border-radius: 4px; }
+.workspace-search-field input { width: 100%; min-width: 0; padding: 9px 10px; border: 0; background: transparent; color: inherit; }
+.workspace-search-field button { border: 0; background: transparent; color: inherit; padding: 0 10px; }
+.workspace-search-results { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--bg-panel); color: var(--ink-2); border: 1px solid var(--grid-border); box-shadow: 0 6px 20px #0003; max-height: 60vh; overflow: auto; }
+.workspace-search-results button { display: block; width: 100%; border: 0; text-align: left; padding: 10px; background: transparent; color: inherit; }
+.workspace-search-results button.is-selected { background: var(--accent-soft, #e3edf7); }
+.workspace-search-results small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 3px; }
+.workspace-search-results [role="status"]:not(:empty) { padding: 12px; }
+.ws-selection-hint { font-size: 12px; opacity: .8; }
+.ws-shelf-btn:disabled { opacity: .5; cursor: default; }
+.month-history { padding: 8px 16px; }
+.month-history select { max-width: 100%; }
+.history-selected { outline: 2px solid var(--accent, #3979b9); outline-offset: -2px; }
+.history-note { display: block; white-space: normal; min-width: 90px; }
+.ws-export-options, .ws-csv-import { padding: 12px; }
+.ws-export-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.ws-export-options p { width: 100%; margin: 0; font-size: 12px; }
+[hidden] { display: none !important; }
+@media (max-width: 700px) {
+  .app-topbar-content { flex-wrap: wrap; gap: 10px; }
+  .workspace-search { order: 3; flex-basis: 100%; max-width: none; }
+  .app-utility-nav { margin-left: auto; }
+  .ws-sheet-header, .ws-filter-bar, .ws-shelf-left { flex-wrap: wrap; gap: 8px; }
+  .main-subnav { padding: 6px 10px; }
+  .ws-kbd-shortcut-row { flex-wrap: wrap; }
+}
+
+.app-header { overflow: visible; z-index: 40; }
+.app-topbar-content { gap: 16px; }
+.main-subnav { background: var(--bg-panel); flex-shrink: 0; }
+.main-subnav .tab { color: var(--ink-2); border-color: transparent; }
+.main-subnav .tab:hover { background: var(--bg-hover); }
+.main-subnav .tab.active { color: var(--accent-blue-strong); background: var(--accent-soft); border-color: var(--accent); }
+.live-grid { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.month-history { overflow: auto; flex-shrink: 0; max-height: 100%; }
+@media (max-width: 700px) {
+  .app-header { height: auto; min-height: 46px; padding: 8px 10px; }
+  .app-topbar-content { height: auto; gap: 8px; }
+  .app-identity { min-width: 0; }
+  .ws-settings-summary { flex-wrap: wrap; }
+}
+
+.ws-selection-hint { color: #ddd; }
+@media (max-width: 700px) {
+  .ws-settings .ws-ctrl-row, .ws-backup-primary { flex-wrap: wrap; }
+  .ws-settings .ws-ctrl-info { flex: 1 1 180px; }
+  .ws-settings .ws-ctrl-action { flex-wrap: wrap; max-width: 100%; }
+  /* Let a narrow viewport reach date cells beyond the frozen metadata. */
+  .task-grid .sticky-col { left: auto !important; }
+}

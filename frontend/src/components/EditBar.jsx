@@ -237,7 +237,7 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
         <span className="edit-bar-date">{dateLabel(date)}</span>
         <span className="edit-bar-sep">·</span>
         {isHiatusBlank ? (
-          <span className="edit-bar-disabled">hiatus period — history preserved</span>
+          <span className="edit-bar-disabled">Hiatus</span>
         ) : isTextOverride ? (
           <span className="edit-bar-count">text cell</span>
         ) : isDisabled ? (

@@ -1,9 +1,10 @@
+import CsvImport from './CsvImport.jsx';
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { downloadExportBackup, restoreBackup, fetchDoc } from '../api.js';
+import { downloadExportBackup, downloadExportSheet, restoreBackup, fetchDoc } from '../api.js';
 import {
   KEYBINDS, KB_GROUP_ORDER, FIXED_SHORTCUTS, FIXED_REASON_LABELS,
   loadKbOverrides, writeKbOverrides, buildResolvedFromOverrides,
-  isReservedBinding, findBindingConflict, captureEventToBinding,
+  findBindingConflict, captureEventToBinding,
   bindingLabel, bindingSignature, normalizeBinding,
 } from '../keybinds.js';
 import {
@@ -77,7 +78,21 @@ function DocSection({ name, label }) {
   );
 }
 
-export default function Settings() {
+export default function Settings({ sheetMonth }) {
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportError, setExportError] = useState('');
+  async function exportData(format) {
+    setExportError('');
+    try {
+      if (format === 'json') await downloadExportBackup();
+      else {
+        const { year, month } = sheetMonth;
+        const prefix = `${year}-${String(month).padStart(2, '0')}`;
+        await downloadExportSheet(`${prefix}-01`, `${prefix}-${new Date(year, month, 0).getDate()}`);
+      }
+      setExportOpen(false);
+    } catch (e) { setExportError(e.message); }
+  }
   // Appearance mode / visual theme / accent / motion (P10.0–P10.1) —
   // applied live, saved in localStorage (taskos-appearance).
   const [appearance, setAppearance]           = useState(loadAppearance);
@@ -163,32 +178,12 @@ export default function Settings() {
       // Pure modifier keys — ignore silently; user is still composing.
       if (['Shift', 'Control', 'Meta', 'Alt', 'CapsLock'].includes(e.key)) return;
 
-      // Escape always cancels recording, never binds.
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        setRecordingAction(null);
-        setRecordingError('');
-        return;
-      }
-
       // Block everything else from triggering browser shortcuts while recording.
       e.preventDefault();
       e.stopPropagation();
 
       const binding = captureEventToBinding(e);
       if (!binding) return;
-
-      // Shift+0–9 reserved for Quick Jump (row/column navigation and jump prompt).
-      // event.code check is layout-agnostic (Shift+0 gives ')' in event.key on US keyboards).
-      if (e.shiftKey && /^Digit[0-9]$/.test(e.code)) {
-        setRecordingError('Reserved — Shift+digits are used by Quick Jump navigation');
-        return;
-      }
-
-      if (isReservedBinding(binding)) {
-        setRecordingError('Reserved — modifier combos and named keys (Enter, Esc, arrows, Tab…) belong to the browser/system. Choose a plain letter, digit, or symbol.');
-        return;
-      }
 
       const conflict = findBindingConflict(binding, recordingAction, resolvedKb);
       if (conflict) {
@@ -215,8 +210,8 @@ export default function Settings() {
       setRecordingError('');
     }
 
-    window.addEventListener('keydown', captureKey);
-    return () => window.removeEventListener('keydown', captureKey);
+    window.addEventListener('keydown', captureKey, true);
+    return () => window.removeEventListener('keydown', captureKey, true);
   }, [recordingAction, resolvedKb]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function startRecording(action) {
@@ -230,6 +225,12 @@ export default function Settings() {
   }
 
   function resetOverride(action) {
+    const conflict = findBindingConflict(KEYBINDS[action], action, resolvedKb);
+    if (conflict) {
+      setRecordingAction(action);
+      setRecordingError(`Default conflicts with "${KEYBINDS[conflict].description}". Change that binding or reset all shortcuts.`);
+      return;
+    }
     setKbOverrides((prev) => {
       const next = { ...prev };
       delete next[action];
@@ -291,7 +292,7 @@ export default function Settings() {
       {/* ── Hero ── */}
       <div className="ws-page-header">
         <span>Settings</span>
-        <span className="ws-page-header-sub">local preferences · browser storage · never synced</span>
+        <span className="ws-page-header-sub">Appearance, defaults, and data</span>
       </div>
 
       {/* ── Summary strip ── */}
@@ -308,10 +309,7 @@ export default function Settings() {
           <span className="ws-settings-summary-label">Default priority</span>
           <span className="ws-settings-summary-value">{defaultPriority} / 10</span>
         </div>
-        <div className="ws-settings-summary-cell">
-          <span className="ws-settings-summary-label">Storage</span>
-          <span className="ws-settings-summary-value">local SQLite</span>
-        </div>
+
       </div>
 
       {/* ── Two-column layout ── */}
@@ -508,9 +506,7 @@ export default function Settings() {
               <div className="ws-ctrl-info">
                 <span className="ws-ctrl-label">Quick Jump</span>
                 <span className="ws-ctrl-desc">
-                  Use Shift+number shortcuts and the Jump button to navigate the grid.
-                  No selection: Shift+digits jumps to that row. With a cell selected:
-                  Shift+digits jumps to that date column in the current row.
+                  Jump to a row or date column. Change the digit bindings below.
                 </span>
               </div>
               <div className="ws-ctrl-action">
@@ -530,7 +526,7 @@ export default function Settings() {
               <div className="ws-ctrl-info">
                 <span className="ws-ctrl-label">Column widths</span>
                 <span className="ws-ctrl-desc">
-                  Drag column edges to resize. Widths are saved in browser storage per device.
+                  Drag column edges to resize.
                   {colResetMsg && (
                     <span className="settings-saved" style={{ display: 'block', marginTop: '4px' }}>
                       Widths cleared. Switch to the Tasks sheet to see the updated layout.
@@ -550,11 +546,11 @@ export default function Settings() {
           <div className="ws-frame">
             <div className="ws-frame-header">
               <span className="ws-frame-kicker">04</span>
-              <span>Dashboard</span>
-              <span className="ws-frame-header-sub">show/hide panels · browser storage · no task data changed</span>
+              <span>Reports · Today</span>
+              <span className="ws-frame-header-sub">Choose visible panels</span>
             </div>
 
-            <div className="ws-settings-group">Dashboard sections</div>
+            <div className="ws-settings-group">Today sections</div>
             <div className="settings-toggle-grid">
               {DASHBOARD_SECTIONS.map((s) => (
                 <label key={s.key} className="settings-switch-row">
@@ -591,8 +587,7 @@ export default function Settings() {
               <div className="ws-ctrl-info">
                 <span className="ws-ctrl-label">Reset display &amp; dismissals</span>
                 <span className="ws-ctrl-desc">
-                  Dashboard-only preferences — hidden from Dashboard, does not edit any task.
-                  Changes apply next time you open the Dashboard.
+                  Changes apply when you next open Reports · Today.
                 </span>
               </div>
               <div className="ws-ctrl-action settings-dash-reset">
@@ -617,19 +612,16 @@ export default function Settings() {
               <span className="ws-frame-header-sub">export before bulk changes or imports</span>
             </div>
 
-            {/* Primary export action */}
             <div className="ws-backup-primary">
-              <div className="ws-ctrl-info">
-                <span className="ws-ctrl-label">Export full backup</span>
-                <span className="ws-ctrl-desc">
-                  One JSON file with everything: tasks, completions, notes, reading, and
-                  archives. Export before bulk changes and to move devices.
-                </span>
-              </div>
-              <button className="button-secondary ws-backup-btn" onClick={() => downloadExportBackup()}>
-                Download JSON
-              </button>
+              <div className="ws-ctrl-info"><span className="ws-ctrl-label">Export</span><span className="ws-ctrl-desc">Backup your workspace or download a spreadsheet.</span></div>
+              <button className="button-secondary ws-backup-btn" aria-expanded={exportOpen} onClick={() => setExportOpen(v => !v)}>Export…</button>
             </div>
+            {exportOpen && <div className="ws-export-options" role="group" aria-label="Export format">
+              <button className="button-secondary" onClick={() => exportData('json')}>Full backup (JSON)</button>
+              <button className="button-secondary" onClick={() => exportData('csv')}>Spreadsheet (CSV)</button>
+              <p>JSON restores the full workspace. CSV contains the grid for {sheetMonth.year}-{String(sheetMonth.month).padStart(2, '0')}; it is not a backup.</p>
+            </div>}
+            {exportError && <p role="alert">Export failed: {exportError}</p>}
 
             {/* Restore from backup (P9.0) — explicit confirm before overwrite */}
             <div className="ws-ctrl-row">
@@ -663,7 +655,7 @@ export default function Settings() {
                 <div className="ws-restore-confirm-copy">
                   Restore <strong>{restoreFile.name}</strong>? This <strong>overwrites your
                   current workspace</strong> — every task, completion, reading book, note, and
-                  archive is replaced by the backup&rsquo;s contents. A pre-restore safety copy
+                  saved version is replaced by the backup&rsquo;s contents. A pre-restore safety copy
                   of the current database is written first. Keep the backup file until you have
                   verified the result.
                 </div>
@@ -686,24 +678,13 @@ export default function Settings() {
             {restoreResult && (
               <div className="ws-restore-msg ws-restore-msg--ok" role="status">
                 Restore complete — {restoreResult.tasks} tasks, {restoreResult.completions} completions,{' '}
-                {restoreResult.reading_books} reading books, {restoreResult.archive_snapshots} archives
-                restored. Switch to the Tasks sheet to load the restored data.
+                {restoreResult.reading_books} reading books, {restoreResult.archive_snapshots} saved versions
+                restored. Switch to Main to load the restored data.
               </div>
             )}
 
-            <div className="ws-ctrl-row">
-              <div className="ws-ctrl-info">
-                <span className="ws-ctrl-label">Storage &amp; privacy</span>
-                <span className="ws-ctrl-desc">
-                  Everything is a local SQLite file (<code>taskos.db</code>) — no cloud, no
-                  account, no telemetry. UI preferences stay in this browser and are not part
-                  of backups. Details: Technical reference below.
-                </span>
-              </div>
-              <div className="ws-ctrl-action">
-                <span className="ws-state-badge ws-state-badge--on">local · offline</span>
-              </div>
-            </div>
+            <details className="ws-csv-import"><summary>Import spreadsheet (CSV)…</summary><CsvImport /></details>
+
           </div>
 
           {/* 05 Keyboard Shortcuts */}
@@ -711,24 +692,13 @@ export default function Settings() {
             <div className="ws-frame-header">
               <span className="ws-frame-kicker">06</span>
               <span>Keyboard shortcuts</span>
-              <span className="ws-frame-header-sub">customizable · saved in browser storage</span>
+              <span className="ws-frame-header-sub">Change a binding or restore defaults</span>
             </div>
             {kbGroups.map(({ group, actions }) => (
               <div key={group}>
                 <div className="ws-settings-group">{group}</div>
                 {actions.map(([action, binding]) => {
                   const isRecording = recordingAction === action;
-                  if (!binding.customizable) {
-                    return (
-                      <div key={action} className="ws-kbd-shortcut-row">
-                        <kbd className="ws-kbd-key">{bindingLabel(resolvedKb[action])}</kbd>
-                        <span className="ws-kbd-shortcut-desc">{binding.description}</span>
-                        <span className="ws-state-badge ws-state-badge--dim">
-                          fixed · {FIXED_REASON_LABELS[binding.fixedReason] || 'fixed'}
-                        </span>
-                      </div>
-                    );
-                  }
                   if (isRecording) {
                     return (
                       <div key={action} className="ws-kbd-shortcut-row ws-kbd-shortcut-row--recording">
@@ -811,7 +781,7 @@ D = days_since   I = interval_days`}</pre>
                 <div className="ws-state-row">
                   <div className="ws-ctrl-info">
                     <span className="ws-ctrl-label">Hiatus</span>
-                    <span className="ws-ctrl-desc">Suspended. Scores 0 urgency. Hidden from dashboard pressure and priority queue. Fully recoverable — set back to Active to resume.</span>
+                    <span className="ws-ctrl-desc">Suspended. Scores 0 urgency. Excluded from current pressure and priority queue. Fully recoverable — set back to Active to resume.</span>
                   </div>
                   <span className="ws-state-badge ws-state-badge--off">suspended</span>
                 </div>
@@ -832,13 +802,13 @@ D = days_since   I = interval_days`}</pre>
                 <div className="ws-state-row">
                   <div className="ws-ctrl-info">
                     <span className="ws-ctrl-label">Delete task</span>
-                    <span className="ws-ctrl-desc">Sets <code>is_active = 0</code>. Disappears from grid and dashboard. Completion history and archive snapshots are fully preserved. Recoverable via backup.</span>
+                    <span className="ws-ctrl-desc">Sets <code>is_active = 0</code>. Disappears from Grid and current recommendations. Completion history and saved versions are preserved. Recoverable via backup.</span>
                   </div>
                   <span className="ws-state-badge">soft delete</span>
                 </div>
                 <div className="ws-state-row">
                   <div className="ws-ctrl-info">
-                    <span className="ws-ctrl-label">Archive snapshots</span>
+                    <span className="ws-ctrl-label">Saved historical versions</span>
                     <span className="ws-ctrl-desc">Frozen JSON copy of all active tasks for a date range. Independent of live tasks — renaming or deleting current tasks has no effect on snapshots.</span>
                   </div>
                   <span className="ws-state-badge">immutable</span>
@@ -862,24 +832,7 @@ D = days_since   I = interval_days`}</pre>
                 </div>
               </RefSection>
 
-              <RefSection label="Storage &amp; privacy details">
-                <p className="settings-prose">
-                  All task data lives in <code>taskos.db</code> — a local SQLite file (project
-                  root in development, app-data directory in the packaged app; overridable with
-                  the <code>TASKOS_DB_PATH</code> environment variable). Gitignored, never
-                  committed, never leaves your machine.
-                </p>
-                <p className="settings-prose" style={{ marginTop: '8px' }}>
-                  UI preferences (theme, appearance, column widths, dashboard toggles, keyboard
-                  shortcuts) stay in this browser&rsquo;s localStorage and are <em>not</em>
-                  included in JSON backups — they do not transfer between devices.
-                </p>
-                <p className="settings-prose" style={{ marginTop: '8px' }}>
-                  No cloud sync. No authentication. No external services. No telemetry.
-                  All network traffic is localhost only. See <code>docs/INSTALL.md</code> in the
-                  repository for setup and device-transfer instructions.
-                </p>
-              </RefSection>
+
             </div>
           </div>
 
@@ -891,24 +844,13 @@ D = days_since   I = interval_days`}</pre>
             </div>
             <div className="ws-frame-body settings-prose">
               <p>
-                <strong>TaskManager</strong> is a local-first task, reading, and pressure
-                tracker. FastAPI backend, SQLite storage, React/Vite frontend. Built as a
-                personal productivity instrument.
+                <strong>TaskManager</strong> tracks tasks, reading, and task pressure.
               </p>
               {/* Build identity (P17 §5) — the one place to check whether a
                   packaged app is stale relative to the source tree. */}
               <p style={{ marginTop: '8px', fontVariantNumeric: 'tabular-nums' }}>
                 Build: <code>{typeof __BUILD_INFO__ !== 'undefined' ? __BUILD_INFO__.commit : 'dev'}</code>
                 {typeof __BUILD_INFO__ !== 'undefined' ? ` · built ${__BUILD_INFO__.date}` : ''}
-              </p>
-              <p style={{ marginTop: '8px' }}>
-                All data is stored locally in <code>~/.taskmanager/taskos.db</code> — one
-                canonical database shared by the desktop app and development. Never leaves
-                your machine. No cloud, no account, no external runtime dependencies.
-              </p>
-              <p style={{ marginTop: '8px', color: 'var(--muted)' }}>
-                Personal tool — not a public SaaS product. No notifications, no mobile, no
-                multi-user support. Current limitations are known and intentional.
               </p>
               <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <DocSection name="privacy"       label="Privacy Policy" />
