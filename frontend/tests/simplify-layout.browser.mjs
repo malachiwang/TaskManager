@@ -3,12 +3,12 @@
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || process.argv[2] || 'playwright');
-const output = process.env.TM_TEST_ARTIFACTS || '/tmp/tm-simplify-02-evidence';
+const output = process.env.TM_TEST_ARTIFACTS || '/tmp/tm-simplify-03/layout';
 mkdirSync(output, { recursive: true });
 const browser = await chromium.launch({headless:true});
 const records = [], errors = [];
 try {
-  for (const [mode,width,height] of [['dark',1440,1000],['dark',1100,850],['dark',390,844],['light',1440,1000]]) {
+  for (const [mode,width,height] of ['dark','light'].flatMap(mode => [1440,1100,390].map(width => [mode,width,900]))) {
     const context = await browser.newContext({viewport:{width,height}});
     const page = await context.newPage();
     page.on('pageerror',e=>errors.push(String(e)));
@@ -36,6 +36,16 @@ try {
     }
     await page.locator('td.col-task').filter({hasText:'Current active task'}).waitFor();
     await capture('grid');
+    const header = await page.locator('.ws-sheet-header--task').boundingBox();
+    const date = await page.locator('.sheet-date-controls').boundingBox();
+    assert.ok(Math.abs(date.x + date.width/2 - header.x - header.width/2) <= 1, 'month group centered on entire header');
+    const boxes = await page.locator('.ws-sheet-header--task > *').evaluateAll(nodes => nodes.map(n => {
+      const r=n.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom};
+    }));
+    for(let i=0;i<boxes.length;i++)for(let j=i+1;j<boxes.length;j++){
+      const a=boxes[i],b=boxes[j];assert.ok(a.right<=b.x||b.right<=a.x||a.bottom<=b.y||b.bottom<=a.y,'header groups do not overlap');
+    }
+    records.push({mode,width,headerCenter:header.x+header.width/2,dateCenter:date.x+date.width/2});
     // Keyboard navigation must expose a visible focus ring, including overflowed nav items.
     await page.keyboard.press('Tab');
     const focus = await page.evaluate(() => {
@@ -75,13 +85,12 @@ try {
     await capture('range');
     await page.keyboard.press('Escape');await page.keyboard.press('Escape');
     assert.equal(await page.locator('.ws-inspector-strip').count(),0);
-    if(width===1100){await context.close();continue;}
-    await search.fill('Original historical');await page.getByRole('option').filter({hasText:'Original historical task'}).first().click();
-    await page.locator('[data-history-task]').waitFor();
-    await actualFont('.month-version-select');await capture('history');
-    assert.match(await page.locator('.month-history').innerText(),/January note needle/);
-    await page.locator('.history-note').scrollIntoViewIfNeeded();await capture('history-notes');
-    await page.getByRole('combobox',{name:'Monthly history'}).selectOption('');
+    await search.fill('January note needle');
+    await page.getByRole('option').filter({hasText:'Current task'}).first().click();
+    await page.locator('.ws-sheet-range').filter({hasText:'Jan 1'}).waitFor();
+    assert.equal(await page.locator('.month-history, .month-version-select, [data-history-task]').count(),0);
+    assert.equal(await page.locator('.live-grid').isVisible(),true);
+    await capture('month-history');
     await button('Reading').click();await button('+ Add Book').waitFor();await capture('reading');
     await button('Calendar').click();await page.locator('.cal-toolbar').waitFor();await capture('calendar');
     // Completion buttons must not stretch the time-proportional session blocks.

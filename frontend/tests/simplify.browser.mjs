@@ -3,7 +3,7 @@
 // an already installed Playwright module, so the project needs no new dependency.
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
-const artifacts = process.env.TM_TEST_ARTIFACTS || '/tmp/tm-simplify-02-evidence';
+const artifacts = process.env.TM_TEST_ARTIFACTS || '/tmp/tm-simplify-03/behavior';
 mkdirSync(artifacts, { recursive: true });
 import { KEYBINDS } from '../src/keybinds.js';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || process.argv[2] || 'playwright');
@@ -26,14 +26,21 @@ async function bind(description, key) {
   await row.getByRole('button', { name: 'Change', exact: true }).waitFor();
 }
 try {
-  await page.addInitScript(() => localStorage.setItem('taskos-saved-views', JSON.stringify({version:1, views:[{id:'old', name:'Hidden', filter:'active', groupMode:'section', searchQuery:'no matching task'}]})));
+  await page.addInitScript(() => {
+    localStorage.setItem('taskos-saved-views', JSON.stringify({version:1, views:[{id:'old', name:'Hidden', filter:'active', groupMode:'section', searchQuery:'no matching task', snapshotId:1}]}));
+    // Unknown old preference keys must never override the current initial Grid.
+    localStorage.setItem('taskos-history-id', '1');
+    localStorage.setItem('taskos-active-tab', 'archive');
+  });
   await page.goto(process.env.TM_TEST_URL || 'http://127.0.0.1:15173');
   await button('+ Add Task').waitFor();
   assert.deepEqual(await page.getByRole('navigation', { name: 'Pages', exact: true }).getByRole('button').allTextContents(), ['Main', 'Grid', 'Reading', 'Calendar', 'Reports', 'Settings']);
   assert.deepEqual(await page.getByRole('group', { name: 'Main views' }).getByRole('button').allTextContents(), ['Grid', 'Reading', 'Calendar']);
   assert.equal(await page.evaluate(() => localStorage.getItem('taskos-saved-views')), null);
   assert.equal(await button('Edit Task').isDisabled(), true);
-  assert.equal(await page.locator('.main-subnav, .ws-grid-shelf, .ws-inspector-strip, .ws-selection-hint').count(), 0);
+  assert.equal(await page.locator('.ws-grid-shelf .ws-shelf-btn').count(), 2);
+  assert.equal(await page.locator('.ws-filter-bar .ws-shelf-btn').count(), 0);
+  assert.equal(await page.locator('.main-subnav, .ws-inspector-strip, .ws-selection-hint').count(), 0);
   const navBoxes = await page.getByRole('navigation', {name:'Pages', exact:true}).getByRole('button').evaluateAll(nodes => nodes.map(n => n.getBoundingClientRect().y));
   assert.ok(navBoxes.every(y => Math.abs(y - navBoxes[0]) < 1));
   const utility = page.locator('.header-utilities');
@@ -80,14 +87,16 @@ try {
   await button('Execution').click();
   await button('Main').click();
   assert.match(await page.locator('.ws-sheet-range').innerText(), /Jan 1.*Jan 31, 2025/i);
-  await openSearch('Original historical');
-  await page.locator('[data-history-task]').waitFor();
-  assert.match(await page.locator('.month-history').innerText(), /Original historical task/);
-  assert.match(await page.locator('.month-history').innerText(), /January note needle/);
-  assert.equal(await page.locator('.sheet-date-controls').getByRole('combobox', {name:'Monthly history'}).count(), 1);
-  await page.getByRole('combobox', { name: 'Monthly history' }).selectOption('');
-  assert.equal(await page.locator('.month-history').count(), 0);
-  console.log('PASS report views, retained month, historical note and snapshot navigation');
+  await search.fill('Original historical');
+  await page.getByText('No results found.', {exact:true}).waitFor();
+  assert.equal(await page.locator('.month-history, .month-version-select, [data-history-task]').count(), 0);
+  await search.press('Escape');
+  await page.getByRole('button', {name:'Previous month', exact:true}).click();
+  assert.match(await page.locator('.ws-sheet-range').innerText(), /Dec 1.*Dec 31, 2024/i);
+  await page.getByRole('button', {name:'Next month', exact:true}).click();
+  assert.match(await page.locator('.ws-sheet-range').innerText(), /Jan 1.*Jan 31, 2025/i);
+  assert.equal(await page.locator('.live-grid').isVisible(), true);
+  console.log('PASS report views, retained month, historical note, ordinary month navigation and removed snapshot UI');
 
   await openSearch('Checkpoint needle');
   await page.locator('[data-reading-entry]').first().waitFor();

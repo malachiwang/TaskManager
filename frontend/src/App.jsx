@@ -9,6 +9,7 @@ import LoadingScreen from './components/LoadingScreen.jsx';
 import { fetchHealth } from './api.js';
 import { WorkspaceNavigation } from './components/HeaderUtilities.jsx';
 import { initAppearance } from './appearance.js';
+import { currentWorkspaceTarget } from './navigation.js';
 
 export default function App() {
   const [page, setPage] = useState('main');
@@ -19,7 +20,8 @@ export default function App() {
   const [searchTarget, setSearchTarget] = useState(null);
   const [calendarPlaceTask, setCalendarPlaceTask] = useState(null);
 
-  function navigate(result) {
+  function navigate(legacyResult) {
+    const result = currentWorkspaceTarget(legacyResult);
     if (result.kind === 'navigation') {
       setPage(result.page);
       if (result.view) setMainView(result.view);

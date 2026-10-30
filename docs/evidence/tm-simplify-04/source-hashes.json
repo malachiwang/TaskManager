@@ -1,0 +1,20 @@
+{
+  "frontend/src/components/TaskGrid.jsx": {
+    "baseline": "e6acbec57438d6c960f56df22a5bd7244df52397d5d4f8f676ae978ee3b83e71",
+    "before": "192a80dd8dc28355645b79d4dc46c439cf37019239be7592e77ec80b47ae2e41",
+    "current": "2ab84901201cae05383f3ede2798651d39414897f9ffd360bc0667099933f12d"
+  },
+  "frontend/src/index.css": {
+    "baseline": "285f8e6142c1aff56bf2ba4d98380bb4d37abb028c6d615c920b141fb0d0e6ec",
+    "before": "b08f8a4a5b51938651f941df694f53e85aa61a307c8cdd1988034c5af7240000",
+    "current": "69e317ae953b8dcf10b42d61b030b08559a98c1df9f354b0d2be179fe7018da7"
+  },
+  "frontend/tests/simplify.browser.mjs": {
+    "baseline": "24c33af22992efebd33639ae80a4126879024aa16f2e752d26572d246f11428c",
+    "before": "1f2b31add16e2a688191d9b5f756f491c71ead0f8e911a3b95615355db619a77",
+    "current": "89ff59a33a3691ab0f7ba595b54a5220936a02f217e0d021d273d688797e0b7d"
+  },
+  "frontend/tests/toolbar.browser.mjs": {
+    "current": "a79419a6c584d990b475de2fc3bc88bb75e36f630dc2b66d0df2fa094ab0a430"
+  }
+}

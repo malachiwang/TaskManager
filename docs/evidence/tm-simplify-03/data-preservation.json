@@ -1,0 +1,11 @@
+{
+  "archive_records_before": 1,
+  "archive_records_after": 1,
+  "archive_records_equal": true,
+  "archive_content_sha256": "576ddcf765e36f4d03dfee03d06569ab6731cc72fef904e17efcde40805811d5",
+  "application_schema_entries": 38,
+  "application_schema_equal": true,
+  "schema_sha256": "1e87cbe1e3581409056a5716fdd266c5e39fdec7840255b479327df705384519",
+  "database": "disposable /tmp/tm-simplify-03/audit.db",
+  "live_database_accessed": false
+}

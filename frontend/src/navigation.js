@@ -13,3 +13,13 @@ export function navigationMatches(query) {
 export function nextSearchIndex(index, delta, length) {
   return length ? (index + delta + length) % length : 0;
 }
+
+// Retired archive links may still arrive from an older in-memory search result.
+// Keep the date/task target, but always reveal ordinary records in the Grid.
+export function currentWorkspaceTarget(result) {
+  const { snapshotId, ...target } = result;
+  if (target.kind === 'navigation' && ['archive', 'history'].includes(target.page)) {
+    return { kind: 'navigation', page: 'main', view: 'grid' };
+  }
+  return target;
+}

@@ -1,0 +1,1126 @@
+[
+  {
+    "mode": "dark",
+    "width": 1440,
+    "name": "grid",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 141
+  },
+  {
+    "mode": "dark",
+    "width": 1440,
+    "headerCenter": 720,
+    "dateCenter": 720
+  },
+  {
+    "mode": "dark",
+    "width": 1440,
+    "selector": ".app-title",
+    "platformFonts": [
+      {
+        "familyName": ".SF NS",
+        "postScriptName": ".SFNS-Bold",
+        "isCustomFont": false,
+        "glyphCount": 11
+      }
+    ]
+  },
+  {
+    "mode": "dark",
+    "width": 1440,
+    "selector": ".ws-sheet-title",
+    "platformFonts": [
+      {
+        "familyName": ".SF NS",
+        "postScriptName": ".SFNS-Regular_wdth_opsz120000_GRAD_wght2580000",
+        "isCustomFont": false,
+        "glyphCount": 10
+      }
+    ]
+  },
+  {
+    "mode": "dark",
+    "width": 1440,
+    "selector": "td.col-task",
+    "platformFonts": []
+  },
+  {
+    "mode": "dark",
+    "width": 1440,
+    "selector": "#tm-name",
+    "platformFonts": [
+      {
+        "familyName": ".SF NS",
+        "postScriptName": ".SFNS-Regular",
+        "isCustomFont": false,
+        "glyphCount": 25
+      }
+    ]
+  },
+  {
+    "mode": "dark",
+    "width": 1440,
+    "name": "editor",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 189
+  },
+  {
+    "mode": "dark",
+    "width": 1440,
+    "name": "editor-actions",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 194
+  },
+  {
+    "mode": "dark",
+    "width": 1440,
+    "selector": ".ws-kbd-help-key",
+    "platformFonts": [
+      {
+        "familyName": ".SF NS",
+        "postScriptName": ".SFNS-Bold",
+        "isCustomFont": false,
+        "glyphCount": 1
+      }
+    ]
+  },
+  {
+    "mode": "dark",
+    "width": 1440,
+    "name": "help",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 244
+  },
+  {
+    "mode": "dark",
+    "width": 1440,
+    "name": "search",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 151
+  },
+  {
+    "mode": "dark",
+    "width": 1440,
+    "name": "inspector",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 151
+  },
+  {
+    "mode": "dark",
+    "width": 1440,
+    "name": "range",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 144
+  },
+  {
+    "mode": "dark",
+    "width": 1440,
+    "name": "month-history",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 148
+  },
+  {
+    "mode": "dark",
+    "width": 1440,
+    "name": "reading",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 56
+  },
+  {
+    "mode": "dark",
+    "width": 1440,
+    "name": "calendar",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 75
+  },
+  {
+    "mode": "dark",
+    "width": 1440,
+    "name": "reports",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 117
+  },
+  {
+    "mode": "dark",
+    "width": 1440,
+    "name": "settings",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 130
+  },
+  {
+    "mode": "dark",
+    "width": 1100,
+    "name": "grid",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 134
+  },
+  {
+    "mode": "dark",
+    "width": 1100,
+    "headerCenter": 550,
+    "dateCenter": 550
+  },
+  {
+    "mode": "dark",
+    "width": 1100,
+    "selector": ".app-title",
+    "platformFonts": [
+      {
+        "familyName": ".SF NS",
+        "postScriptName": ".SFNS-Bold",
+        "isCustomFont": false,
+        "glyphCount": 11
+      }
+    ]
+  },
+  {
+    "mode": "dark",
+    "width": 1100,
+    "selector": ".ws-sheet-title",
+    "platformFonts": [
+      {
+        "familyName": ".SF NS",
+        "postScriptName": ".SFNS-Regular_wdth_opsz120000_GRAD_wght2580000",
+        "isCustomFont": false,
+        "glyphCount": 10
+      }
+    ]
+  },
+  {
+    "mode": "dark",
+    "width": 1100,
+    "selector": "td.col-task",
+    "platformFonts": []
+  },
+  {
+    "mode": "dark",
+    "width": 1100,
+    "selector": "#tm-name",
+    "platformFonts": [
+      {
+        "familyName": ".SF NS",
+        "postScriptName": ".SFNS-Regular",
+        "isCustomFont": false,
+        "glyphCount": 25
+      }
+    ]
+  },
+  {
+    "mode": "dark",
+    "width": 1100,
+    "name": "editor",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 182
+  },
+  {
+    "mode": "dark",
+    "width": 1100,
+    "name": "editor-actions",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 187
+  },
+  {
+    "mode": "dark",
+    "width": 1100,
+    "selector": ".ws-kbd-help-key",
+    "platformFonts": [
+      {
+        "familyName": ".SF NS",
+        "postScriptName": ".SFNS-Bold",
+        "isCustomFont": false,
+        "glyphCount": 1
+      }
+    ]
+  },
+  {
+    "mode": "dark",
+    "width": 1100,
+    "name": "help",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 237
+  },
+  {
+    "mode": "dark",
+    "width": 1100,
+    "name": "search",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 144
+  },
+  {
+    "mode": "dark",
+    "width": 1100,
+    "name": "inspector",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 141
+  },
+  {
+    "mode": "dark",
+    "width": 1100,
+    "name": "range",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 134
+  },
+  {
+    "mode": "dark",
+    "width": 1100,
+    "name": "month-history",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 138
+  },
+  {
+    "mode": "dark",
+    "width": 1100,
+    "name": "reading",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 56
+  },
+  {
+    "mode": "dark",
+    "width": 1100,
+    "name": "calendar",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 76
+  },
+  {
+    "mode": "dark",
+    "width": 1100,
+    "name": "reports",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 108
+  },
+  {
+    "mode": "dark",
+    "width": 1100,
+    "name": "settings",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 130
+  },
+  {
+    "mode": "dark",
+    "width": 390,
+    "name": "grid",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 99
+  },
+  {
+    "mode": "dark",
+    "width": 390,
+    "headerCenter": 195,
+    "dateCenter": 195
+  },
+  {
+    "mode": "dark",
+    "width": 390,
+    "selector": ".app-title",
+    "platformFonts": [
+      {
+        "familyName": ".SF NS",
+        "postScriptName": ".SFNS-Bold",
+        "isCustomFont": false,
+        "glyphCount": 11
+      }
+    ]
+  },
+  {
+    "mode": "dark",
+    "width": 390,
+    "selector": ".ws-sheet-title",
+    "platformFonts": [
+      {
+        "familyName": ".SF NS",
+        "postScriptName": ".SFNS-Regular_wdth_opsz120000_GRAD_wght2580000",
+        "isCustomFont": false,
+        "glyphCount": 10
+      }
+    ]
+  },
+  {
+    "mode": "dark",
+    "width": 390,
+    "selector": "td.col-task",
+    "platformFonts": []
+  },
+  {
+    "mode": "dark",
+    "width": 390,
+    "selector": "#tm-name",
+    "platformFonts": [
+      {
+        "familyName": ".SF NS",
+        "postScriptName": ".SFNS-Regular",
+        "isCustomFont": false,
+        "glyphCount": 25
+      }
+    ]
+  },
+  {
+    "mode": "dark",
+    "width": 390,
+    "name": "editor",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 139
+  },
+  {
+    "mode": "dark",
+    "width": 390,
+    "name": "editor-actions",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 140
+  },
+  {
+    "mode": "dark",
+    "width": 390,
+    "selector": ".ws-kbd-help-key",
+    "platformFonts": [
+      {
+        "familyName": ".SF NS",
+        "postScriptName": ".SFNS-Bold",
+        "isCustomFont": false,
+        "glyphCount": 1
+      }
+    ]
+  },
+  {
+    "mode": "dark",
+    "width": 390,
+    "name": "help",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 176
+  },
+  {
+    "mode": "dark",
+    "width": 390,
+    "name": "search",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 109
+  },
+  {
+    "mode": "dark",
+    "width": 390,
+    "name": "inspector",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 56
+  },
+  {
+    "mode": "dark",
+    "width": 390,
+    "name": "range",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 49
+  },
+  {
+    "mode": "dark",
+    "width": 390,
+    "name": "month-history",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 56
+  },
+  {
+    "mode": "dark",
+    "width": 390,
+    "name": "reading",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 34
+  },
+  {
+    "mode": "dark",
+    "width": 390,
+    "name": "calendar",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 72
+  },
+  {
+    "mode": "dark",
+    "width": 390,
+    "name": "calendar-day",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 45
+  },
+  {
+    "mode": "dark",
+    "width": 390,
+    "name": "reports",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 62
+  },
+  {
+    "mode": "dark",
+    "width": 390,
+    "name": "settings",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 48
+  },
+  {
+    "mode": "light",
+    "width": 1440,
+    "name": "grid",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 141
+  },
+  {
+    "mode": "light",
+    "width": 1440,
+    "headerCenter": 720,
+    "dateCenter": 720
+  },
+  {
+    "mode": "light",
+    "width": 1440,
+    "selector": ".app-title",
+    "platformFonts": [
+      {
+        "familyName": ".SF NS",
+        "postScriptName": ".SFNS-Bold",
+        "isCustomFont": false,
+        "glyphCount": 11
+      }
+    ]
+  },
+  {
+    "mode": "light",
+    "width": 1440,
+    "selector": ".ws-sheet-title",
+    "platformFonts": [
+      {
+        "familyName": ".SF NS",
+        "postScriptName": ".SFNS-Regular_wdth_opsz120000_GRAD_wght2580000",
+        "isCustomFont": false,
+        "glyphCount": 10
+      }
+    ]
+  },
+  {
+    "mode": "light",
+    "width": 1440,
+    "selector": "td.col-task",
+    "platformFonts": []
+  },
+  {
+    "mode": "light",
+    "width": 1440,
+    "selector": "#tm-name",
+    "platformFonts": [
+      {
+        "familyName": ".SF NS",
+        "postScriptName": ".SFNS-Regular",
+        "isCustomFont": false,
+        "glyphCount": 25
+      }
+    ]
+  },
+  {
+    "mode": "light",
+    "width": 1440,
+    "name": "editor",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 189
+  },
+  {
+    "mode": "light",
+    "width": 1440,
+    "name": "editor-actions",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 194
+  },
+  {
+    "mode": "light",
+    "width": 1440,
+    "selector": ".ws-kbd-help-key",
+    "platformFonts": [
+      {
+        "familyName": ".SF NS",
+        "postScriptName": ".SFNS-Bold",
+        "isCustomFont": false,
+        "glyphCount": 1
+      }
+    ]
+  },
+  {
+    "mode": "light",
+    "width": 1440,
+    "name": "help",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 244
+  },
+  {
+    "mode": "light",
+    "width": 1440,
+    "name": "search",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 151
+  },
+  {
+    "mode": "light",
+    "width": 1440,
+    "name": "inspector",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 151
+  },
+  {
+    "mode": "light",
+    "width": 1440,
+    "name": "range",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 144
+  },
+  {
+    "mode": "light",
+    "width": 1440,
+    "name": "month-history",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 148
+  },
+  {
+    "mode": "light",
+    "width": 1440,
+    "name": "reading",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 56
+  },
+  {
+    "mode": "light",
+    "width": 1440,
+    "name": "calendar",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 76
+  },
+  {
+    "mode": "light",
+    "width": 1440,
+    "name": "reports",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 117
+  },
+  {
+    "mode": "light",
+    "width": 1440,
+    "name": "settings",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 130
+  },
+  {
+    "mode": "light",
+    "width": 1100,
+    "name": "grid",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 134
+  },
+  {
+    "mode": "light",
+    "width": 1100,
+    "headerCenter": 550,
+    "dateCenter": 550
+  },
+  {
+    "mode": "light",
+    "width": 1100,
+    "selector": ".app-title",
+    "platformFonts": [
+      {
+        "familyName": ".SF NS",
+        "postScriptName": ".SFNS-Bold",
+        "isCustomFont": false,
+        "glyphCount": 11
+      }
+    ]
+  },
+  {
+    "mode": "light",
+    "width": 1100,
+    "selector": ".ws-sheet-title",
+    "platformFonts": [
+      {
+        "familyName": ".SF NS",
+        "postScriptName": ".SFNS-Regular_wdth_opsz120000_GRAD_wght2580000",
+        "isCustomFont": false,
+        "glyphCount": 10
+      }
+    ]
+  },
+  {
+    "mode": "light",
+    "width": 1100,
+    "selector": "td.col-task",
+    "platformFonts": []
+  },
+  {
+    "mode": "light",
+    "width": 1100,
+    "selector": "#tm-name",
+    "platformFonts": [
+      {
+        "familyName": ".SF NS",
+        "postScriptName": ".SFNS-Regular",
+        "isCustomFont": false,
+        "glyphCount": 25
+      }
+    ]
+  },
+  {
+    "mode": "light",
+    "width": 1100,
+    "name": "editor",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 182
+  },
+  {
+    "mode": "light",
+    "width": 1100,
+    "name": "editor-actions",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 187
+  },
+  {
+    "mode": "light",
+    "width": 1100,
+    "selector": ".ws-kbd-help-key",
+    "platformFonts": [
+      {
+        "familyName": ".SF NS",
+        "postScriptName": ".SFNS-Bold",
+        "isCustomFont": false,
+        "glyphCount": 1
+      }
+    ]
+  },
+  {
+    "mode": "light",
+    "width": 1100,
+    "name": "help",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 237
+  },
+  {
+    "mode": "light",
+    "width": 1100,
+    "name": "search",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 144
+  },
+  {
+    "mode": "light",
+    "width": 1100,
+    "name": "inspector",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 141
+  },
+  {
+    "mode": "light",
+    "width": 1100,
+    "name": "range",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 134
+  },
+  {
+    "mode": "light",
+    "width": 1100,
+    "name": "month-history",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 138
+  },
+  {
+    "mode": "light",
+    "width": 1100,
+    "name": "reading",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 56
+  },
+  {
+    "mode": "light",
+    "width": 1100,
+    "name": "calendar",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 77
+  },
+  {
+    "mode": "light",
+    "width": 1100,
+    "name": "reports",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 108
+  },
+  {
+    "mode": "light",
+    "width": 1100,
+    "name": "settings",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 130
+  },
+  {
+    "mode": "light",
+    "width": 390,
+    "name": "grid",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 99
+  },
+  {
+    "mode": "light",
+    "width": 390,
+    "headerCenter": 195,
+    "dateCenter": 195
+  },
+  {
+    "mode": "light",
+    "width": 390,
+    "selector": ".app-title",
+    "platformFonts": [
+      {
+        "familyName": ".SF NS",
+        "postScriptName": ".SFNS-Bold",
+        "isCustomFont": false,
+        "glyphCount": 11
+      }
+    ]
+  },
+  {
+    "mode": "light",
+    "width": 390,
+    "selector": ".ws-sheet-title",
+    "platformFonts": [
+      {
+        "familyName": ".SF NS",
+        "postScriptName": ".SFNS-Regular_wdth_opsz120000_GRAD_wght2580000",
+        "isCustomFont": false,
+        "glyphCount": 10
+      }
+    ]
+  },
+  {
+    "mode": "light",
+    "width": 390,
+    "selector": "td.col-task",
+    "platformFonts": []
+  },
+  {
+    "mode": "light",
+    "width": 390,
+    "selector": "#tm-name",
+    "platformFonts": [
+      {
+        "familyName": ".SF NS",
+        "postScriptName": ".SFNS-Regular",
+        "isCustomFont": false,
+        "glyphCount": 25
+      }
+    ]
+  },
+  {
+    "mode": "light",
+    "width": 390,
+    "name": "editor",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 139
+  },
+  {
+    "mode": "light",
+    "width": 390,
+    "name": "editor-actions",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 140
+  },
+  {
+    "mode": "light",
+    "width": 390,
+    "selector": ".ws-kbd-help-key",
+    "platformFonts": [
+      {
+        "familyName": ".SF NS",
+        "postScriptName": ".SFNS-Bold",
+        "isCustomFont": false,
+        "glyphCount": 1
+      }
+    ]
+  },
+  {
+    "mode": "light",
+    "width": 390,
+    "name": "help",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 176
+  },
+  {
+    "mode": "light",
+    "width": 390,
+    "name": "search",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 109
+  },
+  {
+    "mode": "light",
+    "width": 390,
+    "name": "inspector",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 56
+  },
+  {
+    "mode": "light",
+    "width": 390,
+    "name": "range",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 49
+  },
+  {
+    "mode": "light",
+    "width": 390,
+    "name": "month-history",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 56
+  },
+  {
+    "mode": "light",
+    "width": 390,
+    "name": "reading",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 34
+  },
+  {
+    "mode": "light",
+    "width": 390,
+    "name": "calendar",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 72
+  },
+  {
+    "mode": "light",
+    "width": 390,
+    "name": "calendar-day",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 45
+  },
+  {
+    "mode": "light",
+    "width": 390,
+    "name": "reports",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 62
+  },
+  {
+    "mode": "light",
+    "width": 390,
+    "name": "settings",
+    "family": "system-ui, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+    "fontsReady": "loaded",
+    "overflow": false,
+    "mismatches": [],
+    "count": 48
+  }
+]

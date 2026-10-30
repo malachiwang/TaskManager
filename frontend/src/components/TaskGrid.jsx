@@ -29,7 +29,6 @@ import KeyboardHelp from './KeyboardHelp.jsx';
 import { FILTERS, FILTER_LABELS, PRIMARY_FILTERS, taskPassesFilter } from '../filters.js';
 import { GROUP_MODES, groupTasks, uniqueSections } from '../grouping.js';
 import { matchKeybind, resolveKeybinds, jumpDigit, isTypingTarget, canDismiss } from '../keybinds.js';
-import MonthHistory, { MonthHistorySelect } from './MonthHistory.jsx';
 import GroupSelect from './GroupSelect.jsx';
 
 // ---------------------------------------------------------------------------
@@ -282,8 +281,6 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth, setViewMont
   // Status scope is independent of grouping and workspace search.
   const [activeFilter, setActiveFilter] = useState(FILTERS.ALL);
   const [revealedTaskId, setRevealedTaskId] = useState(null);
-  const [historyId, setHistoryId] = useState(null);
-  useEffect(() => { setHistoryId(null); }, [viewMonth.year, viewMonth.month]);
 
   // Grouping mode — Phase 3. Persisted to localStorage.
   const [groupMode, setGroupMode] = useState(
@@ -1325,8 +1322,6 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth, setViewMont
   const cellOverridesRef   = useRef({});
   const hiatusCellsRef     = useRef(new Set());
   const editingOverrideCellRef = useRef(null);
-  const historyIdRef = useRef(historyId);
-  historyIdRef.current = historyId;
   const modalOpenRef       = useRef(false);
   const handlersRef        = useRef({});
   const helpOpenRef        = useRef(false);
@@ -1395,18 +1390,22 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth, setViewMont
     if (!searchTarget || searchTarget.kind !== 'task') return;
     setActiveFilter(FILTERS.ALL);
     setRevealedTaskId(searchTarget.id);
-    setHistoryId(searchTarget.snapshotId ?? null);
     setRangeEnd(null);
     setSelectedMetaCell(null);
   }, [searchTarget]);
 
   useEffect(() => {
     if (!searchTarget || searchTarget.kind !== 'task' || loading || activeFilter !== FILTERS.ALL) return;
-    if (!searchTarget.snapshotId && !flatGroupedTasks.some(t => t.id === searchTarget.id)) return;
-    if (!searchTarget.snapshotId) setSelectedCell({ taskId: searchTarget.id, date: searchTarget.date || dates[0] });
+    // A stale internal target can refer to a removed task. Keep the ordinary
+    // month visible and consume it instead of retaining a hidden snapshot view.
+    if (!flatGroupedTasks.some(t => t.id === searchTarget.id)) {
+      onTargetConsumed();
+      return;
+    }
+    setSelectedCell({ taskId: searchTarget.id, date: searchTarget.date || dates[0] });
     const frame = requestAnimationFrame(() => {
       document.querySelector(`tr[data-task-id="${searchTarget.id}"]`)?.scrollIntoView({ block: 'center', inline: 'nearest' });
-      if (!searchTarget.snapshotId) document.querySelector(`td[data-dc-task="${searchTarget.id}"][data-dc-date="${searchTarget.date || dates[0]}"]`)
+      document.querySelector(`td[data-dc-task="${searchTarget.id}"][data-dc-date="${searchTarget.date || dates[0]}"]`)
         ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       onTargetConsumed();
     });
@@ -1444,7 +1443,6 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth, setViewMont
   // handler is automatically removed when the user switches to another tab.
   useEffect(() => {
     function onKeyDown(e) {
-      if (historyIdRef.current !== null) return;
       const {
         handleIncrement, handleClear, handleSetCount,
         openAdd, openEdit, setSelectedCell, closeModal, setHelpOpen,
@@ -1927,8 +1925,18 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth, setViewMont
 
   return (
     <>
+      <div className="ws-grid-shelf" role="group" aria-label="Task actions">
+        <div className="ws-shelf-left">
+          <button className="ws-shelf-btn ws-shelf-btn--primary" onClick={openAdd}>+ Add Task</button>
+          <button className="ws-shelf-btn" disabled={!selectedTask} onClick={() => openEdit(selectedTask)}
+            aria-describedby={!selectedTask ? 'edit-task-guidance' : undefined}
+            title={selectedTask ? `Edit ${selectedTask.name}` : 'Select a task in the grid first'}>Edit Task</button>
+          {!selectedTask && <span id="edit-task-guidance" className="sr-only">Select a task in the grid first</span>}
+        </div>
+      </div>
+
       {/* ── Tier 2: Sheet header — paper surface, identity + nav + status ── */}
-      <div className="ws-sheet-header">
+      <div className="ws-sheet-header ws-sheet-header--task">
         <div className="ws-sheet-header-left">
           <div className="ws-sheet-title">Task Sheet</div>
           <div className="ws-sheet-meta">
@@ -1946,7 +1954,6 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth, setViewMont
           <span className="ws-sheet-range">{monthRangeLabel(viewMonth.year, viewMonth.month)}</span>
           <button className="ws-sheet-nav" aria-label="Next month" onClick={goToNextMonth}>›</button>
         </div>
-        <MonthHistorySelect month={viewMonth} selectedId={historyId} onSelect={setHistoryId} />
         </div>
         <HeaderUtilities>
           <div className="ws-kbd-help-anchor">
@@ -1973,17 +1980,9 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth, setViewMont
         </HeaderUtilities>
       </div>
 
-      <MonthHistory selectedId={historyId} targetId={revealedTaskId} />
-      <div className="live-grid" hidden={historyId !== null}>
-      {/* ── Filter bar — status scope + secondary toggles + search (P10.0) ── */}
+      <div className="live-grid">
+      {/* ── Filter bar — status, grouping and Jump ── */}
       <div className="ws-filter-bar">
-        <div className="task-actions">
-          <button className="ws-shelf-btn ws-shelf-btn--primary" onClick={openAdd}>+ Add Task</button>
-          <button className="ws-shelf-btn" disabled={!selectedTask} onClick={() => openEdit(selectedTask)}
-            aria-describedby={!selectedTask ? 'edit-task-guidance' : undefined}
-            title={selectedTask ? `Edit ${selectedTask.name}` : 'Select a task in the grid first'}>Edit Task</button>
-          {!selectedTask && <span id="edit-task-guidance" className="sr-only">Select a task in the grid first</span>}
-        </div>
         <div className="ws-filter-seg" role="group" aria-label="Task status scope">
           {PRIMARY_FILTERS.map((f) => (
             <button
@@ -2057,7 +2056,7 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth, setViewMont
                 Urg.{rh('col-urg')}
               </th>
               <th className="meta-col sticky-col col-pri" title="Priority" style={thStyle('col-pri')}>
-                Pri.{rh('col-pri')}
+                Pri{rh('col-pri')}
               </th>
               <th className="meta-col sticky-col col-status" style={thStyle('col-status')}>
                 Status{rh('col-status')}
@@ -2075,7 +2074,7 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth, setViewMont
                 Subtask{rh('col-sub')}
               </th>
               <th className="meta-col scroll-meta-col col-freq" title="Frequency (days)" style={thStyle('col-freq')}>
-                Freq.{rh('col-freq')}
+                Freq{rh('col-freq')}
               </th>
               <th className="meta-col scroll-meta-col col-days" title="Days since last done" style={thStyle('col-days')}>
                 Days{rh('col-days')}

@@ -22,7 +22,7 @@ export default function WorkspaceSearch({ onOpen }) {
         const response = await fetch(`/api/search/workspace?q=${encodeURIComponent(query)}`, { signal: controller.signal });
         if (!response.ok) throw new Error('Search unavailable. Try again.');
         const data = await response.json();
-        if (!controller.signal.aborted) setMatches(data);
+        if (!controller.signal.aborted) setMatches(data.filter(result => result.snapshotId == null));
       } catch (err) {
         if (!controller.signal.aborted) setError(err.message);
       } finally {
@@ -82,7 +82,7 @@ export default function WorkspaceSearch({ onOpen }) {
     </div>
     {open && query.trim() && <div className="workspace-search-results">
       <div role="listbox" id="workspace-results" aria-label="Search results">
-        {results.map((r, i) => <button key={`${r.kind}-${r.id ?? r.label}-${r.date}-${r.snapshotId}-${r.entryId}-${i}`}
+        {results.map((r, i) => <button key={`${r.kind}-${r.id ?? r.label}-${r.date}-${r.entryId}-${i}`}
           id={`workspace-result-${i}`} role="option" aria-selected={index === i}
           className={index === i ? 'is-selected' : ''} onMouseDown={e => e.preventDefault()} onClick={() => select(r)}>
           <strong>{r.label}</strong><small>{r.kind === 'navigation' ? 'Go to page' : `${r.detail || r.kind}${r.date ? ` · ${r.date}` : ''}`}</small>

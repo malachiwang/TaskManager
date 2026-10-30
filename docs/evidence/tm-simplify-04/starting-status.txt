@@ -1,0 +1,13 @@
+ M frontend/src/App.jsx
+ D frontend/src/components/MonthHistory.jsx
+ M frontend/src/components/TaskGrid.jsx
+ M frontend/src/components/WorkspaceSearch.jsx
+ M frontend/src/index.css
+ M frontend/src/navigation.js
+ M frontend/tests/simplify-layout.browser.mjs
+ M frontend/tests/simplify.browser.mjs
+ M frontend/tests/simplify.test.mjs
+?? docs/TM-AUDIT-01.md
+?? docs/TM-SIMPLIFY-03.md
+?? docs/evidence/
+?? frontend/tests/control-heights.browser.mjs

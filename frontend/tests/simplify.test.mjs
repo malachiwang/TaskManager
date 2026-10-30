@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { KEYBINDS, KEYBIND_HELP, buildResolvedFromOverrides, matchKeybind, findBindingConflict, captureEventToBinding, writeKbOverrides, loadKbOverrides, resolveKeybinds, jumpDigit, bindingLabel, canDismiss } from '../src/keybinds.js';
-import { navigationMatches, nextSearchIndex } from '../src/navigation.js';
+import { navigationMatches, nextSearchIndex, currentWorkspaceTarget } from '../src/navigation.js';
 const event = (key, modifiers = {}) => ({ key, ...modifiers });
 test('navigation matches every destination; keyboard wrapping handles no results', () => {
   for (const name of ['Main', 'Grid', 'Reading', 'Calendar', 'Reports', 'Settings']) {
@@ -46,4 +46,10 @@ test('jump digits, ranges, completion, delete and Escape resolve changed binding
   assert.equal(canDismiss(event('x'), kb.CLEAR_SELECTION), true);
   assert.equal(canDismiss(event('Escape', { target: { closest: () => ({}) } }), kb.CLEAR_SELECTION), true);
   assert.equal(findBindingConflict(captureEventToBinding(event('!', { shiftKey: true })), 'EDIT_TASK', buildResolvedFromOverrides({})), 'JUMP_1');
+});
+
+test('retired archive links resolve to ordinary Grid navigation without snapshot state', () => {
+  assert.deepEqual(currentWorkspaceTarget({kind:'navigation', page:'archive'}), {kind:'navigation', page:'main', view:'grid'});
+  assert.deepEqual(currentWorkspaceTarget({kind:'task', id:42, date:'2025-01-12', snapshotId:7}), {kind:'task', id:42, date:'2025-01-12'});
+  assert.deepEqual(currentWorkspaceTarget({kind:'reading', id:3, entryId:5}), {kind:'reading', id:3, entryId:5});
 });

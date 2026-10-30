@@ -658,15 +658,22 @@ body {
   z-index: 2;
 }
 
-/* Column headers clip without an ellipsis (P8.0A) — a fuller label (e.g.
-   "Priority", "Frequency") in a narrow default column is hard-clipped rather
-   than showing "…", and reads fully when the column is resized or on hover
-   (title tooltip). Scoped to headers only — body cell text keeps its ellipsis.
-   The absolutely-positioned resize handle sits inside the header box, so it is
-   not affected by the clip. */
+/* Date labels clip at their cell boundary. Metadata labels use an ellipsis
+   when a saved width is too narrow; their title retains the full name.
+   Resize handles remain inside each header box. */
 .task-grid thead th {
   overflow: hidden;
   text-overflow: clip;
+}
+
+.task-grid thead th.meta-col {
+  text-transform: uppercase;
+  text-overflow: ellipsis;
+}
+
+.task-grid thead th.col-urg,
+.task-grid thead th.col-pri {
+  padding-inline: 3px;
 }
 
 /* -------------------------------------------------------------------------
@@ -3651,15 +3658,17 @@ thead .meta-col {
   border-left: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* Ghost button on dark shelf */
+/* Full-height rectangular actions on the dark command shelf. */
 .ws-shelf-btn {
   display: inline-flex;
   align-items: center;
   padding: 0 14px;
-
-  font-size: 11px;
-  letter-spacing: normal;
-  text-transform: none;
+  height: 36px;
+  border-radius: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: rgba(255, 255, 255, 0.55);
   background: transparent;
   border: none;
@@ -3670,7 +3679,7 @@ thead .meta-col {
   line-height: 1;
 }
 
-.ws-shelf-btn:hover {
+.ws-shelf-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.09);
   color: #fff;
 }
@@ -3700,10 +3709,9 @@ thead .meta-col {
   background: rgba(255, 255, 255, 0.13);
   border-right-color: rgba(255, 255, 255, 0.18);
   font-weight: 600;
-  letter-spacing: normal;
 }
 
-.ws-shelf-btn--primary:hover {
+.ws-shelf-btn--primary:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.22);
 }
 
@@ -3862,7 +3870,9 @@ thead .meta-col {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 4px 10px;
+  padding: 4px 8px;
+  min-width: 32px;
+  border-radius: 0;
 
   font-size: 13px;
   color: var(--muted);
@@ -3879,10 +3889,10 @@ thead .meta-col {
 }
 
 .ws-sheet-nav--today {
-  font-size: 11px;
+  font-size: 13px;
   letter-spacing: normal;
   text-transform: none;
-  padding: 4px 8px;
+  padding: 2.5px 8px;
   color: var(--muted);
 }
 
@@ -4043,13 +4053,13 @@ thead .meta-col {
   border-right: none;
 }
 
-/* Section name: uppercase mono, ink weight */
+/* Section names use the shared UI font with the reference label treatment. */
 .ws-section-title {
 
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: normal;
-  text-transform: none;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: var(--ink);
 }
 
@@ -4262,21 +4272,20 @@ thead .meta-col {
 
   font-size: 13px;
   color: var(--ink);
-  background: transparent;
-  border: none;
-  border-bottom: 1.5px solid var(--rule);
-  padding: 4px 2px;
+  background: var(--bg-panel);
+  border: 1px solid var(--rule);
+  padding: 3.5px 2px;
   width: 100%;
   box-sizing: border-box;
-  border-radius: 0;
+  border-radius: 4px;
   appearance: none;
   -webkit-appearance: none;
 }
 
 .task-modal-input:focus {
-  outline: none;
-  border-bottom: 2px solid var(--accent);
-  background: transparent;
+  outline: 2px solid var(--focus-blue);
+  outline-offset: 1px;
+  border-color: var(--accent);
 }
 
 /* Uppercase the native empty date placeholder (mm/dd/yyyy → MM/DD/YYYY) in the
@@ -4296,7 +4305,7 @@ thead .meta-col {
 select.task-modal-input {
   appearance: auto;
   -webkit-appearance: auto;
-  padding: 4px 4px;
+  padding: 3.5px 4px;
 }
 
 /* ── Section combobox (P11.1) — freeform input + suggestion dropdown ── */
@@ -4627,7 +4636,7 @@ select.task-modal-input {
   background: var(--bg-app);
   border: none;
   border-right: 1px solid var(--rule);
-  padding: 7px 4px;
+  padding: 6.5px 4px;
   cursor: pointer;
   white-space: nowrap;
   text-align: center;
@@ -5150,7 +5159,7 @@ select.task-modal-input {
 .ws-kbd-action-btn {
   flex-shrink: 0;
   font-size: 11px;
-  padding: 2px 8px;
+  padding: 1.5px 8px;
   border: 1px solid var(--grid-border);
   border-radius: 3px;
   background: transparent;
@@ -6117,6 +6126,8 @@ select.task-modal-input {
 .rd-col-updated { width: 92px; color: var(--muted); }
 .rd-col-status  { width: 92px; }
 .rd-col-actions { width: 1%; white-space: nowrap; }
+/* Retain the 11px UI text without changing Reading row dimensions. */
+.reading-grid .action-btn { padding-block: 2.5px; }
 
 .rd-page-input {
   width: 64px;
@@ -6124,7 +6135,7 @@ select.task-modal-input {
   text-align: right;
   border: 1px solid transparent;
   background: transparent;
-  padding: 2px 4px;
+  padding: 1.5px 4px;
   color: var(--ink);
   border-radius: 2px;
 }
@@ -6517,7 +6528,7 @@ select.task-modal-input {
   color: var(--muted);
 
   font-size: 11px;
-  padding: 1px 7px;
+  padding: 0.5px 7px;
   border-radius: 3px;
   cursor: pointer;
   white-space: nowrap;
@@ -6737,12 +6748,12 @@ select.task-modal-input {
 .report-mode-btn--active,
 .report-mode-btn--active:hover { background: var(--ink-2); color: var(--bg-panel); }
 .report-nav {
-   font-size: 13px; padding: 3px 10px; cursor: pointer;
+   font-size: 13px; line-height: 16px; padding: 3px 10px; cursor: pointer;
   border: 1px solid var(--grid-border); border-radius: 3px;
   background: var(--bg-panel); color: var(--ink-2);
 }
 .report-nav:hover { border-color: var(--accent); }
-.report-nav--today { font-size: 11px; }
+.report-nav--today { font-size: 13px; padding-block: 1.5px; }
 .report-period-label { font-size: 13px; font-weight: 600; color: var(--ink); min-width: 150px; text-align: center; }
 
 /* Summary tiles. */
@@ -6975,6 +6986,8 @@ select.task-modal-input {
 
   font-size: 13px;
   padding: 3px 10px;
+  line-height: 16px;
+  white-space: nowrap;
   cursor: pointer;
   border: 1px solid var(--grid-border);
   border-radius: 3px;
@@ -6982,7 +6995,7 @@ select.task-modal-input {
   color: var(--ink-2);
 }
 .cal-nav-btn:hover { border-color: var(--accent); }
-.cal-nav-btn--today { font-size: 11px; }
+.cal-nav-btn--today { font-size: 13px; padding-block: 1.5px; }
 .cal-nav-btn.is-active {
   border-color: var(--accent);
   color: var(--accent);
@@ -8645,11 +8658,9 @@ html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-sc
 .workspace-search-results button.is-selected { background: var(--accent-soft, #e3edf7); }
 .workspace-search-results small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 3px; }
 .workspace-search-results [role="status"]:not(:empty) { padding: 12px; }
-.ws-shelf-btn:disabled { opacity: .5; cursor: default; }
-.month-history { padding: 8px 16px; }
-.month-history select { max-width: 100%; }
+.ws-grid-shelf .ws-shelf-btn:disabled { opacity: 1; color: #ffffff73; background: #ffffff0a; cursor: default; }
+.ws-grid-shelf .ws-shelf-btn:focus-visible { outline-offset: -2px; }
 .history-selected { outline: 2px solid var(--accent, #3979b9); outline-offset: -2px; }
-.history-note { display: block; white-space: normal; min-width: 90px; }
 .ws-export-options, .ws-csv-import { padding: 12px; }
 .ws-export-options { display: flex; flex-wrap: wrap; gap: 8px; }
 .ws-export-options p { width: 100%; margin: 0; font-size: 12px; }
@@ -8657,14 +8668,13 @@ html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-sc
 @media (max-width: 700px) {
   .app-topbar-content { flex-wrap: wrap; gap: 10px; }
   .app-utility-nav { margin-left: auto; }
-  .ws-sheet-header, .ws-filter-bar, .ws-shelf-left { flex-wrap: wrap; gap: 8px; }
+  .ws-sheet-header, .ws-filter-bar { flex-wrap: wrap; gap: 8px; }
   .ws-kbd-shortcut-row { flex-wrap: wrap; }
 }
 
 .app-header { overflow: visible; z-index: 40; }
 .app-topbar-content { gap: 16px; }
 .live-grid { display: flex; flex: 1; flex-direction: column; min-height: 0; }
-.month-history { overflow: auto; flex-shrink: 0; max-height: 100%; }
 @media (max-width: 700px) {
   .app-header { height: auto; min-height: 46px; padding: 8px 10px; }
   .app-topbar-content { height: auto; gap: 8px; }
@@ -8681,7 +8691,7 @@ html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-sc
   .task-grid .sticky-col { left: auto !important; }
 }
 
-/* TM-SIMPLIFY-02: one inherited UI family and compact controls based on 37c60e5. */
+/* Shared typography, navigation and responsive header layout. */
 *, *::before, *::after { font-family: inherit; }
 html { color-scheme: light; }
 html[data-appearance="dark"] { color-scheme: dark; }
@@ -8700,25 +8710,25 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .app-title { font-size: 14px; line-height: 1.2; }
 .app-tagline { font-size: 11px; line-height: 1.2; }
 .app-utility-nav { align-items: center; gap: 6px; padding: 4px; min-width: 0; overflow-x: auto; white-space: nowrap; margin: 0; }
-.app-utility-nav .tab { flex-shrink: 0; padding: 3px 12px; font-size: 13px; line-height: 15px; border-radius: 4px; }
-.main-views { display: flex; align-items: center; gap: 2px; border-left: 1px solid #ffffff40; border-right: 1px solid #ffffff40; padding: 0 6px; }
-.main-views .tab { border-color: transparent; }
+.app-utility-nav .tab { flex-shrink: 0; padding: 3px 12px; font-size: 13px; line-height: 15px; border-radius: 2px; }
+.main-views { display: flex; align-items: center; gap: 6px; border-left: 1px solid #ffffff40; border-right: 1px solid #ffffff40; padding: 0 6px; }
 .main-views .tab.active { color: #fff; background: #ffffff26; border-color: #ffffff66; box-shadow: inset 0 -2px var(--accent); }
 
 .ws-sheet-header, .ws-dash-header, .ws-page-header { display: flex; align-items: center; gap: 16px; padding: 10px 16px; min-height: 60px; border-bottom: 1px solid var(--rule); overflow: visible; position: relative; z-index: 45; }
 .ws-sheet-title, .ws-dash-title, .ws-page-header { font-size: 18px; font-weight: 600; line-height: 1.2; }
 .ws-sheet-meta, .ws-dash-sub, .ws-page-header-sub { font-size: 12px; font-weight: 400; line-height: 1.4; }
 .ws-sheet-header-left { min-width: 0; }
-.sheet-date-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+/* Equal side tracks center the complete month group relative to the header. */
+.ws-sheet-header--task { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+.ws-sheet-header--task > .header-utilities { justify-self: end; width: min(100%, 290px); margin-left: 0; }
+.ws-sheet-header--task .ws-sheet-meta { flex-wrap: wrap; }
+.sheet-date-controls { display: flex; align-items: center; justify-content: center; min-width: 0; }
 .ws-sheet-header-nav { border-radius: 4px; flex-shrink: 1; gap: 0; }
 .ws-sheet-range { font-size: 12px; align-self: stretch; padding: 3px 8px; line-height: 15px; }
-.ws-sheet-nav { min-width: 32px; padding: 4px 8px; font-size: 13px; border-radius: 0; }
-.month-version-select { max-width: 190px; font-size: 12px; padding: 2px 8px; }
-.month-version-error { font-size: 12px; color: var(--muted); }
 .header-utilities { margin-left: auto; display: flex; align-items: center; gap: 8px; min-width: 0; flex: 0 1 290px; font-size: 13px; font-weight: 400; }
 .workspace-search { flex: 1 1 auto; width: 248px; min-width: 140px; max-width: none; z-index: 60; }
 .workspace-search-field { border-radius: 4px; }
-.workspace-search-field input { padding: 2px 9px; height: 21px; font-size: 13px; }
+.workspace-search-field input { padding: 8px 9px; height: 33px; font-size: 13px; }
 .workspace-search-field:focus-within { outline: 2px solid var(--focus-blue); outline-offset: 2px; }
 .workspace-search-field input:focus-visible { outline: none; }
 .workspace-search-results { right: 0; left: auto; width: 420px; max-width: calc(100vw - 32px); max-height: min(440px, 65vh); border-radius: 6px; z-index: 100; }
@@ -8729,19 +8739,22 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .ws-kbd-help-panel { width: min(460px, calc(100vw - 32px)); max-height: min(620px, 70vh); overflow: auto; z-index: 100; }
 
 .ws-filter-bar { flex-wrap: wrap; padding: 8px 16px; gap: 10px; background: var(--bg-panel); }
-.task-actions { display: flex; gap: 6px; align-items: center; }
-.ws-shelf-btn, .ws-filter-seg-btn, .ws-filter-pill, .ws-group-btn, .report-mode-btn, .report-nav, .cal-nav-btn, .cal-seg-btn { font-size: 13px; border-radius: 4px; }
-/* Preserve the current font sizes; restore the reference's compact vertical boxes. */
-.ws-shelf-btn { height: 23px; padding: 0 10px; }
+/* The Grid action shelf is separate; filters use the reference row spacing. */
+.live-grid > .ws-filter-bar { padding: 6px 14px; gap: 8px; background: var(--bg-surface); }
+.live-grid .ws-filter-seg, .live-grid .ws-filter-pill, .live-grid .ws-group-btn { border-radius: 0; }
+.ws-filter-seg-btn, .ws-filter-pill, .ws-group-btn, .report-mode-btn, .report-nav, .cal-nav-btn, .cal-seg-btn { font-size: 13px; border-radius: 4px; }
+/* Segmented controls retain their existing measured heights. */
 .ws-filter-seg-btn, .report-mode-btn { padding: 2px 10px; line-height: 15px; }
 .ws-filter-pill, .ws-group-btn { padding: 1px 10px; line-height: 15px; }
-.report-nav, .cal-nav-btn { padding: 3px 10px; line-height: 15px; }
 .cal-seg-btn { padding: 3px 12px; line-height: 15px; }
-.ws-shelf-btn { background: var(--bg-panel); border-color: var(--rule); color: var(--ink-2); min-width: 90px; }
-.ws-shelf-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--ink); border-color: var(--muted); }
-.ws-shelf-btn--primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-.ws-shelf-btn--primary:hover { background: var(--accent-blue-strong); color: #fff; }
+/* Reading keeps its existing inline action treatment. */
+.ws-filter-bar .ws-shelf-btn { padding: 0 10px; border-radius: 4px; letter-spacing: normal; text-transform: none; background: var(--bg-panel); border-color: var(--rule); color: var(--ink-2); min-width: 90px; }
+.ws-filter-bar .ws-shelf-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--ink); border-color: var(--muted); }
+.ws-filter-bar .ws-shelf-btn--primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.ws-filter-bar .ws-shelf-btn--primary:hover:not(:disabled) { background: var(--accent-blue-strong); color: #fff; }
 .ws-filter-seg-btn, .cal-seg-btn, .report-mode-btn { border-radius: 0; }
+/* These families live inside clipped segmented groups. Keep focus inside the box. */
+.ws-filter-seg-btn:focus-visible, .cal-seg-btn:focus-visible, .report-mode-btn:focus-visible, .task-modal-seg-btn:focus-visible, .settings-seg-btn:focus-visible { outline-offset: -2px; }
 .ws-filter-count { font-size: 12px; }
 .ws-inspector-strip { padding: 4px 16px; gap: 8px; background: var(--bg-panel); }
 .ws-inspector-badge { padding: 0 8px; background: var(--bg-panel); color: var(--muted); border-right: 1px solid var(--rule); font-size: 12px; }
@@ -8758,18 +8771,17 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .task-modal-footer-note { white-space: normal; }
 .task-modal-actions { margin-left: auto; flex-wrap: wrap; }
 .task-modal-cancel, .task-modal-save, .task-modal-delete-btn, .edit-bar-btn, .ws-kbd-action-btn { border-radius: 4px; }
-.task-modal-input:not([type="range"]), .task-modal-textarea { border: 1px solid var(--rule); border-radius: 4px; background: var(--bg-panel); }
-.task-modal-input:not([type="range"]):focus, .task-modal-textarea:focus { border: 1px solid var(--accent); outline: 2px solid var(--focus-blue); outline-offset: 1px; }
-.month-history { padding: 8px 16px; min-height: 0; }
-.month-history > p { margin: 0 0 8px; font-size: 12px; }
+.task-modal-textarea { border: 1px solid var(--rule); border-radius: 4px; background: var(--bg-panel); }
+.task-modal-textarea:focus { border: 1px solid var(--accent); outline: 2px solid var(--focus-blue); outline-offset: 1px; }
 .report-view > .report-period { justify-content: flex-start; padding: 8px 16px; border-bottom: 1px solid var(--rule); gap: 8px; }
 .ws-settings .ws-page-header-sub { margin-top: 3px; }
 .cal-toolbar { flex-wrap: wrap; padding: 8px 16px; }
 .cal-toolbar-right, .cal-toolbar-nav { flex-wrap: wrap; }
 
-@media (max-width: 1100px) {
-  .ws-sheet-header { flex-wrap: wrap; gap: 8px 16px; }
-  .sheet-date-controls { order: 3; flex-basis: 100%; }
+@media (max-width: 900px) {
+  .ws-sheet-header--task { grid-template-columns: minmax(0, 1fr); }
+  .ws-sheet-header--task > .header-utilities { width: 100%; }
+  .sheet-date-controls { justify-self: center; }
 }
 @media (max-width: 700px) {
   .app-header { padding: 0 8px; }
@@ -8782,6 +8794,7 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   .workspace-search { width: auto; }
   .workspace-search-results { right: -28px; max-width: calc(100vw - 24px); }
   .ws-filter-bar { padding: 8px 12px; gap: 8px; }
+  .live-grid > .ws-filter-bar { padding: 6px 12px; }
   .ws-sheet-range { font-size: 12px; padding: 3px 6px; }
   .ws-sheet-header-nav { max-width: 100%; }
   .ws-inspector-strip { padding: 4px 8px; }
