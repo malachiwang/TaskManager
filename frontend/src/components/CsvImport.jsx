@@ -166,7 +166,7 @@ function ImportPreviewBody() {
       <div className="ws-import-banner">
         <div>
           <span className="ws-import-banner-label">Before importing</span>
-          Export a backup via <em>Export Backup JSON</em> so you can recover if something
+          Export a backup via <em>Export (JSON)</em> so you can recover if something
           goes wrong. Import creates new tasks only — it never modifies or deletes existing data.
         </div>
       </div>

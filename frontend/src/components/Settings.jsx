@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { downloadExportBackup, restoreBackup, fetchDoc } from '../api.js';
+import { downloadExportBackup, downloadExportSheet, restoreBackup, fetchDoc } from '../api.js';
 import CsvImport from './CsvImport.jsx';
 import {
   KEYBINDS, KB_GROUP_ORDER, FIXED_SHORTCUTS, FIXED_REASON_LABELS,
@@ -78,7 +78,27 @@ function DocSection({ name, label }) {
   );
 }
 
-export default function Settings() {
+export default function Settings({ sheetMonth = null }) {
+  // Export (tm-clean 04): JSON = full backup; CSV = the grid's month.
+  const month = sheetMonth ?? { year: new Date().getFullYear(), month: new Date().getMonth() + 1 };
+  const sheetMonthLabel = new Date(month.year, month.month - 1, 1)
+    .toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const [exportFormat, setExportFormat] = useState('json');
+  const [exportError, setExportError]   = useState('');
+  async function handleExport() {
+    setExportError('');
+    try {
+      if (exportFormat === 'json') {
+        await downloadExportBackup();
+      } else {
+        const prefix = `${month.year}-${String(month.month).padStart(2, '0')}`;
+        const lastDay = new Date(month.year, month.month, 0).getDate();
+        await downloadExportSheet(`${prefix}-01`, `${prefix}-${String(lastDay).padStart(2, '0')}`);
+      }
+    } catch (e) {
+      setExportError(e?.message || 'Export failed.');
+    }
+  }
   // Appearance mode / visual theme / accent / motion (P10.0–P10.1) —
   // applied live, saved in localStorage (taskos-appearance).
   const [appearance, setAppearance]           = useState(loadAppearance);
@@ -618,30 +638,32 @@ export default function Settings() {
               <span className="ws-frame-header-sub">export before bulk changes or imports</span>
             </div>
 
-            {/* Primary export action */}
+            {/* Export (JSON full backup or CSV of the grid's month), with
+                Restore beside it. Restore still confirms before overwriting. */}
             <div className="ws-backup-primary">
               <div className="ws-ctrl-info">
-                <span className="ws-ctrl-label">Export full backup</span>
+                <span className="ws-ctrl-label">Export</span>
                 <span className="ws-ctrl-desc">
-                  One JSON file with everything: tasks, completions, notes, reading, and
-                  archives. Export before bulk changes and to move devices.
-                </span>
-              </div>
-              <button className="button-secondary ws-backup-btn" onClick={() => downloadExportBackup()}>
-                Download JSON
-              </button>
-            </div>
-
-            {/* Restore from backup (P9.0) — explicit confirm before overwrite */}
-            <div className="ws-ctrl-row">
-              <div className="ws-ctrl-info">
-                <span className="ws-ctrl-label">Restore from backup</span>
-                <span className="ws-ctrl-desc">
-                  <strong>Replaces all current data</strong> with the backup&rsquo;s contents.
-                  A safety copy of the current database is saved automatically first.
+                  JSON is a full backup. CSV covers {sheetMonthLabel}.
                 </span>
               </div>
               <div className="ws-ctrl-action">
+                <div className="settings-seg" role="group" aria-label="Export format">
+                  {['json', 'csv'].map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      className={`settings-seg-btn${exportFormat === f ? ' settings-seg-btn--active' : ''}`}
+                      aria-pressed={exportFormat === f}
+                      onClick={() => setExportFormat(f)}
+                    >
+                      {f.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+                <button className="button-secondary ws-backup-btn" onClick={handleExport}>
+                  Export
+                </button>
                 <input
                   ref={restoreInputRef}
                   type="file"
@@ -650,14 +672,19 @@ export default function Settings() {
                   onChange={handleRestoreFilePicked}
                 />
                 <button
-                  className="button-secondary"
+                  className="button-secondary ws-backup-btn"
                   onClick={() => restoreInputRef.current?.click()}
                   disabled={restoreBusy}
                 >
-                  Choose backup file…
+                  Restore…
                 </button>
               </div>
             </div>
+            {exportError && (
+              <div className="ws-restore-msg ws-restore-msg--error" role="alert">
+                Export failed: {exportError}
+              </div>
+            )}
 
             {restoreFile && (
               <div className="ws-restore-confirm" role="alertdialog" aria-label="Confirm restore">

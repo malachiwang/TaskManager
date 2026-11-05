@@ -20,6 +20,10 @@ export default function App() {
   //     active sheet".
   const [activeSheet, setActiveSheet] = useState('tasks');
   const [activeTool, setActiveTool] = useState(null);
+  const [gridMonth, setGridMonth] = useState(() => {
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() + 1 };
+  });
 
   // Schedule-from-Grid (P16.0 §13/§15): a Grid task handed to the Calendar,
   // which arms its placement mode and then consumes the request.
@@ -122,6 +126,8 @@ export default function App() {
       <main className="app-main" data-tab={showingTool ? activeTool : activeSheet}>
         {!showingTool && activeSheet === 'tasks' && (
           <TaskGrid
+            viewMonth={gridMonth}
+            setViewMonth={setGridMonth}
             onScheduleTask={(task) => {
               setCalendarPlaceTask(task);
               setActiveTool('calendar');
@@ -137,7 +143,7 @@ export default function App() {
         )}
         {activeTool === 'dashboard' && <Dashboard onOpenReports={() => setActiveTool('report')} />}
         {activeTool === 'report' && <MonthlyReport onOpenDashboard={() => setActiveTool('dashboard')} />}
-        {activeTool === 'settings' && <Settings />}
+        {activeTool === 'settings' && <Settings sheetMonth={gridMonth} />}
       </main>
 
       {/* Primary sheet tabs — Google-Sheets-style worksheet tabs. */}

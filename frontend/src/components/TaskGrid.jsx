@@ -8,7 +8,6 @@ import {
   createTask,
   updateTask,
   deleteTask,
-  downloadExportSheet,
   fetchNotes,
   upsertNote,
   reorderTasks,
@@ -249,16 +248,20 @@ function startEdgeAutoscroll(scrollEl, getPointerY, onScrollTick) {
   return () => clearInterval(timer);
 }
 
-export default function TaskGrid({ onScheduleTask = null }) {
+export default function TaskGrid({ onScheduleTask = null, viewMonth: sharedMonth = null, setViewMonth: setSharedMonth = null }) {
   // Real today — always fixed regardless of which month is displayed.
   const todayStr = toLocalDate(new Date());
 
   // Currently displayed month. Shape is { year, month } (1-indexed month).
   // Future modes (Rolling 30, Custom Range) can extend this state shape.
-  const [viewMonth, setViewMonth] = useState(() => {
+  // Held by App when provided, so Settings' CSV export follows the month the
+  // grid last showed.
+  const [localMonth, setLocalMonth] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() + 1 };
   });
+  const viewMonth = sharedMonth ?? localMonth;
+  const setViewMonth = setSharedMonth ?? setLocalMonth;
 
   // Derive full date array from the selected month.
   const dates = useMemo(
@@ -1915,10 +1918,6 @@ export default function TaskGrid({ onScheduleTask = null }) {
       <div className="ws-grid-shelf">
         <div className="ws-shelf-left">
           <button className="ws-shelf-btn ws-shelf-btn--primary" onClick={openAdd}>+ Add Task</button>
-          <button
-            className="ws-shelf-btn"
-            onClick={() => downloadExportSheet(dates[0], dates[dates.length - 1])}
-          >Export CSV</button>
         </div>
       </div>
 

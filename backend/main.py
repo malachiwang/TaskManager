@@ -4924,6 +4924,20 @@ def serve_doc(name: str):
 # Export
 # ---------------------------------------------------------------------------
 
+# Parent-first order; reverse it for deletion. Explicit allowlist prevents backup
+# data from naming SQL tables/columns and includes every persisted workspace table.
+_BACKUP_TABLES = (
+    "contexts", "external_calendars", "tasks", "reading_books", "depth_windows",
+    "depth_window_templates", "section_order", "academic_batches", "academic_candidates",
+    "recurrence_series", "task_sessions", "recurrence_skips", "depth_window_skips",
+    "external_events", "context_event_links", "task_event_links", "completions",
+    "cell_notes", "date_cell_overrides", "task_hiatus_periods", "task_daily_snapshots",
+    "reading_entries", "archive_snapshots",
+)
+_LEGACY_BACKUP_TABLES = frozenset(("tasks", "completions", "cell_notes", "archive_snapshots",
+    "task_daily_snapshots", "reading_books", "reading_entries", "date_cell_overrides", "task_hiatus_periods"))
+
+
 @app.get("/export/backup.json")
 def export_backup():
     """
@@ -4933,53 +4947,15 @@ def export_backup():
     Does not mutate the database.
     """
     conn = get_connection()
-    tasks = [dict(r) for r in conn.execute("SELECT * FROM tasks").fetchall()]
-    completions = [dict(r) for r in conn.execute("SELECT * FROM completions").fetchall()]
-    cell_notes = [dict(r) for r in conn.execute("SELECT * FROM cell_notes").fetchall()]
-    archive_rows = conn.execute("SELECT * FROM archive_snapshots").fetchall()
-    archives = []
-    for r in archive_rows:
-        row = dict(r)
-        row["snapshot_data_json"] = json.loads(row["snapshot_data_json"])
-        archives.append(row)
-    daily_snapshots = [
-        dict(r) for r in conn.execute(
-            "SELECT * FROM task_daily_snapshots ORDER BY snapshot_date, task_id"
-        ).fetchall()
-    ]
-    reading_books = [
-        dict(r) for r in conn.execute("SELECT * FROM reading_books ORDER BY id").fetchall()
-    ]
-    reading_entries = [
-        dict(r) for r in conn.execute(
-            "SELECT * FROM reading_entries ORDER BY book_id, entry_date, id"
-        ).fetchall()
-    ]
-    date_cell_overrides = [
-        dict(r) for r in conn.execute(
-            "SELECT * FROM date_cell_overrides ORDER BY task_id, date"
-        ).fetchall()
-    ]
-    task_hiatus_periods = [
-        dict(r) for r in conn.execute(
-            "SELECT * FROM task_hiatus_periods ORDER BY task_id, start_date"
-        ).fetchall()
-    ]
-    conn.close()
+    try:
+        payload = {"schema_version": 7, "exported_at": datetime.now().isoformat()}
+        for table in _BACKUP_TABLES:
+            payload[table] = [dict(r) for r in conn.execute(f'SELECT * FROM "{table}" ORDER BY rowid')]
+        for row in payload["archive_snapshots"]:
+            row["snapshot_data_json"] = json.loads(row["snapshot_data_json"])
+    finally:
+        conn.close()
 
-    payload = {
-        "schema_version": 6,  # P11.0 added task_hiatus_periods + reading priority/to-buy
-        "exported_at": datetime.now().isoformat(),
-        "tasks": tasks,
-        "completions": completions,
-        "cell_notes": cell_notes,
-        "archive_snapshots": archives,
-        "task_daily_snapshots": daily_snapshots,
-        "reading_books": reading_books,
-        "reading_entries": reading_entries,
-        "date_cell_overrides": date_cell_overrides,
-        "task_hiatus_periods": task_hiatus_periods,
-    }
     filename = f"taskos-backup-{date.today().isoformat()}.json"
     return Response(
         content=json.dumps(payload, indent=2),
@@ -5071,7 +5047,7 @@ def export_sheet_csv(
 # Restore
 # ---------------------------------------------------------------------------
 
-_SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4, 5, 6})
+_SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4, 5, 6, 7})
 
 
 @app.post("/restore/backup.json", status_code=200)
@@ -5082,7 +5058,7 @@ async def restore_backup(file: UploadFile = File(...)):
     Before overwriting anything, a safety copy of the current DB is written to
     <db-dir>/backups/pre-restore-<timestamp>.db using the SQLite backup API.
 
-    Supported schema_versions: 1–6. Older backups without the
+    Supported schema_versions: 1–7. Older backups without the
     date_cell_overrides / task_hiatus_periods sections restore those as empty;
     reading books without priority/to-buy fields restore with defaults
     (priority 3, to_buy 0, empty purchase fields).
@@ -5096,6 +5072,8 @@ async def restore_backup(file: UploadFile = File(...)):
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}")
 
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Backup must be a JSON object")
     schema_version = payload.get("schema_version", 1)
     if schema_version not in _SUPPORTED_SCHEMA_VERSIONS:
         raise HTTPException(
@@ -5116,12 +5094,18 @@ async def restore_backup(file: UploadFile = File(...)):
     date_cell_overrides_data = payload.get("date_cell_overrides", [])
     task_hiatus_periods_data = payload.get("task_hiatus_periods", [])
 
+    if schema_version == 7:
+        if any(not isinstance(payload.get(table), list) for table in _BACKUP_TABLES):
+            raise HTTPException(status_code=400, detail="Full backup is missing a workspace table")
+        if any(not isinstance(row, dict) for table in _BACKUP_TABLES for row in payload[table]):
+            raise HTTPException(status_code=400, detail="Backup rows must be objects")
+
     # Safety backup before any writes. Resolved via the database module so the
     # copy always sits next to the DB actually in use (TASKOS_DB_PATH included).
     db_path = db_config.DB_PATH
     backup_dir = db_path.parent / "backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
-    safety_path = backup_dir / f"pre-restore-{datetime.now().strftime('%Y%m%d-%H%M%S')}.db"
+    safety_path = backup_dir / f"pre-restore-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.db"
     if db_path.exists():
         src = sqlite3.connect(str(db_path))
         dst = sqlite3.connect(str(safety_path))
@@ -5129,9 +5113,40 @@ async def restore_backup(file: UploadFile = File(...)):
         dst.close()
         src.close()
 
+    if schema_version == 7:
+        conn = get_connection()
+        try:
+            with conn:
+                for table in reversed(_BACKUP_TABLES):
+                    conn.execute(f'DELETE FROM "{table}"')
+                for table in _BACKUP_TABLES:
+                    allowed = {r["name"] for r in conn.execute(f'PRAGMA table_info("{table}")')}
+                    for original in payload[table]:
+                        row = dict(original)
+                        if not row or not set(row).issubset(allowed):
+                            raise ValueError(f"Invalid columns in {table}")
+                        if table == "archive_snapshots" and not isinstance(row.get("snapshot_data_json"), str):
+                            row["snapshot_data_json"] = json.dumps(row["snapshot_data_json"])
+                        columns = ", ".join(f'"{key}"' for key in row)
+                        placeholders = ", ".join("?" for _ in row)
+                        conn.execute(f'INSERT INTO "{table}" ({columns}) VALUES ({placeholders})', list(row.values()))
+                if conn.execute("PRAGMA foreign_key_check").fetchone():
+                    raise ValueError("Backup contains broken references")
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Restore failed: {exc}")
+        finally:
+            conn.close()
+        return {"restored": True, "schema_version": 7, "safety_backup": str(safety_path),
+                **{table: len(payload[table]) for table in _BACKUP_TABLES}}
+
     conn = get_connection()
     try:
         with conn:
+            # Legacy files cannot contain newer tables. Clear these in dependency
+            # order as restore replaces the workspace, rather than retaining stale links.
+            for table in reversed(_BACKUP_TABLES):
+                if table not in _LEGACY_BACKUP_TABLES:
+                    conn.execute(f'DELETE FROM "{table}"')
             # Delete in dependency order (child tables first, then parent).
             conn.execute("DELETE FROM reading_entries")
             conn.execute("DELETE FROM reading_books")
@@ -5706,6 +5721,10 @@ async def import_apply(file: UploadFile = File(...)):
             is_paused_val = 1 if status == 'hiatus' else 0
             paused_at_val = now if is_paused_val else None
             active_from_val = _normalize_date_override(fv("active_from"))
+            if active_from_val is None and date_cols:
+                # Imported rows are created today; without an explicit start they
+                # would vanish from the very months their date columns cover.
+                active_from_val = min(date_cols)
             end_date_val = _normalize_date_override(fv("end_date"))
             notes = fv("notes") or ""
             manual_override = _normalize_date_override(fv("manual_last_done_override"))
