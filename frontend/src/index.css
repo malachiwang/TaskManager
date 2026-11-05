@@ -4895,7 +4895,7 @@ select.task-modal-input {
 /* Summary strip */
 .ws-settings-summary {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   border: 1px solid var(--grid-border);
   border-radius: 3px;
   margin-bottom: 20px;

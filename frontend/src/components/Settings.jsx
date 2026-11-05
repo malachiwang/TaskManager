@@ -320,10 +320,6 @@ export default function Settings({ sheetMonth = null }) {
           <span className="ws-settings-summary-label">Default priority</span>
           <span className="ws-settings-summary-value">{defaultPriority} / 10</span>
         </div>
-        <div className="ws-settings-summary-cell">
-          <span className="ws-settings-summary-label">Storage</span>
-          <span className="ws-settings-summary-value">local SQLite</span>
-        </div>
       </div>
 
       {/* ── Two-column layout ── */}
