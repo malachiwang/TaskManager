@@ -339,6 +339,10 @@ export default function TopBarNetwork({ className = '', followBanner = false }) 
           }
         }
       }
+      // Resizing clears the canvas. With reduced motion (OS setting or Motion
+      // "Off") there is no animation loop to repaint it, so redraw the still
+      // frame here — before tm-clean 23 the banner ended up blank.
+      if (reduced) draw();
     }
 
     function drawPixel() {
