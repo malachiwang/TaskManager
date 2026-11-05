@@ -159,19 +159,6 @@ export async function deleteTask(id) {
   return res.json();
 }
 
-export async function fetchArchives() {
-  const res = await fetch(`${BASE}/archives`);
-  if (!res.ok) throw new Error(`fetchArchives failed: ${res.status}`);
-  return res.json();
-}
-
-export async function fetchArchive(id) {
-  const res = await fetch(`${BASE}/archives/${id}`);
-  if (!res.ok) throw new Error(`fetchArchive failed: ${res.status}`);
-  return res.json();
-}
-
-
 // ---------------------------------------------------------------------------
 // Export downloads — fetch → blob → programmatic click.
 // Direct anchor navigation (href + download) is not honored in Tauri's
