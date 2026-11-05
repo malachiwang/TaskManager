@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import TaskGrid from './components/TaskGrid.jsx';
 import CalendarView from './components/CalendarView.jsx';
 import Dashboard from './components/Dashboard.jsx';
-import Archive from './components/Archive.jsx';
 import Settings from './components/Settings.jsx';
 import ReadingSheet from './components/ReadingSheet.jsx';
 import MonthlyReport from './components/MonthlyReport.jsx';
@@ -17,7 +16,7 @@ export default function App() {
   //     from the bottom worksheet-tab bar. Its value is preserved while a tool
   //     view is open, so returning from a tool lands back on the last sheet.
   //   activeTool  — a supporting utility view (Calendar | Dashboard | Reports |
-  //     Archive | Settings) opened from the top toolbar; null means "show the
+  //     Settings) opened from the top toolbar; null means "show the
   //     active sheet".
   const [activeSheet, setActiveSheet] = useState('tasks');
   const [activeTool, setActiveTool] = useState(null);
@@ -115,7 +114,6 @@ export default function App() {
             <button className={`tab${activeTool === 'calendar' ? ' active' : ''}`} onClick={() => setActiveTool('calendar')}>Calendar</button>
             <button className={`tab${activeTool === 'dashboard' ? ' active' : ''}`} onClick={() => setActiveTool('dashboard')}>Dashboard</button>
             <button className={`tab${activeTool === 'report' ? ' active' : ''}`} onClick={() => setActiveTool('report')}>Reports</button>
-            <button className={`tab${activeTool === 'archive' ? ' active' : ''}`} onClick={() => setActiveTool('archive')}>Archive</button>
             <button className={`tab${activeTool === 'settings' ? ' active' : ''}`} onClick={() => setActiveTool('settings')}>Settings</button>
           </nav>
         </div>
@@ -139,7 +137,6 @@ export default function App() {
         )}
         {activeTool === 'dashboard' && <Dashboard onOpenReports={() => setActiveTool('report')} />}
         {activeTool === 'report' && <MonthlyReport onOpenDashboard={() => setActiveTool('dashboard')} />}
-        {activeTool === 'archive' && <Archive />}
         {activeTool === 'settings' && <Settings />}
       </main>
 

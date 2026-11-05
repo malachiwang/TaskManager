@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { downloadExportBackup, restoreBackup, fetchDoc } from '../api.js';
+import CsvImport from './CsvImport.jsx';
 import {
   KEYBINDS, KB_GROUP_ORDER, FIXED_SHORTCUTS, FIXED_REASON_LABELS,
   loadKbOverrides, writeKbOverrides, buildResolvedFromOverrides,
@@ -705,6 +706,8 @@ export default function Settings() {
               </div>
             </div>
           </div>
+
+          <CsvImport />
 
           {/* 05 Keyboard Shortcuts */}
           <div className="ws-frame">

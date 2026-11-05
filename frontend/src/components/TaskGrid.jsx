@@ -8,7 +8,6 @@ import {
   createTask,
   updateTask,
   deleteTask,
-  createArchive,
   downloadExportSheet,
   fetchNotes,
   upsertNote,
@@ -27,11 +26,9 @@ import TaskRow from './TaskRow.jsx';
 import TaskModal from './TaskModal.jsx';
 import EditBar from './EditBar.jsx';
 import KeyboardHelp from './KeyboardHelp.jsx';
-import { FILTERS, FILTER_LABELS, PRIMARY_FILTERS, SECONDARY_FILTERS, taskPassesFilter } from '../filters.js';
-import FilterMenu from './FilterMenu.jsx';
+import { FILTERS, FILTER_LABELS, PRIMARY_FILTERS, taskPassesFilter } from '../filters.js';
 import { GROUP_MODES, groupTasks, uniqueSections } from '../grouping.js';
 import { matchKeybind, resolveKeybinds } from '../keybinds.js';
-import SavedViewsControl from './SavedViewsControl.jsx';
 import GroupSelect from './GroupSelect.jsx';
 
 // ---------------------------------------------------------------------------
@@ -286,18 +283,10 @@ export default function TaskGrid({ onScheduleTask = null }) {
   const [cellFeedback, setCellFeedback] = useState(null);
   const feedbackTimerRef = useRef(null);
 
-  // Filtering / search state — Phase 1, split in P10.0.
-  // activeFilter is the primary status scope (All/Active/Hiatus/Finished);
-  // secondaryFilters are on/off toggles (Urgent/Dormant/…) ANDed on top.
+  // Filtering / search state. activeFilter is the status scope
+  // (All/Active/Hiatus/Finished).
   const [activeFilter, setActiveFilter] = useState(FILTERS.ALL);
-  const [secondaryFilters, setSecondaryFilters] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-
-  function toggleSecondaryFilter(f) {
-    setSecondaryFilters((prev) =>
-      prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f],
-    );
-  }
 
   // Grouping mode — Phase 3. Persisted to localStorage.
   const [groupMode, setGroupMode] = useState(
@@ -414,10 +403,6 @@ export default function TaskGrid({ onScheduleTask = null }) {
     if (activeFilter !== FILTERS.ALL) {
       result = result.filter((t) => taskPassesFilter(t, activeFilter));
     }
-    // Secondary toggles — AND semantics: a task must pass every active toggle.
-    for (const f of secondaryFilters) {
-      result = result.filter((t) => taskPassesFilter(t, f));
-    }
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       result = result.filter(
@@ -429,12 +414,12 @@ export default function TaskGrid({ onScheduleTask = null }) {
       );
     }
     return result;
-  }, [tasks, activeFilter, secondaryFilters, searchQuery, viewMonth.year, viewMonth.month]);
+  }, [tasks, activeFilter, searchQuery, viewMonth.year, viewMonth.month]);
 
   // Any filter/search hides tasks — empty sections are suppressed then, since
   // a section that merely *looks* empty under a filter is a confusing target.
   const hasActiveFilters =
-    activeFilter !== FILTERS.ALL || secondaryFilters.length > 0 || searchQuery.trim() !== '';
+    activeFilter !== FILTERS.ALL || searchQuery.trim() !== '';
 
   // Group filtered tasks by the current groupMode.
   // SECTION mode follows the persisted manual order (P12.1) and renders
@@ -1306,17 +1291,6 @@ export default function TaskGrid({ onScheduleTask = null }) {
     }
   }, []);
 
-  // Archive is named by selected month (e.g. "2026-05") so it is stable
-  // regardless of what day the button is clicked.
-  async function handleArchive() {
-    const name = `${viewMonth.year}-${String(viewMonth.month).padStart(2, '0')}`;
-    try {
-      await createArchive(name, dates[0], dates[dates.length - 1]);
-    } catch (e) {
-      console.error('archive failed:', e);
-    }
-  }
-
   // ---------------------------------------------------------------------------
   // Month navigation
   // ---------------------------------------------------------------------------
@@ -1418,7 +1392,7 @@ export default function TaskGrid({ onScheduleTask = null }) {
   useEffect(() => {
     setSelectedCell(null);
     setRangeEnd(null);
-  }, [activeFilter, secondaryFilters]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Clear selectedCell when groupMode changes — render order may change completely.
   useEffect(() => {
@@ -1756,34 +1730,6 @@ export default function TaskGrid({ onScheduleTask = null }) {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentionally reads from refs
 
-  // Saved views
-  // ---------------------------------------------------------------------------
-
-  function handleApplyView(view) {
-    const validFilter    = Object.values(FILTERS).includes(view.filter)
-      ? view.filter    : FILTERS.ALL;
-    const validGroupMode = Object.values(GROUP_MODES).includes(view.groupMode)
-      ? view.groupMode : GROUP_MODES.SECTION;
-    // Legacy views saved before the primary/secondary split may carry a
-    // secondary filter (Urgent/Dormant/…) as their primary — map it to
-    // All + that toggle so the visible task set is identical.
-    if (SECONDARY_FILTERS.includes(validFilter)) {
-      setActiveFilter(FILTERS.ALL);
-      setSecondaryFilters([validFilter]);
-    } else {
-      setActiveFilter(validFilter);
-      setSecondaryFilters(
-        Array.isArray(view.secondary)
-          ? view.secondary.filter((f) => SECONDARY_FILTERS.includes(f))
-          : [],
-      );
-    }
-    setGroupMode(validGroupMode);
-    setSearchQuery(view.searchQuery || '');
-    setSelectedCell(null);
-    setRangeEnd(null);
-  }
-
   // ---------------------------------------------------------------------------
   // Jump mode handlers (Quick Jump panel)
   // ---------------------------------------------------------------------------
@@ -1969,7 +1915,6 @@ export default function TaskGrid({ onScheduleTask = null }) {
       <div className="ws-grid-shelf">
         <div className="ws-shelf-left">
           <button className="ws-shelf-btn ws-shelf-btn--primary" onClick={openAdd}>+ Add Task</button>
-          <button className="ws-shelf-btn" onClick={handleArchive}>Archive Sheet</button>
           <button
             className="ws-shelf-btn"
             onClick={() => downloadExportSheet(dates[0], dates[dates.length - 1])}
@@ -2036,29 +1981,6 @@ export default function TaskGrid({ onScheduleTask = null }) {
             </button>
           ))}
         </div>
-        <FilterMenu active={secondaryFilters} onToggle={toggleSecondaryFilter} />
-        {secondaryFilters.map((f) => (
-          <span key={f} className="ws-filter-chip">
-            {FILTER_LABELS[f]}
-            <button
-              type="button"
-              className="ws-filter-chip-x"
-              aria-label={`Remove ${FILTER_LABELS[f]} filter`}
-              onClick={() => toggleSecondaryFilter(f)}
-            >
-              ×
-            </button>
-          </span>
-        ))}
-        {secondaryFilters.length > 0 && (
-          <button
-            type="button"
-            className="ws-filter-clear"
-            onClick={() => setSecondaryFilters([])}
-          >
-            Clear filters
-          </button>
-        )}
         <input
           ref={searchInputRef}
           className="ws-filter-input"
@@ -2074,13 +1996,6 @@ export default function TaskGrid({ onScheduleTask = null }) {
           </span>
         )}
         <GroupSelect value={groupMode} onChange={setGroupMode} />
-        <SavedViewsControl
-          activeFilter={activeFilter}
-          secondaryFilters={secondaryFilters}
-          groupMode={groupMode}
-          searchQuery={searchQuery}
-          onApplyView={handleApplyView}
-        />
         {quickJumpEnabled && (
           <button
             type="button"
@@ -2297,18 +2212,6 @@ export default function TaskGrid({ onScheduleTask = null }) {
         {tasks.length > 0 && filteredTasks.length === 0 && (
           <div className="grid-status">
             No tasks match the current filters.
-            {secondaryFilters.length > 0 && (
-              <>
-                {' '}
-                <button
-                  type="button"
-                  className="ws-filter-clear"
-                  onClick={() => setSecondaryFilters([])}
-                >
-                  Clear filters
-                </button>
-              </>
-            )}
           </div>
         )}
       </div>
