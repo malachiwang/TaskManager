@@ -30,6 +30,13 @@ export const ACCENT_THEMES = [
   { value: 'amber',    label: 'Amber',    swatch: '#b26a00' },
 ];
 
+// Header banner art (tm-clean 21). 'network' is the original node-and-edge
+// field; 'blossom' draws the same field as pixel cherry blossoms.
+export const BANNER_STYLES = [
+  { value: 'network', label: 'Network' },
+  { value: 'blossom', label: 'Cherry blossom' },
+];
+
 export const MOTION_LEVELS = [
   { value: 'off',    label: 'Off' },
   { value: 'subtle', label: 'Subtle' },
@@ -50,7 +57,7 @@ export const VISUAL_THEMES = [
   { value: 'midnight', label: 'Midnight',      swatch: ['#101014', '#17171d', '#2e2e38', '#0a0a0e'], darkBase: true },
 ];
 
-const DEFAULTS = { mode: 'system', theme: 'classic', accent: 'blue', motion: 'subtle' };
+const DEFAULTS = { mode: 'system', theme: 'classic', accent: 'blue', motion: 'subtle', banner: 'network' };
 
 // One-time migration source: the pre-P10.1 standalone visual-theme key.
 function legacyTheme() {
@@ -71,6 +78,7 @@ export function loadAppearance() {
       theme:  VISUAL_THEMES.some((t) => t.value === saved.theme)   ? saved.theme : legacyTheme(),
       accent: ACCENT_THEMES.some((a) => a.value === saved.accent)  ? saved.accent : DEFAULTS.accent,
       motion: MOTION_LEVELS.some((l) => l.value === saved.motion)  ? saved.motion : DEFAULTS.motion,
+      banner: BANNER_STYLES.some((b) => b.value === saved.banner)  ? saved.banner : DEFAULTS.banner,
     };
   } catch {
     return { ...DEFAULTS, theme: legacyTheme() };
@@ -128,4 +136,9 @@ export function initAppearance() {
 // Current motion level for canvas components ('off' | 'subtle' | 'lively').
 export function getMotionLevel() {
   return loadAppearance().motion;
+}
+
+// Current header banner art ('network' | 'blossom').
+export function getBannerStyle() {
+  return loadAppearance().banner;
 }

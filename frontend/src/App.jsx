@@ -217,7 +217,7 @@ export default function App() {
       <header className="app-header">
         {/* Background-only network signature — pointer-events:none, behind
             content (P8.0B). */}
-        <TopBarNetwork />
+        <TopBarNetwork followBanner />
         <div className="app-topbar-content">
           <div className="app-identity">
             <span className="app-title">TaskManager</span>

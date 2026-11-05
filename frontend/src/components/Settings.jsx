@@ -9,7 +9,7 @@ import {
 } from '../keybinds.js';
 import {
   loadAppearance, saveAppearance,
-  APPEARANCE_MODES, ACCENT_THEMES, MOTION_LEVELS, VISUAL_THEMES,
+  APPEARANCE_MODES, ACCENT_THEMES, MOTION_LEVELS, BANNER_STYLES, VISUAL_THEMES,
 } from '../appearance.js';
 import {
   loadPreferences as loadDashPrefs,
@@ -416,6 +416,26 @@ export default function Settings({ sheetMonth = null }) {
                       onClick={() => updateAppearance({ motion: l.value })}
                     >
                       {l.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="ws-ctrl-row">
+              <div className="ws-ctrl-info">
+                <span className="ws-ctrl-label">Banner</span>
+              </div>
+              <div className="ws-ctrl-action">
+                <div className="settings-seg" role="group" aria-label="Banner">
+                  {BANNER_STYLES.map((b) => (
+                    <button
+                      key={b.value}
+                      type="button"
+                      className={`settings-seg-btn${appearance.banner === b.value ? ' settings-seg-btn--active' : ''}`}
+                      aria-pressed={appearance.banner === b.value}
+                      onClick={() => updateAppearance({ banner: b.value })}
+                    >
+                      {b.label}
                     </button>
                   ))}
                 </div>
