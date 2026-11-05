@@ -77,16 +77,17 @@ for(const theme of themes)for(const width of widths)for(const [build,port] of [[
   // Optional columns at scroll zero, including a deliberately narrow saved Freq width.
   await wrapper.evaluate(n=>{n.scrollLeft=0;n.scrollTop=0;});await settle();
   row.frequency=await metrics(page.locator('th.col-freq'));row.frequencyText=await page.locator('th.col-freq').evaluate(n=>{const range=document.createRange();range.selectNodeContents(n.firstChild);return range.getBoundingClientRect().width;});
-  assert.ok(row.frequencyText<=row.frequency.width-13,'default FREQ label fits its existing 44px column');
-  assert.equal(row.frequency.textOverflow,'ellipsis');
-  row.shortLabels=await page.locator('th.col-urg,th.col-pri').evaluateAll(ns=>ns.map(n=>{const r=document.createRange();r.selectNodeContents(n.firstChild);const s=getComputedStyle(n);return {text:n.textContent,contentWidth:n.clientWidth-parseFloat(s.paddingLeft)-parseFloat(s.paddingRight),textWidth:r.getBoundingClientRect().width};}));for(const c of row.shortLabels)assert.ok(c.textWidth<=c.contentWidth,c.text+' fits');
+  // Full original labels; like b15a9f6, they clip at narrow default widths (title keeps the full name).
+  assert.equal((await page.locator('th.col-freq').evaluate(n=>n.firstChild.textContent)).trim(),'Frequency');
+  assert.equal(row.frequency.textOverflow,'clip');
+  row.shortLabels=await page.locator('th.col-urg,th.col-pri').evaluateAll(ns=>ns.map(n=>({text:n.firstChild.textContent.trim(),textOverflow:getComputedStyle(n).textOverflow,transform:getComputedStyle(n).textTransform})));assert.deepEqual(row.shortLabels.map(c=>c.text),['Urgency','Priority']);for(const c of row.shortLabels){assert.equal(c.textOverflow,'clip');assert.equal(c.transform,'uppercase');}
   row.labelStyles=await Promise.all([page.locator('th.col-task'),page.locator('.ws-section-title').first()].map(metrics));for(const c of row.labelStyles)assert.equal(c.textTransform,'uppercase');
   for(const name of ['Main','Grid','Reading','Calendar','Reports','Settings','+ Add Task','Jump']){
    const el=button(name);await el.scrollIntoViewIfNeeded();const normal=await metrics(el);await el.hover();assert.equal((await metrics(el)).height,normal.height);await page.keyboard.press('Shift');await el.focus();const focused=await metrics(el);assert.equal(focused.height,normal.height);assert.match(focused.outline,/solid/);await el.evaluate(n=>n.blur());
   }
   await button('+ Add Task').focus();await page.screenshot({path:`${out}/current-${theme}-${width}-focus-columns.png`});
   await page.evaluate(()=>{const widths=JSON.parse(localStorage.getItem('taskos-col-widths'));widths['col-freq']=24;localStorage.setItem('taskos-col-widths',JSON.stringify(widths));});await page.reload();await task.waitFor();
-  const narrow=await metrics(page.locator('th.col-freq'));assert.equal(narrow.width,24);assert.equal(narrow.textOverflow,'ellipsis');row.narrowFrequency=narrow;
+  const narrow=await metrics(page.locator('th.col-freq'));assert.equal(narrow.width,24);assert.equal(narrow.textOverflow,'clip');row.narrowFrequency=narrow;
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  }
  records.push(row);save();console.log('PASS',build,theme,width);await context.close();

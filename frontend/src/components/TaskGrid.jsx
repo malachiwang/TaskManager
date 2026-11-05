@@ -30,6 +30,7 @@ import { FILTERS, FILTER_LABELS, PRIMARY_FILTERS, taskPassesFilter } from '../fi
 import { GROUP_MODES, groupTasks, uniqueSections } from '../grouping.js';
 import { matchKeybind, resolveKeybinds, jumpDigit, isTypingTarget, canDismiss } from '../keybinds.js';
 import GroupSelect from './GroupSelect.jsx';
+import { checkInTaskIds, isVisibleInMonth } from '../monthVisibility.js';
 
 // ---------------------------------------------------------------------------
 // Date helpers
@@ -386,19 +387,18 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth, setViewMont
   // ---------------------------------------------------------------------------
 
   const filteredTasks = useMemo(() => {
-    // Finished-task month visibility (P3.0B): a task marked Finished (end_date set)
-    // is hidden in month views AFTER its finish month, but stays visible in the
-    // finish month and all earlier months. Keyed strictly on end_date — a plain
-    // completion entry never sets end_date, so completing a cell never hides a task.
-    const viewYearMonth = `${viewMonth.year}-${String(viewMonth.month).padStart(2, '0')}`;
+    // Month visibility (monthVisibility.js): only tasks live in the viewed month,
+    // plus any task with a check-in dated in it. Completing a cell never sets
+    // end_date, so it never hides a task. A search-revealed task always shows.
+    const checkIns = checkInTaskIds({ completions, notes, overrides: cellOverrides }, viewMonth.year, viewMonth.month);
     let result = tasks.filter(
-      (t) => t.id === revealedTaskId || !t.end_date || t.end_date.slice(0, 7) >= viewYearMonth,
+      (t) => t.id === revealedTaskId || isVisibleInMonth(t, viewMonth.year, viewMonth.month, checkIns),
     );
     if (activeFilter !== FILTERS.ALL) {
       result = result.filter((t) => taskPassesFilter(t, activeFilter));
     }
     return result;
-  }, [tasks, activeFilter, revealedTaskId, viewMonth.year, viewMonth.month]);
+  }, [tasks, completions, notes, cellOverrides, activeFilter, revealedTaskId, viewMonth.year, viewMonth.month]);
 
   // Any filter/search hides tasks — empty sections are suppressed then, since
   // a section that merely *looks* empty under a filter is a confusing target.
@@ -408,16 +408,21 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth, setViewMont
   // Group filtered tasks by the current groupMode.
   // SECTION mode follows the persisted manual order (P12.1) and renders
   // empty sections (drop targets) when nothing is filtered.
-  const groupedTasks = useMemo(
-    () => groupTasks(
+  // Counts and average urgency in each group header use visible tasks only.
+  // A section whose tasks are all outside this month is omitted rather than
+  // offered as an empty "Remove section" target; truly empty sections remain.
+  const groupedTasks = useMemo(() => {
+    const groups = groupTasks(
       filteredTasks,
       groupMode,
       groupMode === GROUP_MODES.SECTION && sections.length > 0
         ? { sectionOrder: sections.map((s) => s.name), includeEmptySections: !hasActiveFilters }
         : {},
-    ),
-    [filteredTasks, groupMode, sections, hasActiveFilters],
-  );
+    );
+    if (groupMode !== GROUP_MODES.SECTION) return groups;
+    const occupied = new Set(tasks.map((t) => t.section?.trim()).filter(Boolean));
+    return groups.filter((g) => g.tasks.length > 0 || !occupied.has(g.key));
+  }, [filteredTasks, tasks, groupMode, sections, hasActiveFilters]);
 
   // Section names for the Add/Edit modal combobox — persisted order first,
   // then any task-only stragglers not yet registered.
@@ -2053,10 +2058,10 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth, setViewMont
             <tr>
               <th className="meta-col sticky-col col-actions" style={thStyle('col-actions')}></th>
               <th className="meta-col sticky-col col-urg" title="Urgency" style={thStyle('col-urg')}>
-                Urg.{rh('col-urg')}
+                Urgency{rh('col-urg')}
               </th>
               <th className="meta-col sticky-col col-pri" title="Priority" style={thStyle('col-pri')}>
-                Pri{rh('col-pri')}
+                Priority{rh('col-pri')}
               </th>
               <th className="meta-col sticky-col col-status" style={thStyle('col-status')}>
                 Status{rh('col-status')}
@@ -2074,7 +2079,7 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth, setViewMont
                 Subtask{rh('col-sub')}
               </th>
               <th className="meta-col scroll-meta-col col-freq" title="Frequency (days)" style={thStyle('col-freq')}>
-                Freq{rh('col-freq')}
+                Frequency{rh('col-freq')}
               </th>
               <th className="meta-col scroll-meta-col col-days" title="Days since last done" style={thStyle('col-days')}>
                 Days{rh('col-days')}
@@ -2217,7 +2222,6 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth, setViewMont
         {tasks.length > 0 && filteredTasks.length === 0 && (
           <div className="grid-status">
             No tasks match the current filters.
-            <button type="button" className="ws-filter-clear" onClick={() => setActiveFilter(FILTERS.ALL)}>Show all tasks</button>
           </div>
         )}
       </div>

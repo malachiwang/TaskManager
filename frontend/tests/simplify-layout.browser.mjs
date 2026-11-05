@@ -29,8 +29,14 @@ try {
       });
       assert.deepEqual(audit.mismatches,[],`${name}: mixed fonts`);
       assert.equal(audit.overflow,false,`${name}: page overflow`);
-      const s=await page.locator('.workspace-search-field').boundingBox(),h=await page.locator('.header-utilities').getByRole('button',{name:'Keyboard shortcuts',exact:true}).boundingBox();
-      assert.ok(s&&h&&s.x+s.width<=h.x+1&&h.x-s.x-s.width<16,`${name}: search/help order`);
+      // Header search/help live on Grid and Reading only; b15a9f6 had none on
+      // Calendar, Reports or Settings, so those pages keep their original headers.
+      if(/^(calendar|reports|settings)/.test(name)){
+        assert.equal(await page.locator('.header-utilities').count(),0,`${name}: no header search/help`);
+      }else{
+        const s=await page.locator('.workspace-search-field').boundingBox(),h=await page.locator('.header-utilities').getByRole('button',{name:'Keyboard shortcuts',exact:true}).boundingBox();
+        assert.ok(s&&h&&s.x+s.width<=h.x+1&&h.x-s.x-s.width<16,`${name}: search/help order`);
+      }
       await page.screenshot({path:`${output}/${mode}-${width}-${name}.png`});
       records.push({mode,width,name,...audit});
     }
@@ -100,10 +106,7 @@ try {
     await page.locator('.report-view > .grid-status').waitFor({state:'hidden'});
     await page.locator('.report-view .dashboard-command-panel').waitFor();
     await capture('reports');
-    await button('Keyboard shortcuts').click();await page.getByRole('dialog',{name:'Keyboard shortcuts'}).waitFor();
-    await page.keyboard.press('Escape');assert.equal(await button('Keyboard shortcuts').getAttribute('aria-expanded'),'false');
-    await page.keyboard.press('?');assert.equal(await button('Keyboard shortcuts').getAttribute('aria-expanded'),'true');
-    await page.keyboard.press('?');assert.equal(await button('Keyboard shortcuts').getAttribute('aria-expanded'),'false');
+    assert.equal(await button('Keyboard shortcuts').count(),0,'Reports has no header help');
     assert.deepEqual(await page.getByRole('navigation',{name:'Pages',exact:true}).getByRole('button').allTextContents(),['Main','Reports','Settings']);
     await button('Settings').click();await button('Change').first().waitFor();await capture('settings');
     await actualFont('.ws-settings select');

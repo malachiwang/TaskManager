@@ -606,7 +606,7 @@ export default function Dashboard({ onOpenReports, embedded = false }) {
               <>
                 {' · '}
                 <button type="button" className="ws-dash-crosslink" onClick={onOpenReports}>
-                  View history →
+                  for patterns over time, open Reports →
                 </button>
               </>
             )}

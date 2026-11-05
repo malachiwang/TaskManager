@@ -181,7 +181,8 @@ try {
   await page.locator('.grid-wrapper').evaluate(el => { el.scrollLeft = el.scrollWidth; });
   assert.ok(await page.locator('.date-cell').evaluateAll(cells => cells.some(c => { const r = c.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; })));
   await button('Settings').click();
-  assert.equal(await search.isVisible(), true);
+  // Settings keeps its original header: no workspace search there (b15a9f6 had none).
+  assert.equal(await search.count(), 0);
   assert.equal(await button('Main').isVisible(), true);
   await page.screenshot({ path: `${artifacts}/regression-narrow.png` });
   await button('Export…').scrollIntoViewIfNeeded();

@@ -856,11 +856,6 @@ export default function TaskModal({ task, sectionSuggestions = [], initialValues
                     Schedule on Calendar
                   </button>
                 )}
-                {!isEdit && (
-                  <span className="task-modal-footer-note">
-                    Changes save to local SQLite task record
-                  </span>
-                )}
                 <div className="task-modal-actions">
                   {saveError && (
                     <span className="task-modal-save-error" role="alert">{saveError}</span>

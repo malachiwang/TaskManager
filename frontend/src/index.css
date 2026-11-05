@@ -71,6 +71,9 @@
      Hierarchy via font-weight, font-size, text-transform, letter-spacing,
      font-variant-numeric, color, and spacing. No serif or monospace stacks. */
   --font-ui:    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-sans:  var(--font-ui);   /* alias — kept for selector compatibility */
+  --font-mono:  var(--font-ui);   /* alias — use tabular-nums for numeric display */
+  --font-serif: var(--font-ui);   /* alias — use font-weight for display hierarchy */
 }
 
 /* -------------------------------------------------------------------------
@@ -421,16 +424,16 @@ body {
 .loading-title {
   font-weight: 700;
   font-size: 24px;
-  letter-spacing: normal;
-  text-transform: none;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
   color: #fff;
   text-shadow: 0 0 18px rgba(255, 255, 255, 0.08);
 }
 
 .loading-subtitle {
   font-size: 11px;
-  letter-spacing: normal;
-  text-transform: none;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   color: rgba(255, 255, 255, 0.45);
 }
 
@@ -549,12 +552,13 @@ body {
 
   font-size: 13px;
   line-height: 1;
+  font-family: inherit;
 }
 
 /* Visual-only caret (▾) after the label, à la Sheets worksheet tabs. */
 .sheet-tab::after {
   content: '▾';
-  font-size: 11px;
+  font-size: 9px;
   opacity: 0.45;
 }
 
@@ -651,16 +655,15 @@ body {
   background: var(--header-bg);
   font-weight: 600;
   font-size: 11px;
-  text-transform: none;
-  letter-spacing: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   position: sticky;
   top: 0;
   z-index: 2;
 }
 
-/* Date labels clip at their cell boundary. Metadata labels use an ellipsis
-   when a saved width is too narrow; their title retains the full name.
-   Resize handles remain inside each header box. */
+/* Header labels clip at their cell boundary; their title retains the full
+   name. Resize handles remain inside each header box. */
 .task-grid thead th {
   overflow: hidden;
   text-overflow: clip;
@@ -668,12 +671,6 @@ body {
 
 .task-grid thead th.meta-col {
   text-transform: uppercase;
-  text-overflow: ellipsis;
-}
-
-.task-grid thead th.col-urg,
-.task-grid thead th.col-pri {
-  padding-inline: 3px;
 }
 
 /* -------------------------------------------------------------------------
@@ -948,7 +945,7 @@ thead .meta-col {
   display: inline-block;
   max-width: 100%;
   padding: 0 2px;
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.2;
   color: var(--ink);
   white-space: nowrap;
@@ -972,13 +969,14 @@ thead .meta-col {
   box-sizing: border-box;
   padding: 1px 2px;
 
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.2;
   border: 1px solid var(--focus-blue, var(--accent));
   border-radius: 0;
   background: var(--bg-panel);
   color: var(--ink);
   outline: none;
+  font-family: inherit;
 }
 
 .dc-box {
@@ -989,7 +987,7 @@ thead .meta-col {
   height: 15px;
   box-sizing: border-box;
   border-radius: 2px;
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 700;
   line-height: 1;
   flex-shrink: 0;
@@ -1061,6 +1059,7 @@ thead .meta-col {
   padding: 0 2px;
   box-sizing: border-box;
   line-height: inherit;
+  font-family: var(--font-sans);
 }
 
 .cell-edit-wrap {
@@ -1078,7 +1077,7 @@ thead .meta-col {
 
 .insert-link-btn--cell {
   padding: 1px 4px;
-  font-size: 11px;
+  font-size: 8px;
   line-height: 1.4;
   flex-shrink: 0;
 }
@@ -1153,6 +1152,7 @@ thead .meta-col {
   flex-shrink: 0;
   font-size: 12px;
   min-height: 28px;
+  font-family: var(--font-mono);
 }
 
 /* Active edit bar — a cell is selected. */
@@ -1163,7 +1163,7 @@ thead .meta-col {
 
 .edit-bar-empty {
   color: var(--muted-2);
-  font-style: normal;
+  font-style: italic;
 }
 
 .edit-bar-info {
@@ -1181,6 +1181,7 @@ thead .meta-col {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 220px;
+  font-family: var(--font-sans);
 }
 
 .edit-bar-sep {
@@ -1192,6 +1193,7 @@ thead .meta-col {
   color: var(--muted);
   white-space: nowrap;
   flex-shrink: 0;
+  font-family: var(--font-mono);
 }
 
 .edit-bar-count {
@@ -1199,11 +1201,12 @@ thead .meta-col {
   font-weight: 700;
   white-space: nowrap;
   flex-shrink: 0;
+  font-family: var(--font-mono);
 }
 
 .edit-bar-disabled {
   color: #999;
-  font-style: normal;
+  font-style: italic;
   flex-shrink: 0;
 }
 
@@ -1220,7 +1223,7 @@ thead .meta-col {
 
 /* P10.0 — muted inline hint at the end of the range action row */
 .edit-bar-hint {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted-2);
   white-space: nowrap;
 }
@@ -1253,6 +1256,7 @@ thead .meta-col {
   background: var(--bg-panel);
   color: var(--ink-2);
   border-radius: 2px;
+  font-family: inherit;
 }
 
 .edit-bar-btn:hover:not(:disabled) {
@@ -1280,6 +1284,7 @@ thead .meta-col {
   font-size: 12px;
   padding: 2px 4px;
   border: 1px solid var(--grid-border);
+  font-family: inherit;
 }
 
 .edit-bar-note-row {
@@ -1305,6 +1310,7 @@ thead .meta-col {
   border: 1px solid transparent;
   background: transparent;
   border-radius: 3px;
+  font-family: inherit;
 }
 
 .edit-bar-note-input:focus {
@@ -1326,17 +1332,17 @@ thead .meta-col {
 }
 
 .insert-link-btn {
-
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: normal;
-  text-transform: none;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   color: var(--muted);
   background: transparent;
   border: 1px solid var(--rule);
   padding: 3px 7px;
   cursor: pointer;
   white-space: nowrap;
+  font-family: var(--font-mono);
 }
 
 .insert-link-btn:hover,
@@ -1348,7 +1354,7 @@ thead .meta-col {
 
 .insert-link-btn--editbar {
   padding: 2px 6px;
-  font-size: 11px;
+  font-size: 9px;
   flex-shrink: 0;
 }
 
@@ -1377,12 +1383,12 @@ thead .meta-col {
 }
 
 .insert-link-field span {
-
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 600;
-  letter-spacing: normal;
-  text-transform: none;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--muted-2);
+  font-family: var(--font-mono);
 }
 
 .insert-link-actions {
@@ -1412,12 +1418,12 @@ thead .meta-col {
 }
 
 .edit-bar-note-preview-label {
-
-  font-size: 11px;
+  font-size: 9px;
   color: var(--muted-2);
-  text-transform: none;
-  letter-spacing: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   flex-shrink: 0;
+  font-family: var(--font-mono);
 }
 
 /* Linkified URL in notes — used by LinkifiedText component */
@@ -1449,7 +1455,7 @@ thead .meta-col {
 .grid-status {
   padding: 32px 20px;
   color: var(--muted);
-  font-style: normal;
+  font-style: italic;
   line-height: 1.6;
 }
 
@@ -1490,6 +1496,7 @@ thead .meta-col {
   background: var(--ink);
   color: #fff;
   border: 1px solid var(--ink-2);
+  font-family: inherit;
 }
 
 .grid-status-retry:hover {
@@ -1518,6 +1525,7 @@ thead .meta-col {
   background: var(--ink);
   color: #fff;
   border: 1px solid var(--ink-2);
+  font-family: inherit;
 }
 
 .btn-add-task:hover {
@@ -1535,12 +1543,13 @@ thead .meta-col {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 11px;
+  font-size: 10px;
 
-  letter-spacing: normal;
+  letter-spacing: 0.05em;
   padding: 3px 4px;
   color: var(--muted-2);
   line-height: 1;
+  font-family: inherit;
 }
 
 .action-btn:hover {
@@ -1625,7 +1634,6 @@ thead .meta-col {
 }
 
 .modal-card {
-
   background: var(--bg-panel);
   border: 1px solid var(--grid-border);
   width: 440px;
@@ -1633,6 +1641,7 @@ thead .meta-col {
   max-height: calc(100vh - 48px);
   overflow-y: auto;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+  font-family: var(--font-sans);
 }
 
 .modal-header {
@@ -1644,7 +1653,7 @@ thead .meta-col {
   color: #fff;
   font-weight: 700;
   font-size: 13px;
-  letter-spacing: normal;
+  letter-spacing: 0.04em;
 }
 
 .modal-close {
@@ -1689,15 +1698,14 @@ thead .meta-col {
   gap: 3px;
   font-size: 11px;
   font-weight: 600;
-  text-transform: none;
-  letter-spacing: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--muted);
 }
 
 .modal-form input,
 .modal-form select,
 .modal-form textarea {
-
   font-size: 13px;
   padding: 4px 6px;
   border: 1px solid var(--grid-border);
@@ -1705,6 +1713,7 @@ thead .meta-col {
   color: var(--ink-2);
   width: 100%;
   border-radius: 2px;
+  font-family: inherit;
 }
 
 .modal-form input:focus,
@@ -1734,22 +1743,23 @@ thead .meta-col {
 
 /* Small uppercase label above a form group or panel zone */
 .section-kicker {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
-  text-transform: none;
-  letter-spacing: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   color: var(--muted-2);
 }
 
 /* Inline badge indicating a panel is read-only */
 .read-only-badge {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  text-transform: none;
-  letter-spacing: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   color: var(--muted-2);
   border: 1px solid var(--grid-border);
   padding: 1px 5px;
+  font-family: var(--font-sans);
 
 }
 
@@ -1781,6 +1791,7 @@ thead .meta-col {
 
   font-size: 12px;
   cursor: pointer;
+  font-family: inherit;
 }
 
 .modal-actions .btn-cancel {
@@ -1798,7 +1809,6 @@ thead .meta-col {
    ---------------------------------------------------------------------- */
 
 .dashboard {
-
   flex: 1;
   overflow-y: auto;
   padding: 16px 20px;
@@ -1806,6 +1816,7 @@ thead .meta-col {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 20px;
   align-content: start;
+  font-family: var(--font-sans);
 }
 
 /* Dashboard page header */
@@ -1824,14 +1835,14 @@ thead .meta-col {
   font-size: 15px;
   font-weight: 700;
   color: var(--ink);
-  letter-spacing: normal;
+  letter-spacing: 0.02em;
 }
 
 .dash-header-sub {
   font-size: 11px;
   color: var(--muted);
-  text-transform: none;
-  letter-spacing: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 /* Overview and Dormant span full width; Top 5 + By Category share a row */
@@ -1853,8 +1864,8 @@ thead .meta-col {
   background: var(--header-bg);
   font-size: 11px;
   font-weight: 700;
-  text-transform: none;
-  letter-spacing: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   border-bottom: 1px solid var(--grid-border);
   border-left: 2px solid var(--muted);
 }
@@ -1884,13 +1895,15 @@ thead .meta-col {
   font-weight: 700;
 
   color: var(--ink);
+
+  font-family: var(--font-mono);
 }
 
 .dash-stat-label {
   font-size: 11px;
   color: var(--muted);
-  text-transform: none;
-  letter-spacing: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .dash-table {
@@ -1912,8 +1925,8 @@ thead .meta-col {
   background: var(--bg-app);
   font-size: 11px;
   font-weight: 600;
-  text-transform: none;
-  letter-spacing: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--muted);
 }
 
@@ -1938,7 +1951,7 @@ thead .meta-col {
 /* Dimmed stat cell — for unavailable metrics */
 .ws-stat-cell--dim .ws-stat-value {
   color: var(--muted-2);
-  font-style: normal;
+  font-style: italic;
 }
 .ws-stat-cell--dim .ws-stat-label,
 .ws-stat-cell--dim .ws-stat-delta {
@@ -1979,11 +1992,11 @@ thead .meta-col {
 }
 
 .dash-urg-num {
-
   font-size: 12px;
   font-weight: 700;
   min-width: 28px;
   flex-shrink: 0;
+  font-family: var(--font-mono);
 }
 
 /* Table column alignment utilities */
@@ -2023,29 +2036,29 @@ thead .meta-col {
 }
 
 .dash-metric-value {
-
   font-size: 36px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--ink);
   line-height: 1;
   flex-shrink: 0;
+  font-family: var(--font-serif);
 }
 
 .dash-metric-desc {
-
   font-size: 12px;
   color: var(--muted);
   line-height: 1.5;
+  font-family: var(--font-sans);
 }
 
 /* Deferred panel notes */
 .dash-deferred {
-
   font-size: 11px;
   color: var(--muted);
   line-height: 1.6;
   margin-bottom: 6px;
+  font-family: var(--font-mono);
 }
 
 .dash-deferred code {
@@ -2057,14 +2070,14 @@ thead .meta-col {
 
 .dash-deferred--planned {
   color: var(--muted-2);
-  font-style: normal;
+  font-style: italic;
 }
 
 .dash-empty {
   padding: 10px 12px;
   font-size: 12px;
   color: var(--muted-2);
-  font-style: normal;
+  font-style: italic;
 }
 
 /* -------------------------------------------------------------------------
@@ -2073,13 +2086,13 @@ thead .meta-col {
 
 .archive,
 .settings {
-
   flex: 1;
   overflow-y: auto;
   padding: 16px 20px;
   display: flex;
   flex-direction: column;
   gap: 20px;
+  font-family: var(--font-sans);
 }
 
 .archive-row-selected td {
@@ -2135,7 +2148,7 @@ thead .meta-col {
 .settings-help {
   font-size: 11px;
   color: var(--muted-2);
-  font-style: normal;
+  font-style: italic;
   margin: 0;
 }
 
@@ -2212,12 +2225,12 @@ thead .meta-col {
 
 /* Settings form inputs — width set inline per field. */
 .settings-input {
-
   font-size: 12px;
   padding: 3px 6px;
   border: 1px solid var(--grid-border);
   background: var(--bg-app);
   color: var(--ink-2);
+  font-family: inherit;
 }
 
 /* -------------------------------------------------------------------------
@@ -2309,6 +2322,7 @@ thead .meta-col {
   border-radius: 2px;
   text-decoration: none;
   white-space: nowrap;
+  font-family: inherit;
 }
 
 .btn-export-backup:hover {
@@ -2325,6 +2339,7 @@ thead .meta-col {
   background: var(--bg-panel);
   color: var(--ink-2);
   border: 1px solid var(--grid-border);
+  font-family: inherit;
 }
 
 .btn-archive-sheet:hover {
@@ -2352,6 +2367,7 @@ thead .meta-col {
   background: var(--accent);
   color: #fff;
   border: 1px solid var(--accent);
+  font-family: inherit;
 }
 
 .button-primary:hover {
@@ -2367,6 +2383,7 @@ thead .meta-col {
   background: var(--bg-panel);
   color: var(--ink-2);
   border: 1px solid var(--grid-border);
+  font-family: inherit;
 }
 
 .button-secondary:hover {
@@ -2413,6 +2430,7 @@ thead .meta-col {
   color: var(--ink-2);
   border: 1px solid var(--grid-border);
   border-radius: 2px;
+  font-family: inherit;
 }
 
 .range-btn:hover {
@@ -2456,16 +2474,17 @@ thead .meta-col {
   background: var(--ink);
   color: #fff;
 
-  font-size: 11px;
-  letter-spacing: normal;
-  text-transform: none;
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
   flex-shrink: 0;
+  font-family: var(--font-mono);
 }
 
 .ws-frame-header-sub {
   color: rgba(255, 255, 255, 0.38);
   font-weight: 400;
-  letter-spacing: normal;
+  letter-spacing: .04em;
   text-transform: none;
 }
 
@@ -2479,12 +2498,12 @@ thead .meta-col {
    ---------------------------------------------------------------------- */
 
 .ws-dashboard {
-
   flex: 1;
   min-height: 0;
   display: block;
   overflow-y: auto;
   background: var(--bg-app);
+  font-family: var(--font-sans);
 }
 
 /* Serif headline row — design report .dh pattern */
@@ -2507,29 +2526,30 @@ thead .meta-col {
 
 /* Dashboard title — weight-driven display */
 .ws-dash-title {
-
   font-size: 20px;
   font-weight: 600;
   color: var(--ink);
   line-height: 1.1;
+  font-family: var(--font-serif);
 }
 
 /* Mono sub — design report .dh .sub */
 .ws-dash-sub {
   color: var(--muted);
 
-  font-size: 11px;
-  letter-spacing: normal;
-  text-transform: none;
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
 }
 
 /* Right-aligned date/time — design report .dh .now */
 .ws-dash-now {
-
   font-size: 11px;
   color: var(--muted);
   white-space: nowrap;
   flex-shrink: 0;
+  font-family: var(--font-mono);
 }
 
 /* -------------------------------------------------------------------------
@@ -2556,40 +2576,40 @@ thead .meta-col {
 
 /* Mono label — design report .ds .lbl */
 .ws-stat-label {
-
-  font-size: 11px;
-  letter-spacing: normal;
+  font-size: 10px;
+  letter-spacing: .08em;
   color: var(--muted);
-  text-transform: none;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
 }
 
 /* Stat strip numeral — tabular-nums + weight for display distinction */
 .ws-stat-value {
-
   font-size: 24px;
   font-weight: 600;
   line-height: 1.1;
   margin-top: 3px;
   font-variant-numeric: tabular-nums;
   color: var(--ink);
+  font-family: var(--font-serif);
 }
 
 .ws-stat-value small {
-
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted);
   margin-left: 3px;
+  font-family: var(--font-mono);
 }
 
 /* Delta / descriptor line — design report .ds .delta */
 .ws-stat-delta {
-
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted);
   margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-family: var(--font-mono);
 }
 
 .ws-stat-delta.up { color: var(--good); }
@@ -2617,7 +2637,8 @@ thead .meta-col {
 
   font-size: 11px;
   color: var(--muted-2);
-  font-style: normal;
+  font-style: italic;
+  font-family: var(--font-mono);
 }
 
 /* -------------------------------------------------------------------------
@@ -2643,19 +2664,19 @@ thead .meta-col {
 }
 
 .ws-graph-title {
-
-  font-size: 11px;
-  letter-spacing: normal;
-  text-transform: none;
+  font-size: 9px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
   color: var(--muted-2);
   margin-bottom: 5px;
+  font-family: var(--font-mono);
 }
 
 .ws-graph-sub {
-
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted-2);
   margin-top: 4px;
+  font-family: var(--font-mono);
 }
 
 /* 7D Pace card */
@@ -2665,31 +2686,31 @@ thead .meta-col {
 }
 
 .dash-pace-count {
-
   font-size: 26px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--ink);
+  font-family: var(--font-serif);
 }
 
 .dash-pace-unit {
-
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted);
   margin-left: 2px;
+  font-family: var(--font-mono);
 }
 
 .dash-pace-none {
-
   font-size: 11px;
   color: var(--muted-2);
+  font-family: var(--font-mono);
 }
 
 .dash-pace-delta {
-
   font-size: 11px;
   margin-bottom: 2px;
   min-height: 14px;
+  font-family: var(--font-mono);
 }
 
 .dash-pace-up  { color: var(--good); }
@@ -2722,11 +2743,11 @@ thead .meta-col {
 }
 
 .dash-urgdist-label {
-
-  font-size: 11px;
+  font-size: 9px;
   color: var(--muted-2);
   width: 42px;
   flex-shrink: 0;
+  font-family: var(--font-mono);
 }
 
 .dash-urgdist-track {
@@ -2751,12 +2772,12 @@ thead .meta-col {
 .dash-urgdist-fill.urg-none       { background: var(--hair); }
 
 .dash-urgdist-count {
-
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted-2);
   width: 18px;
   text-align: right;
   flex-shrink: 0;
+  font-family: var(--font-mono);
 }
 
 /* Active / paused ratio bar */
@@ -2770,10 +2791,10 @@ thead .meta-col {
 }
 
 .dash-ratio-empty {
-
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted-2);
   padding: 4px 0;
+  font-family: var(--font-mono);
 }
 
 .dash-ratio-segment--active {
@@ -2789,20 +2810,20 @@ thead .meta-col {
 /* ── Completion heatmap (P7) ─────────────────────────────────────────────── */
 
 .dash-heatmap {
-
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted-2);
   display: flex;
   flex-direction: column;
   gap: 2px;
+  font-family: var(--font-mono);
 }
 
 .dash-heatmap-empty {
-
   font-size: 11px;
   color: var(--muted-2);
-  font-style: normal;
+  font-style: italic;
   padding: 4px 0;
+  font-family: var(--font-mono);
 }
 
 /* Date axis row */
@@ -2821,7 +2842,7 @@ thead .meta-col {
   width: 10px;
   flex-shrink: 0;
   text-align: center;
-  font-size: 11px;
+  font-size: 8px;
   color: var(--muted-2);
   line-height: 1;
   /* allow tick text to overflow visually; neighbors are empty */
@@ -2852,13 +2873,13 @@ thead .meta-col {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .dash-heatmap-label-total {
   color: var(--muted-2);
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 10px;
 }
 
 /* Cell row */
@@ -2897,10 +2918,10 @@ thead .meta-col {
 }
 
 .dash-insight-label {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted-2);
-  text-transform: none;
-  letter-spacing: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .dash-insight-value {
@@ -2918,16 +2939,17 @@ thead .meta-col {
   display: flex;
   justify-content: space-between;
 
-  font-size: 11px;
+  font-size: 9px;
   color: var(--muted-2);
   margin-top: 3px;
+  font-family: var(--font-mono);
 }
 
 .dash-trend-total {
-
   font-size: 11px;
   color: var(--muted);
   margin-top: 5px;
+  font-family: var(--font-mono);
 }
 
 /* -------------------------------------------------------------------------
@@ -2941,14 +2963,14 @@ thead .meta-col {
 }
 
 .dash-pheat-btn {
-
-  font-size: 11px;
+  font-size: 10px;
   padding: 2px 7px;
   border: 1px solid var(--border);
   border-radius: 3px;
   background: none;
   color: var(--muted);
   cursor: pointer;
+  font-family: var(--font-mono);
 }
 
 .dash-pheat-btn:hover {
@@ -2964,13 +2986,13 @@ thead .meta-col {
 
 /* Scrollable wrapper — cells are fixed-width so sparse dates look sparse */
 .dash-pheat {
-
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted-2);
   display: flex;
   flex-direction: column;
   gap: 2px;
   overflow-x: auto;
+  font-family: var(--font-mono);
 }
 
 .dash-pheat-axis {
@@ -2995,7 +3017,7 @@ thead .meta-col {
 }
 
 .dash-pheat-label-name {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -3003,7 +3025,7 @@ thead .meta-col {
 }
 
 .dash-pheat-label-avg {
-  font-size: 11px;
+  font-size: 10px;
   flex-shrink: 0;
 }
 
@@ -3016,7 +3038,7 @@ thead .meta-col {
 .dash-pheat-axis-cell {
   width: 10px;
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 8px;
   color: var(--muted-2);
   text-align: center;
   line-height: 1;
@@ -3042,7 +3064,7 @@ thead .meta-col {
 }
 
 .dash-pheat-caption {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted-2);
   margin-top: 6px;
 }
@@ -3051,7 +3073,7 @@ thead .meta-col {
   font-size: 12px;
   color: var(--muted-2);
   padding: 8px 0;
-  font-style: normal;
+  font-style: italic;
 }
 
 /* -------------------------------------------------------------------------
@@ -3059,12 +3081,12 @@ thead .meta-col {
    ---------------------------------------------------------------------- */
 
 .ws-archive {
-
   flex: 1;
   min-height: 0;
   display: block;
   overflow-y: auto;
   background: var(--bg-app);
+  font-family: var(--font-sans);
 }
 
 /* Page-level ink header — design report .mh used as page chrome */
@@ -3093,12 +3115,13 @@ thead .meta-col {
 .ws-archive-meta {
   padding: 6px 14px;
 
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted);
-  letter-spacing: normal;
-  text-transform: none;
+  letter-spacing: .06em;
+  text-transform: uppercase;
   border-bottom: 1px solid var(--rule-2);
   background: var(--bg-panel);
+  font-family: var(--font-mono);
 }
 
 /* Snapshot list — design report .snap pattern */
@@ -3138,18 +3161,18 @@ thead .meta-col {
 
 /* Snapshot name — design report .snap .nm */
 .ws-snap-name {
-
   font-size: 13px;
   color: var(--ink);
+  font-family: var(--font-sans);
 }
 
 /* Snapshot date range — design report .snap .dt */
 .ws-snap-date {
-
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted);
   display: block;
   margin-top: 2px;
+  font-family: var(--font-mono);
 }
 
 /* Snapshot right-side meta — design report .snap .ct */
@@ -3162,9 +3185,9 @@ thead .meta-col {
 }
 
 .ws-snap-meta {
-
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted);
+  font-family: var(--font-mono);
 }
 
 /* ── Archive: action button row inside snapshot items ── */
@@ -3178,11 +3201,11 @@ thead .meta-col {
 /* Small utility buttons for rename/delete/save/cancel in archive list */
 .ws-snap-btn {
   padding: 2px 7px;
-  font-size: 11px;
+  font-size: 10px;
 
   font-weight: 500;
-  text-transform: none;
-  letter-spacing: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   border: 1px solid var(--rule);
   background: var(--panel);
   color: var(--muted);
@@ -3190,6 +3213,7 @@ thead .meta-col {
   border-radius: 2px;
   white-space: nowrap;
   line-height: 1.6;
+  font-family: var(--font-mono);
 }
 
 .ws-snap-btn:hover {
@@ -3253,6 +3277,7 @@ thead .meta-col {
   padding: 3px 6px;
   outline: none;
   border-radius: 2px;
+  font-family: var(--font-sans);
 }
 
 /* Delete confirmation strip — spans both grid columns */
@@ -3270,6 +3295,7 @@ thead .meta-col {
   flex: 1;
   font-size: 11px;
   color: var(--urg-hi);
+  font-family: var(--font-sans);
 
 }
 
@@ -3278,12 +3304,12 @@ thead .meta-col {
    ---------------------------------------------------------------------- */
 
 .arch-analytics {
-
   padding: 10px 12px 8px;
   border-bottom: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   gap: 10px;
+  font-family: var(--font-mono);
 }
 
 /* Stat strip */
@@ -3305,10 +3331,10 @@ thead .meta-col {
 }
 
 .arch-stat-label {
-  font-size: 11px;
+  font-size: 9px;
   color: var(--muted-2);
-  text-transform: none;
-  letter-spacing: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .arch-stat-value {
@@ -3339,10 +3365,10 @@ thead .meta-col {
 }
 
 .arch-panel-title {
-  font-size: 11px;
+  font-size: 9px;
   color: var(--muted-2);
-  text-transform: none;
-  letter-spacing: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   margin-bottom: 2px;
 }
 
@@ -3356,7 +3382,7 @@ thead .meta-col {
 
 .arch-top-table th {
   text-align: left;
-  font-size: 11px;
+  font-size: 9px;
   color: var(--muted-2);
   font-weight: 400;
   padding: 0 4px 3px 0;
@@ -3385,12 +3411,12 @@ thead .meta-col {
 
 .arch-muted {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .arch-num {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
   text-align: right;
   white-space: nowrap;
 }
@@ -3411,7 +3437,7 @@ thead .meta-col {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .arch-sec-bar-wrap {
@@ -3433,13 +3459,13 @@ thead .meta-col {
   width: 28px;
   flex-shrink: 0;
   text-align: right;
-  font-size: 11px;
+  font-size: 10px;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
 
 .arch-sec-more {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted-2);
   margin-top: 2px;
 }
@@ -3463,13 +3489,13 @@ thead .meta-col {
 .arch-sparkline-labels {
   display: flex;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: 9px;
   color: var(--muted-2);
   margin-top: 2px;
 }
 
 .arch-sparkline-total {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted);
   margin-top: 2px;
 }
@@ -3478,7 +3504,7 @@ thead .meta-col {
 .arch-empty {
   font-size: 11px;
   color: var(--muted-2);
-  font-style: normal;
+  font-style: italic;
   padding: 2px 0;
 }
 
@@ -3497,17 +3523,18 @@ thead .meta-col {
   font-size: 12px;
   line-height: 1.5;
   margin-bottom: 10px;
+  font-family: var(--font-sans);
 }
 
 .ws-import-banner-label {
-
-  font-size: 11px;
-  letter-spacing: normal;
-  text-transform: none;
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
   color: var(--urg-mid);
   display: block;
   margin-bottom: 2px;
   font-weight: 600;
+  font-family: var(--font-mono);
 }
 
 /* -------------------------------------------------------------------------
@@ -3515,7 +3542,6 @@ thead .meta-col {
    ---------------------------------------------------------------------- */
 
 .ws-settings {
-
   /* flex item properties — sizing within .app-main */
   flex: 1;
   min-height: 0;
@@ -3525,6 +3551,7 @@ thead .meta-col {
   overflow-y: auto;
   background: var(--bg-app);
   padding-bottom: 16px;
+  font-family: var(--font-sans);
 }
 
 /* Settings list — design report .stl */
@@ -3537,12 +3564,13 @@ thead .meta-col {
   background: var(--header-bg);
   padding: 5px 14px;
 
-  font-size: 11px;
-  letter-spacing: normal;
-  text-transform: none;
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
   color: var(--muted);
   border-top: 1px solid var(--rule);
   border-bottom: 1px solid var(--rule-2);
+  font-family: var(--font-mono);
 }
 
 .ws-settings-group:first-child {
@@ -3570,9 +3598,9 @@ thead .meta-col {
 
 /* Name — design report .stl .nm */
 .ws-settings-name {
-
   font-size: 13px;
   color: var(--ink);
+  font-family: var(--font-sans);
 }
 
 /* Descriptor below name — design report .stl .nm .d */
@@ -3580,18 +3608,19 @@ thead .meta-col {
   display: block;
 
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
   margin-top: 2px;
-  letter-spacing: normal;
+  letter-spacing: .02em;
+  font-family: var(--font-mono);
 }
 
 /* Right-side control — design report .stl .ctl */
 .ws-settings-ctl {
-
   font-size: 11px;
   color: var(--ink);
   white-space: nowrap;
   text-align: right;
+  font-family: var(--font-mono);
 }
 
 .ws-settings-ctl.verified {
@@ -3623,9 +3652,10 @@ thead .meta-col {
   border-left: 1px solid rgba(255, 255, 255, 0.12);
 
   font-size: 11px;
-  letter-spacing: normal;
+  letter-spacing: .04em;
   white-space: nowrap;
   height: 100%;
+  font-family: var(--font-mono);
 }
 
 .header-pill .pill-value {
@@ -3700,7 +3730,7 @@ thead .meta-col {
   color: rgba(255, 255, 255, 0.6);
   padding: 0 10px;
   white-space: nowrap;
-  letter-spacing: normal;
+  letter-spacing: 0.02em;
 }
 
 /* Primary action — Add Task */
@@ -3722,13 +3752,14 @@ thead .meta-col {
   padding: 0 11px;
 
   font-size: 11px;
-  letter-spacing: normal;
+  letter-spacing: 0.04em;
   color: rgba(255, 255, 255, 0.5);
   background: transparent;
   border: none;
   border-left: 1px solid rgba(255, 255, 255, 0.08);
   cursor: pointer;
   white-space: nowrap;
+  font-family: var(--font-mono);
 }
 
 .ws-shelf-nav:hover {
@@ -3738,9 +3769,9 @@ thead .meta-col {
 
 .ws-shelf-nav--today {
   color: rgba(255, 255, 255, 0.38);
-  font-size: 11px;
-  text-transform: none;
-  letter-spacing: normal;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .ws-shelf-range {
@@ -3749,11 +3780,12 @@ thead .meta-col {
   padding: 0 14px;
 
   font-size: 11px;
-  letter-spacing: normal;
-  text-transform: none;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: rgba(255, 255, 255, 0.88);
   white-space: nowrap;
   border-left: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: var(--font-mono);
 }
 
 /* ── Inspector strip (EditBar) upgrade — via CSS override ── */
@@ -3776,22 +3808,19 @@ thead .meta-col {
 }
 
 .edit-bar-task {
-
   font-weight: 600;
   font-size: 12px;
 }
 
 .edit-bar-date {
-
   font-size: 11px;
-  letter-spacing: normal;
+  letter-spacing: 0.04em;
 }
 
 .edit-bar-count {
-
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: normal;
+  letter-spacing: 0.04em;
 }
 
 /* ── Grid canvas frame ── */
@@ -3835,7 +3864,6 @@ thead .meta-col {
 }
 
 .ws-sheet-title {
-
   font-size: 18px;
   font-weight: 600;
   color: var(--ink);
@@ -3920,13 +3948,13 @@ thead .meta-col {
 
 /* Keyboard legend — compact hint line in sheet header */
 .ws-kbd-legend {
-
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted-2);
   white-space: nowrap;
-  letter-spacing: normal;
+  letter-spacing: 0.02em;
   margin-left: 6px;
   opacity: 0.75;
+  font-family: var(--font-mono);
 }
 
 .ws-status-pill {
@@ -3935,11 +3963,12 @@ thead .meta-col {
   padding: 2px 8px;
   border: 1px solid var(--rule);
 
-  font-size: 11px;
-  letter-spacing: normal;
+  font-size: 10px;
+  letter-spacing: 0.06em;
   color: var(--muted);
   background: var(--bg-app);
   white-space: nowrap;
+  font-family: var(--font-mono);
 }
 
 .ws-status-pill--ok {
@@ -4055,7 +4084,6 @@ thead .meta-col {
 
 /* Section names use the shared UI font with the reference label treatment. */
 .ws-section-title {
-
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -4065,12 +4093,12 @@ thead .meta-col {
 
 /* Section metadata: task count · paused · avg urgency */
 .ws-section-meta {
-
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted);
-  letter-spacing: normal;
+  letter-spacing: 0.03em;
   font-weight: 400;
   margin-left: 10px;
+  font-family: var(--font-mono);
 }
 
 /* First section row needs only a hairline top — it immediately follows thead */
@@ -4097,7 +4125,6 @@ thead .meta-col {
 
 /* Modal shell */
 .task-modal-shell {
-
   background: var(--bg-panel);
   border: 1px solid var(--rule);
   width: 560px;
@@ -4107,6 +4134,7 @@ thead .meta-col {
   flex-direction: column;
   overflow: hidden;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.32), 0 2px 8px rgba(0, 0, 0, 0.18);
+  font-family: var(--font-sans);
 }
 
 /* Dark ink header */
@@ -4130,19 +4158,18 @@ thead .meta-col {
 
 /* Mode label — mono uppercase, muted white */
 .task-modal-kicker {
-
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 700;
-  letter-spacing: normal;
-  text-transform: none;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
   color: rgba(255, 255, 255, 0.4);
   line-height: 1;
   margin-bottom: 5px;
+  font-family: var(--font-mono);
 }
 
 /* Task name / "New task record" — strong white */
 .task-modal-title {
-
   font-size: 16px;
   font-weight: 600;
   color: #fff;
@@ -4152,14 +4179,15 @@ thead .meta-col {
   white-space: nowrap;
   max-width: 440px;
   margin-bottom: 4px;
+  font-family: var(--font-serif);
 }
 
 /* Compact meta subtitle */
 .task-modal-subtitle {
-
-  font-size: 11px;
+  font-size: 10px;
   color: rgba(255, 255, 255, 0.3);
-  letter-spacing: normal;
+  letter-spacing: 0.04em;
+  font-family: var(--font-mono);
 }
 
 /* Read-only urgency decomposition chip in the (dark) modal header — P4.0B.
@@ -4176,12 +4204,13 @@ thead .meta-col {
 
   font-size: 11px;
   color: rgba(255, 255, 255, 0.85);
+  font-family: var(--font-mono);
 }
 .task-modal-urgency-val { font-weight: 700; font-size: 13px; }
 .task-modal-urgency-band {
-  text-transform: none;
-  letter-spacing: normal;
-  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
   opacity: 0.85;
 }
 .task-modal-urgency-reason { color: rgba(255, 255, 255, 0.55); }
@@ -4225,13 +4254,13 @@ thead .meta-col {
 
 /* Section label — mono uppercase, no inner border */
 .task-modal-section-title {
-
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 700;
-  letter-spacing: normal;
-  text-transform: none;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: var(--muted);
   margin-bottom: 1px;
+  font-family: var(--font-mono);
 }
 
 /* Two-column field grid */
@@ -4255,37 +4284,41 @@ thead .meta-col {
 
 /* Mono uppercase micro-label */
 .task-modal-label {
-
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: normal;
-  text-transform: none;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--muted);
   cursor: default;
   display: flex;
   align-items: baseline;
   gap: 6px;
+  font-family: var(--font-mono);
 }
 
 /* All form inputs — ruled bottom, open feel */
 .task-modal-input {
-
   font-size: 13px;
   color: var(--ink);
-  background: var(--bg-panel);
-  border: 1px solid var(--rule);
-  padding: 3.5px 2px;
+  background: transparent;
+  border: none;
+  padding: 4px 2px;
   width: 100%;
   box-sizing: border-box;
-  border-radius: 4px;
+  border-radius: 0;
   appearance: none;
   -webkit-appearance: none;
+  font-family: var(--font-sans);
+  border-bottom: 1.5px solid var(--rule);
 }
 
+/* Focus keeps the constant 1.5px underline so the field never resizes;
+   the accent colour plus a box-shadow line provide the visible indicator. */
 .task-modal-input:focus {
-  outline: 2px solid var(--focus-blue);
-  outline-offset: 1px;
-  border-color: var(--accent);
+  outline: none;
+  border-bottom-color: var(--accent);
+  box-shadow: 0 1px 0 0 var(--accent);
+  background: transparent;
 }
 
 /* Uppercase the native empty date placeholder (mm/dd/yyyy → MM/DD/YYYY) in the
@@ -4295,17 +4328,17 @@ thead .meta-col {
    and the calendar picker, typing, clearing, and the ISO value sent to the API
    all remain unchanged. Harmless on engines that don't transform the placeholder. */
 .task-modal-input[type="date"] {
-  text-transform: none;
+  text-transform: uppercase;
 }
 .task-modal-input[type="date"]::-webkit-datetime-edit {
-  text-transform: none;
+  text-transform: uppercase;
 }
 
 /* Preserve native select arrow */
 select.task-modal-input {
   appearance: auto;
   -webkit-appearance: auto;
-  padding: 3.5px 4px;
+  padding: 4px 4px;
 }
 
 /* ── Section combobox (P11.1) — freeform input + suggestion dropdown ── */
@@ -4330,12 +4363,12 @@ select.task-modal-input {
 }
 
 .tm-combobox-option {
-
   font-size: 12px;
   color: var(--ink-2);
   padding: 5px 8px;
   cursor: pointer;
   border-bottom: 1px solid var(--rule);
+  font-family: var(--font-sans);
 }
 
 .tm-combobox-option:last-child {
@@ -4407,12 +4440,12 @@ select.task-modal-input {
 }
 
 .tdp-month {
-
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: normal;
-  text-transform: none;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--ink);
+  font-family: var(--font-mono);
 }
 
 .tdp-nav {
@@ -4439,14 +4472,14 @@ select.task-modal-input {
 }
 
 .tdp-weekdays span {
-
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 600;
-  letter-spacing: normal;
-  text-transform: none;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--muted-2);
   text-align: center;
   padding: 2px 0;
+  font-family: var(--font-mono);
 }
 
 .tdp-grid {
@@ -4458,7 +4491,6 @@ select.task-modal-input {
 }
 
 .tdp-day {
-
   font-size: 11px;
   color: var(--ink-2);
   text-align: center;
@@ -4468,6 +4500,7 @@ select.task-modal-input {
   border-bottom: 1px solid var(--rule);
   background: var(--bg-panel);
   user-select: none;
+  font-family: var(--font-sans);
 }
 
 .tdp-day:hover {
@@ -4502,16 +4535,16 @@ select.task-modal-input {
 }
 
 .tdp-foot-btn {
-
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: normal;
-  text-transform: none;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   padding: 3px 8px;
   border: 1px solid var(--rule);
   background: var(--bg-app);
   color: var(--muted);
   cursor: pointer;
+  font-family: var(--font-mono);
 }
 
 .tdp-foot-btn:hover {
@@ -4542,7 +4575,6 @@ select.task-modal-input {
 
 /* Textarea */
 .task-modal-textarea {
-
   font-size: 13px;
   color: var(--ink);
   background: var(--bg-app);
@@ -4554,6 +4586,7 @@ select.task-modal-input {
   resize: vertical;
   box-sizing: border-box;
   border-radius: 0;
+  font-family: var(--font-sans);
 }
 
 .task-modal-textarea:focus {
@@ -4591,14 +4624,14 @@ select.task-modal-input {
 }
 
 .task-modal-link-kicker {
-
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 600;
-  letter-spacing: normal;
-  text-transform: none;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--muted-2);
   margin-right: 4px;
   flex-shrink: 0;
+  font-family: var(--font-mono);
 }
 
 .task-modal-reference-link {
@@ -4628,19 +4661,20 @@ select.task-modal-input {
 .task-modal-seg-btn {
   flex: 1;
 
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: normal;
-  text-transform: none;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   color: var(--muted);
   background: var(--bg-app);
   border: none;
   border-right: 1px solid var(--rule);
-  padding: 6.5px 4px;
+  padding: 7px 4px;
   cursor: pointer;
   white-space: nowrap;
   text-align: center;
   transition: background 0.08s, color 0.08s;
+  font-family: var(--font-mono);
 }
 
 .task-modal-seg-btn:last-child {
@@ -4659,18 +4693,18 @@ select.task-modal-input {
 
 /* ── Priority meter ── */
 .task-modal-priority-val {
-
   font-size: 13px;
   font-weight: 600;
   color: var(--ink);
-  letter-spacing: normal;
+  letter-spacing: 0;
   text-transform: none;
+  font-family: var(--font-serif);
 }
 
 .task-modal-priority-max {
-
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted);
+  font-family: var(--font-mono);
 }
 
 .task-modal-priority-wrap {
@@ -4706,11 +4740,11 @@ select.task-modal-input {
 
 /* Helper note on the left */
 .task-modal-footer-note {
-
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted-2);
-  letter-spacing: normal;
+  letter-spacing: 0.03em;
   white-space: nowrap;
+  font-family: var(--font-mono);
 }
 
 /* Action buttons cluster */
@@ -4726,12 +4760,13 @@ select.task-modal-input {
   padding: 5px 14px;
 
   font-size: 11px;
-  letter-spacing: normal;
+  letter-spacing: 0.04em;
   color: var(--muted);
   background: transparent;
   border: 1px solid var(--rule);
   cursor: pointer;
   border-radius: 0;
+  font-family: var(--font-mono);
 }
 
 .task-modal-cancel:hover {
@@ -4745,13 +4780,14 @@ select.task-modal-input {
 
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: normal;
-  text-transform: none;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: #fff;
   background: var(--ink);
   border: 1px solid var(--ink);
   cursor: pointer;
   border-radius: 0;
+  font-family: var(--font-mono);
 }
 
 .task-modal-save:hover {
@@ -4773,6 +4809,7 @@ select.task-modal-input {
 
   font-size: 11px;
   color: var(--urg-crit);
+  font-family: var(--font-mono);
 }
 
 /* Delete Task trigger — low-prominence, far-left in footer */
@@ -4781,13 +4818,14 @@ select.task-modal-input {
 
   font-size: 11px;
   font-weight: 500;
-  text-transform: none;
-  letter-spacing: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   border: 1px solid transparent;
   background: transparent;
   color: var(--muted-2);
   cursor: pointer;
   border-radius: 0;
+  font-family: var(--font-mono);
 }
 
 .task-modal-delete-btn:hover {
@@ -4808,6 +4846,8 @@ select.task-modal-input {
   color: var(--urg-hi);
 
   line-height: 1.5;
+
+  font-family: var(--font-sans);
 }
 
 .task-modal-confirm-actions {
@@ -4823,13 +4863,14 @@ select.task-modal-input {
 
   font-size: 11px;
   font-weight: 700;
-  text-transform: none;
-  letter-spacing: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   border: 1px solid var(--urg-crit);
   background: var(--urg-crit);
   color: #fff;
   cursor: pointer;
   border-radius: 0;
+  font-family: var(--font-mono);
 }
 
 .task-modal-confirm-delete:hover {
@@ -4889,18 +4930,18 @@ select.task-modal-input {
 }
 
 .ws-settings-summary-label {
-
-  font-size: 11px;
-  letter-spacing: normal;
-  text-transform: none;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--muted);
+  font-family: var(--font-mono);
 }
 
 .ws-settings-summary-value {
-
   font-size: 13px;
   color: var(--ink);
   font-weight: 500;
+  font-family: var(--font-sans);
 }
 
 /* Two-column layout */
@@ -4919,12 +4960,12 @@ select.task-modal-input {
 
 /* Panel kicker — small number above title */
 .ws-frame-kicker {
-
-  font-size: 11px;
-  letter-spacing: normal;
+  font-size: 10px;
+  letter-spacing: 0.08em;
   color: var(--muted);
   display: block;
   margin-bottom: 1px;
+  font-family: var(--font-mono);
 }
 
 /* Ctrl rows — consistent label+desc left, control right */
@@ -4954,17 +4995,17 @@ select.task-modal-input {
 }
 
 .ws-ctrl-label {
-
   font-size: 13px;
   color: var(--ink);
   font-weight: 500;
+  font-family: var(--font-sans);
 }
 
 .ws-ctrl-desc {
-
   font-size: 12px;
   color: var(--muted);
   line-height: 1.45;
+  font-family: var(--font-sans);
 }
 
 .ws-ctrl-action {
@@ -5017,12 +5058,13 @@ select.task-modal-input {
 
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: normal;
+  letter-spacing: 0.04em;
   color: #fff;
   background: var(--urg-crit);
   border: 1px solid var(--urg-crit);
   cursor: pointer;
   border-radius: 0;
+  font-family: var(--font-mono);
 }
 
 .ws-restore-danger-btn:disabled {
@@ -5070,8 +5112,8 @@ select.task-modal-input {
 .ws-state-badge {
   flex-shrink: 0;
 
-  font-size: 11px;
-  letter-spacing: normal;
+  font-size: 10px;
+  letter-spacing: 0.05em;
   padding: 2px 7px;
   border-radius: 3px;
   border: 1px solid var(--grid-border);
@@ -5079,6 +5121,7 @@ select.task-modal-input {
   background: transparent;
   margin-top: 2px;
   white-space: nowrap;
+  font-family: var(--font-mono);
 }
 
 .ws-state-badge--on {
@@ -5120,6 +5163,7 @@ select.task-modal-input {
   border-radius: 3px;
   background: var(--bg-app);
   color: var(--ink);
+  font-family: var(--font-mono);
 }
 
 .ws-kbd-shortcut-desc {
@@ -5140,10 +5184,11 @@ select.task-modal-input {
   flex-shrink: 0;
 
   font-size: 11px;
-  font-style: normal;
+  font-style: italic;
   color: var(--muted);
   min-width: 32px;
   padding: 2px 0;
+  font-family: var(--font-mono);
 }
 
 .ws-kbd-error {
@@ -5159,7 +5204,7 @@ select.task-modal-input {
 .ws-kbd-action-btn {
   flex-shrink: 0;
   font-size: 11px;
-  padding: 1.5px 8px;
+  padding: 2px 8px;
   border: 1px solid var(--grid-border);
   border-radius: 3px;
   background: transparent;
@@ -5192,11 +5237,11 @@ select.task-modal-input {
 }
 
 .ws-formula-note {
-
   font-size: 12px;
   color: var(--muted);
   margin-top: 8px;
   line-height: 1.45;
+  font-family: var(--font-sans);
 }
 
 /* ── Filter bar — Phase 1 ── */
@@ -5416,7 +5461,6 @@ select.task-modal-input {
 }
 
 .ws-filter-count {
-
   font-size: 11px;
   color: var(--muted-2);
   white-space: nowrap;
@@ -5442,6 +5486,7 @@ select.task-modal-input {
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.1s, color 0.1s, border-color 0.1s;
+  font-family: var(--font-sans);
 }
 
 .ws-views-btn:hover,
@@ -5466,12 +5511,12 @@ select.task-modal-input {
 }
 
 .ws-views-head {
-
-  font-size: 11px;
+  font-size: 9px;
   color: var(--muted-2);
-  text-transform: none;
-  letter-spacing: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   padding: 8px 10px 4px;
+  font-family: var(--font-mono);
 }
 
 .ws-views-save {
@@ -5496,6 +5541,7 @@ select.task-modal-input {
   font-size: 12px;
   color: var(--ink);
   outline: none;
+  font-family: var(--font-sans);
 }
 
 .ws-views-input:focus {
@@ -5512,6 +5558,7 @@ select.task-modal-input {
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
+  font-family: var(--font-sans);
 }
 
 .ws-views-save-btn:hover {
@@ -5519,20 +5566,20 @@ select.task-modal-input {
 }
 
 .ws-views-meta {
-
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted-2);
   padding: 3px 10px 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-family: var(--font-mono);
 }
 
 .ws-views-error {
-
-  font-size: 11px;
+  font-size: 10px;
   color: var(--urg-hi, #c0392b);
   padding: 2px 10px 0;
+  font-family: var(--font-mono);
 }
 
 .ws-views-list {
@@ -5561,12 +5608,12 @@ select.task-modal-input {
 }
 
 .ws-views-name {
-
   font-size: 12px;
   color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-family: var(--font-sans);
 }
 
 .ws-views-actions {
@@ -5580,10 +5627,11 @@ select.task-modal-input {
   border: 1px solid var(--rule);
   background: none;
 
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted);
   cursor: pointer;
   white-space: nowrap;
+  font-family: var(--font-sans);
 }
 
 .ws-views-action-btn:hover {
@@ -5601,12 +5649,12 @@ select.task-modal-input {
 }
 
 .ws-views-empty {
-
   font-size: 11px;
   color: var(--muted-2);
   padding: 10px;
   text-align: center;
-  font-style: normal;
+  font-style: italic;
+  font-family: var(--font-mono);
 }
 
 /* ── Keyboard help trigger + panel — P4 ── */
@@ -5675,8 +5723,9 @@ select.task-modal-input {
   font-size: 11px;
   font-weight: 600;
   color: var(--ink-2);
-  text-transform: none;
-  letter-spacing: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-family: var(--font-mono);
 }
 
 /* × close button inside panel header */
@@ -5718,13 +5767,13 @@ select.task-modal-input {
 
 /* Group title */
 .ws-kbd-help-title {
-
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   color: var(--muted-2);
-  text-transform: none;
-  letter-spacing: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   margin-bottom: 3px;
+  font-family: var(--font-mono);
 }
 
 /* Shortcut row */
@@ -5737,12 +5786,12 @@ select.task-modal-input {
 
 /* Key label */
 .ws-kbd-help-key {
-
   font-size: 11px;
   font-weight: 600;
   color: var(--ink-2);
   white-space: nowrap;
   min-width: 48px;
+  font-family: var(--font-mono);
 }
 
 /* Description */
@@ -5754,7 +5803,7 @@ select.task-modal-input {
 
 /* P10.1 registry markers — section notes, customizable ✎, changed-from-default */
 .ws-kbd-help-note {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted-2);
   line-height: 1.4;
   padding: 2px 0 4px;
@@ -5771,14 +5820,14 @@ select.task-modal-input {
 }
 
 .ws-kbd-help-custom {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted-2);
   flex-shrink: 0;
 }
 
 .ws-kbd-default-hint {
   color: var(--accent);
-  font-size: 11px;
+  font-size: 10px;
 }
 
 /* Group custom dropdown — replaces native <select> */
@@ -5833,6 +5882,7 @@ select.task-modal-input {
   color: var(--muted);
   cursor: pointer;
   transition: background 0.1s, color 0.1s;
+  font-family: var(--font-sans);
 }
 
 .ws-group-option:hover {
@@ -5861,6 +5911,7 @@ select.task-modal-input {
   color: var(--muted);
   cursor: pointer;
   transition: background 0.1s, color 0.1s, border-color 0.1s;
+  font-family: var(--font-sans);
 }
 
 .ws-doc-toggle:hover {
@@ -5882,6 +5933,7 @@ select.task-modal-input {
   word-break: break-word;
   max-height: 260px;
   overflow-y: auto;
+  font-family: var(--font-sans);
 }
 
 /* Collapse to single column on narrow screens */
@@ -5938,8 +5990,8 @@ select.task-modal-input {
 .ws-jump-title {
   font-size: 11px;
   font-weight: 600;
-  text-transform: none;
-  letter-spacing: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--muted);
 }
 
@@ -5955,6 +6007,7 @@ select.task-modal-input {
   border-radius: 3px;
   outline: none;
   box-sizing: border-box;
+  font-family: var(--font-mono);
 }
 
 .ws-jump-input:focus {
@@ -5968,7 +6021,7 @@ select.task-modal-input {
 }
 
 .ws-jump-hint {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted-2);
   line-height: 1.3;
 }
@@ -6032,8 +6085,8 @@ select.task-modal-input {
 .task-link-popover-title {
   font-size: 11px;
   font-weight: 600;
-  text-transform: none;
-  letter-spacing: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--muted);
   padding: 7px 12px 6px;
   border-bottom: 1px solid var(--rule);
@@ -6090,8 +6143,8 @@ select.task-modal-input {
   background: var(--header-bg);
   font-weight: 600;
   font-size: 11px;
-  text-transform: none;
-  letter-spacing: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   position: sticky;
   top: 0;
   z-index: 2;
@@ -6126,8 +6179,6 @@ select.task-modal-input {
 .rd-col-updated { width: 92px; color: var(--muted); }
 .rd-col-status  { width: 92px; }
 .rd-col-actions { width: 1%; white-space: nowrap; }
-/* Retain the 11px UI text without changing Reading row dimensions. */
-.reading-grid .action-btn { padding-block: 2.5px; }
 
 .rd-page-input {
   width: 64px;
@@ -6135,7 +6186,7 @@ select.task-modal-input {
   text-align: right;
   border: 1px solid transparent;
   background: transparent;
-  padding: 1.5px 4px;
+  padding: 2px 4px;
   color: var(--ink);
   border-radius: 2px;
 }
@@ -6152,9 +6203,9 @@ select.task-modal-input {
 
 .rd-status-badge {
   display: inline-block;
-  font-size: 11px;
-  text-transform: none;
-  letter-spacing: normal;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   padding: 1px 6px;
   border-radius: 3px;
   color: var(--muted);
@@ -6243,6 +6294,8 @@ select.task-modal-input {
   text-align: left;
 
   transition: border-color 0.1s, box-shadow 0.1s;
+
+  font-family: inherit;
 }
 .dashboard-summary-chip:hover { border-color: var(--muted-2); }
 .dashboard-summary-chip.is-accent { border-color: var(--accent); }
@@ -6254,7 +6307,7 @@ select.task-modal-input {
 }
 .dashboard-summary-value { font-size: 20px; font-weight: 700; line-height: 1.1; color: var(--ink); }
 .dashboard-summary-label {
-  font-size: 11px; text-transform: none; letter-spacing: normal;
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
   color: var(--muted); margin-top: 2px;
 }
 
@@ -6277,7 +6330,7 @@ select.task-modal-input {
 .dashboard-diagnosis-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .dashboard-diagnosis-chip {
   display: inline-block;
-  font-size: 11px;
+  font-size: 10px;
   padding: 1px 6px;
   border-radius: 3px;
   color: var(--ink-2);
@@ -6302,7 +6355,7 @@ select.task-modal-input {
 }
 .dashboard-hygiene-title { font-size: 12px; font-weight: 600; color: var(--ink); }
 .dashboard-hygiene-body { font-size: 11px; color: var(--ink-2); margin: 3px 0; }
-.dashboard-hygiene-action { font-size: 11px; color: var(--muted); font-style: normal; }
+.dashboard-hygiene-action { font-size: 11px; color: var(--muted); font-style: italic; }
 
 /* Section pressure — uncategorized/no-section flagged. */
 .dashboard-section-pressure .dashboard-row-warn td { background: var(--crit-bg); }
@@ -6362,7 +6415,7 @@ select.task-modal-input {
   background: var(--bg-panel);
 }
 .dashboard-composition-label {
-  font-size: 11px; text-transform: none; letter-spacing: normal; color: var(--muted);
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
 }
 .dashboard-composition-bar {
   display: flex;
@@ -6381,7 +6434,7 @@ select.task-modal-input {
 .dashboard-composition-seg.urg-none, .dashboard-composition-dot.urg-none { background: var(--muted-2); }
 .dashboard-composition-legend {
   display: flex; flex-wrap: wrap; gap: 8px;
-  font-size: 11px; color: var(--muted);
+  font-size: 10px; color: var(--muted);
 }
 .dashboard-composition-legend-item { display: inline-flex; align-items: center; gap: 3px; }
 .dashboard-composition-legend-item strong { color: var(--ink-2); }
@@ -6409,10 +6462,10 @@ select.task-modal-input {
 .dashboard-diag-head { display: flex; align-items: baseline; gap: 6px; }
 .dashboard-diag-urg { font-weight: 700; font-size: 13px; }
 .dashboard-diag-name { font-weight: 600; font-size: 12px; color: var(--ink); }
-.dashboard-diag-meta { font-size: 11px; color: var(--muted); margin-left: auto; }
+.dashboard-diag-meta { font-size: 10px; color: var(--muted); margin-left: auto; }
 .dashboard-diag-facts {
   display: flex; flex-wrap: wrap; gap: 8px;
-  font-size: 11px; color: var(--muted); margin: 4px 0;
+  font-size: 10px; color: var(--muted); margin: 4px 0;
 }
 .dashboard-diag-why, .dashboard-diag-action { font-size: 11px; color: var(--ink-2); margin-top: 3px; }
 .dashboard-diag-action { color: var(--muted); }
@@ -6455,8 +6508,8 @@ select.task-modal-input {
 }
 .dashboard-insight-card.dashboard-insight-warn { border-left: 3px solid var(--urg-hi); }
 .dashboard-insight-title { font-size: 12px; font-weight: 600; color: var(--ink); }
-.dashboard-insight-hint { font-size: 11px; color: var(--muted); margin: 2px 0 5px; }
-.dashboard-insight-empty { font-size: 11px; color: var(--muted-2); font-style: normal; padding: 4px 0; }
+.dashboard-insight-hint { font-size: 10px; color: var(--muted); margin: 2px 0 5px; }
+.dashboard-insight-empty { font-size: 11px; color: var(--muted-2); font-style: italic; padding: 4px 0; }
 
 /* Pressure Reducers list — name · relative bar · relief tier. */
 .dashboard-reducer-list, .dashboard-mini-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
@@ -6470,7 +6523,7 @@ select.task-modal-input {
 .dashboard-reducer-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dashboard-reducer-bar { height: 6px; background: var(--grid-border); border-radius: 3px; overflow: hidden; }
 .dashboard-reducer-fill { display: block; height: 100%; background: var(--accent); }
-.dashboard-relief { font-size: 11px; text-align: right; font-weight: 600; }
+.dashboard-relief { font-size: 10px; text-align: right; font-weight: 600; }
 .dashboard-relief--high { color: var(--urg-crit); }
 .dashboard-relief--medium { color: var(--urg-hi); }
 .dashboard-relief--low { color: var(--muted); }
@@ -6490,8 +6543,8 @@ select.task-modal-input {
 /* Mini lists (freq mismatch / uncat / reading / neglected). */
 .dashboard-mini-list li { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; font-size: 11px; }
 .dashboard-mini-name { font-weight: 500; color: var(--ink); }
-.dashboard-mini-sugg { flex-basis: 100%; font-size: 11px; color: var(--muted); }
-.dashboard-uncat-note { font-size: 11px; color: var(--muted); font-style: normal; margin-bottom: 4px; }
+.dashboard-mini-sugg { flex-basis: 100%; font-size: 10px; color: var(--muted); }
+.dashboard-uncat-note { font-size: 10px; color: var(--muted); font-style: italic; margin-bottom: 4px; }
 
 /* Section pressure stacked distribution bar. */
 .dashboard-section-stack {
@@ -6527,11 +6580,12 @@ select.task-modal-input {
   background: var(--bg-panel);
   color: var(--muted);
 
-  font-size: 11px;
-  padding: 0.5px 7px;
+  font-size: 10px;
+  padding: 1px 7px;
   border-radius: 3px;
   cursor: pointer;
   white-space: nowrap;
+  font-family: inherit;
 }
 .dashboard-rec-btn:hover { border-color: var(--muted-2); color: var(--ink-2); }
 .dashboard-triage-sugg-text { margin-right: 8px; }
@@ -6540,12 +6594,12 @@ select.task-modal-input {
 .dashboard-reset-btn {
    font-size: 12px; padding: 4px 10px; cursor: pointer;
   border: 1px solid var(--grid-border); border-radius: 3px;
-  background: var(--paused-bg); color: var(--ink-2);
+  background: var(--paused-bg); color: var(--ink-2); font-family: inherit;
 }
 .dashboard-reset-btn:hover:not(:disabled) { border-color: var(--accent); }
 .dashboard-reset-btn:disabled { opacity: 0.45; cursor: default; }
 
-.dashboard-hidden-note { font-size: 11px; color: var(--muted); font-style: normal; margin-top: 4px; }
+.dashboard-hidden-note { font-size: 10px; color: var(--muted); font-style: italic; margin-top: 4px; }
 .dashboard-allhidden {
   grid-column: 1 / -1;
   padding: 16px;
@@ -6626,6 +6680,7 @@ select.task-modal-input {
   font-size: 11px;
   color: var(--muted);
   cursor: pointer;
+  font-family: var(--font-sans);
 }
 .settings-seg-btn:last-child { border-right: none; }
 .settings-seg-btn:hover { background: var(--bg-hover); color: var(--ink); }
@@ -6742,18 +6797,19 @@ select.task-modal-input {
   font-size: 11px;
   color: var(--muted);
   cursor: pointer;
+  font-family: var(--font-sans);
 }
 .report-mode-btn:last-child { border-right: none; }
 .report-mode-btn:hover { background: var(--bg-hover); color: var(--ink); }
 .report-mode-btn--active,
 .report-mode-btn--active:hover { background: var(--ink-2); color: var(--bg-panel); }
 .report-nav {
-   font-size: 13px; line-height: 16px; padding: 3px 10px; cursor: pointer;
+   font-size: 13px; padding: 3px 10px; cursor: pointer;
   border: 1px solid var(--grid-border); border-radius: 3px;
-  background: var(--bg-panel); color: var(--ink-2);
+  background: var(--bg-panel); color: var(--ink-2); font-family: inherit;
 }
 .report-nav:hover { border-color: var(--accent); }
-.report-nav--today { font-size: 13px; padding-block: 1.5px; }
+.report-nav--today { font-size: 11px; }
 .report-period-label { font-size: 13px; font-weight: 600; color: var(--ink); min-width: 150px; text-align: center; }
 
 /* Summary tiles. */
@@ -6770,7 +6826,7 @@ select.task-modal-input {
 }
 .report-tile-value { font-size: 20px; font-weight: 700; line-height: 1.1; color: var(--ink); }
 .report-tile-value--sm { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.report-tile-label { font-size: 11px; text-transform: none; letter-spacing: normal; color: var(--muted); margin-top: 2px; }
+.report-tile-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-top: 2px; }
 
 /* Period day-bars. */
 .report-bars { width: 100%; height: 40px; display: block; }
@@ -6781,7 +6837,7 @@ select.task-modal-input {
 
 /* Two-column report blocks. */
 .report-two-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; padding: 4px 0; }
-.report-subhead { font-size: 11px; text-transform: none; letter-spacing: normal; color: var(--muted); margin-bottom: 4px; }
+.report-subhead { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 4px; }
 
 /* Inline bar in completion-by-section rows. */
 .report-inbar { display: inline-block; width: 70px; height: 6px; background: var(--grid-border); border-radius: 3px; overflow: hidden; vertical-align: middle; }
@@ -6791,7 +6847,7 @@ select.task-modal-input {
 .report-stat-row { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: var(--muted); }
 .report-stat-row strong { color: var(--ink); font-weight: 700; }
 .report-note {
-  font-size: 11px; color: var(--muted); font-style: normal;
+  font-size: 11px; color: var(--muted); font-style: italic;
   padding: 6px 12px; background: var(--paused-bg); border-top: 1px solid var(--grid-border);
 }
 
@@ -6816,7 +6872,7 @@ select.task-modal-input {
   cursor: default;
 }
 .dc-hiatus {
-  font-size: 11px;
+  font-size: 8px;
   line-height: 1;
   color: color-mix(in srgb, var(--muted-2) 55%, transparent);
   user-select: none;
@@ -6831,7 +6887,7 @@ select.task-modal-input {
 }
 .task-modal-hiatus-range { color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .task-modal-hiatus-delete {
-  padding: 1px 8px; font-size: 11px; letter-spacing: normal;
+  padding: 1px 8px; font-size: 10px; letter-spacing: 0.03em;
   color: var(--muted); background: transparent;
   border: 1px solid var(--rule-2); border-radius: 2px; cursor: pointer;
 }
@@ -6841,12 +6897,12 @@ select.task-modal-input {
   font-size: 11px; color: var(--muted);
 }
 .task-modal-hiatus-confirm .task-modal-confirm-delete,
-.task-modal-hiatus-confirm .task-modal-cancel { padding: 2px 8px; font-size: 11px; }
+.task-modal-hiatus-confirm .task-modal-cancel { padding: 2px 8px; font-size: 10px; }
 
 /* P11.2 — per-interval Edit button + inline date editor */
 .task-modal-hiatus-actions { display: flex; align-items: center; gap: 4px; }
 .task-modal-hiatus-edit-btn {
-  padding: 1px 8px; font-size: 11px; letter-spacing: normal;
+  padding: 1px 8px; font-size: 10px; letter-spacing: 0.03em;
   color: var(--muted); background: transparent;
   border: 1px solid var(--rule-2); border-radius: 2px; cursor: pointer;
 }
@@ -6862,13 +6918,13 @@ select.task-modal-input {
 }
 .task-modal-hiatus-editor-field { display: flex; flex-direction: column; gap: 3px; }
 .task-modal-hiatus-editor-field > span {
-   font-size: 11px; font-weight: 600;
-  letter-spacing: normal; text-transform: none; color: var(--muted-2);
+   font-size: 9px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-2); font-family: var(--font-mono);
 }
 .task-modal-hiatus-editor-error { font-size: 11px; color: var(--urg-crit); }
 .task-modal-hiatus-editor-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .task-modal-hiatus-editor-actions .task-modal-cancel,
-.task-modal-hiatus-editor-actions .task-modal-save { padding: 2px 10px; font-size: 11px; }
+.task-modal-hiatus-editor-actions .task-modal-save { padding: 2px 10px; font-size: 10px; }
 
 /* Reading priority badge — calm bands, not urgency alarms.
    P1–2 low/background (green, P1 most muted) · P3 normal (accent/neutral) ·
@@ -6878,9 +6934,9 @@ select.task-modal-input {
   min-width: 20px;
   padding: 1px 5px;
   border-radius: 3px;
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 700;
-  letter-spacing: normal;
+  letter-spacing: 0.02em;
   text-align: center;
   border: 1px solid transparent;
   font-variant-numeric: tabular-nums;
@@ -6951,6 +7007,8 @@ select.task-modal-input {
   background: var(--paper);
 
   --cal-hour-px: 48px;
+
+  font-family: var(--font-ui);
 }
 
 .cal-status {
@@ -6983,19 +7041,18 @@ select.task-modal-input {
   gap: 8px;
 }
 .cal-nav-btn {
-
   font-size: 13px;
   padding: 3px 10px;
-  line-height: 16px;
   white-space: nowrap;
   cursor: pointer;
   border: 1px solid var(--grid-border);
   border-radius: 3px;
   background: var(--bg-panel);
   color: var(--ink-2);
+  font-family: inherit;
 }
 .cal-nav-btn:hover { border-color: var(--accent); }
-.cal-nav-btn--today { font-size: 13px; padding-block: 1.5px; }
+.cal-nav-btn--today { font-size: 11px; }
 .cal-nav-btn.is-active {
   border-color: var(--accent);
   color: var(--accent);
@@ -7016,13 +7073,13 @@ select.task-modal-input {
   overflow: hidden;
 }
 .cal-seg-btn {
-
   font-size: 12px;
   padding: 3px 12px;
   cursor: pointer;
   border: none;
   background: var(--bg-panel);
   color: var(--ink-2);
+  font-family: inherit;
 }
 .cal-seg-btn + .cal-seg-btn { border-left: 1px solid var(--grid-border); }
 .cal-seg-btn:hover:not(.is-active) { background: var(--bg-hover); }
@@ -7072,8 +7129,9 @@ select.task-modal-input {
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  text-transform: none;
-  letter-spacing: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-family: inherit;
 }
 .cal-day-header:first-child { border-left: none; }
 .cal-day-header:hover { background: var(--bg-hover); color: var(--ink-2); }
@@ -7108,7 +7166,7 @@ select.task-modal-input {
   position: absolute;
   right: 6px;
   transform: translateY(-50%);
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted-2);
   font-variant-numeric: tabular-nums;
   background: var(--paper);
@@ -7201,9 +7259,9 @@ select.task-modal-input {
   position: absolute;
   top: 2px;
   left: 5px;
-  font-size: 11px;
-  letter-spacing: normal;
-  text-transform: none;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--muted);
   opacity: 0.85;
 }
@@ -7275,7 +7333,7 @@ select.task-modal-input {
 }
 .cal-block-meta {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -7290,7 +7348,7 @@ select.task-modal-input {
   border-radius: 2px;
   background: var(--paper);
   color: #fff;
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1;
   cursor: pointer;
   display: inline-flex;
@@ -7304,9 +7362,9 @@ select.task-modal-input {
 }
 .cal-depth-pill {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 700;
-  letter-spacing: normal;
+  letter-spacing: 0.04em;
   padding: 0 4px;
   border-radius: 2px;
   color: var(--ink-2);
@@ -7352,7 +7410,7 @@ select.task-modal-input {
 }
 .cal-ghost--move { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 .cal-ghost-time {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--ink-2);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -7370,11 +7428,12 @@ select.task-modal-input {
   color: var(--ink);
   outline: none;
   padding: 0;
+  font-family: inherit;
 }
 .cal-creator-inline-input::placeholder { color: var(--muted); }
 .cal-creator-error {
   display: block;
-  font-size: 11px;
+  font-size: 10px;
   color: var(--urg-crit);
 }
 
@@ -7393,9 +7452,9 @@ select.task-modal-input {
   font-size: 12px;
 }
 .cal-popover-kicker {
-  font-size: 11px;
-  letter-spacing: normal;
-  text-transform: none;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: var(--muted);
   font-weight: 600;
 }
@@ -7457,7 +7516,6 @@ select.task-modal-input {
 .cal-popover-actions button { white-space: nowrap; }
 
 .cal-complete-btn {
-
   font-size: 12px;
   padding: 4px 10px;
   cursor: pointer;
@@ -7465,6 +7523,7 @@ select.task-modal-input {
   border-radius: 3px;
   background: var(--bg-panel);
   color: var(--ink-2);
+  font-family: inherit;
 }
 .cal-complete-btn:hover { border-color: var(--good); }
 .cal-complete-btn.is-done {
@@ -7474,7 +7533,6 @@ select.task-modal-input {
   font-weight: 600;
 }
 .cal-danger-btn {
-
   font-size: 12px;
   padding: 4px 10px;
   cursor: pointer;
@@ -7482,6 +7540,7 @@ select.task-modal-input {
   border-radius: 3px;
   background: var(--bg-panel);
   color: var(--urg-crit);
+  font-family: inherit;
 }
 .cal-danger-btn:hover { border-color: var(--urg-crit); }
 
@@ -7494,7 +7553,6 @@ select.task-modal-input {
   align-self: flex-start;
 }
 .cal-depth-seg-btn {
-
   font-size: 11px;
   font-weight: 600;
   padding: 3px 10px;
@@ -7502,6 +7560,7 @@ select.task-modal-input {
   border: none;
   background: var(--bg-panel);
   color: var(--muted);
+  font-family: inherit;
 }
 .cal-depth-seg-btn + .cal-depth-seg-btn { border-left: 1px solid var(--grid-border); }
 .cal-depth-seg-btn:hover:not(.is-active) { background: var(--bg-hover); color: var(--ink-2); }
@@ -7539,9 +7598,9 @@ select.task-modal-input {
   padding: 8px 12px;
   background: var(--ink);
   color: #fff;
-  font-size: 11px;
-  letter-spacing: normal;
-  text-transform: none;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   font-weight: 600;
 }
 .cal-drawer-count {
@@ -7560,9 +7619,9 @@ select.task-modal-input {
 .cal-drawer-empty { padding: 14px 12px; font-size: 12px; color: var(--muted); }
 .cal-drawer-group-title {
   padding: 10px 12px 4px;
-  font-size: 11px;
-  letter-spacing: normal;
-  text-transform: none;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--muted);
   font-weight: 600;
 }
@@ -7592,7 +7651,7 @@ select.task-modal-input {
   white-space: nowrap;
 }
 .cal-drawer-item-meta {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -7641,11 +7700,12 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
 
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: normal;
-  text-transform: none;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   border-radius: 3px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
   opacity: 0.95;
+  font-family: var(--font-mono);
 }
 
 /* "Insert after the last section" — zero-height rule at the very bottom. */
@@ -7673,19 +7733,20 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
 }
 .ws-section-empty-note {
   font-size: 11px;
-  font-style: normal;
+  font-style: italic;
   color: var(--muted);
 }
 .ws-section-empty-remove {
   margin-left: 12px;
 
-  font-size: 11px;
+  font-size: 10px;
   padding: 1px 7px;
   border: 1px solid var(--grid-border);
   border-radius: 3px;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
+  font-family: inherit;
 }
 .ws-section-empty-remove:hover {
   color: var(--urg-crit);
@@ -7709,9 +7770,9 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
 }
 .cal-now-chip {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 8px;
   font-weight: 700;
-  letter-spacing: normal;
+  letter-spacing: 0.1em;
   padding: 0 4px;
   border-radius: 2px;
   background: var(--accent);
@@ -7742,7 +7803,7 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
   line-height: 11px;
   text-align: center;
   border-radius: 50%;
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 700;
   color: var(--caution-text, var(--urg-mid));
   background: color-mix(in srgb, var(--urg-mid) 18%, transparent);
@@ -7753,7 +7814,7 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
    Same footprint family as the mismatch cue — informative, never dominant. */
 .cal-repeat-marker {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 10px;
   line-height: 11px;
   color: var(--muted);
   cursor: help;
@@ -7767,9 +7828,9 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
   flex-wrap: wrap;
 }
 .cal-creator-repeat-label {
-  font-size: 11px;
-  letter-spacing: normal;
-  text-transform: none;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--muted);
 }
 
@@ -7792,7 +7853,6 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
   flex-wrap: wrap;
 }
 .cal-repeat-day {
-
   font-size: 11px;
   padding: 3px 8px;
   border: 1px solid var(--grid-border);
@@ -7800,6 +7860,7 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
   background: var(--paper);
   color: var(--muted);
   cursor: pointer;
+  font-family: inherit;
 }
 .cal-repeat-day--on {
   background: var(--accent-soft, var(--bg-hover));
@@ -7824,6 +7885,7 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
   background: var(--paper);
   color: var(--ink);
   font-variant-numeric: tabular-nums;
+  font-family: inherit;
 }
 .cal-repeat-ends {
   display: flex;
@@ -7832,13 +7894,13 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
   flex-wrap: wrap;
 }
 .cal-repeat-ends input[type="date"] {
-
   font-size: 12px;
   padding: 3px 6px;
   border: 1px solid var(--grid-border);
   border-radius: 3px;
   background: var(--paper);
   color: var(--ink);
+  font-family: inherit;
 }
 
 /* Protected windows — slightly firmer edge, still background-quiet. */
@@ -7859,14 +7921,14 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
   z-index: 5;
 }
 .cal-window-menu button {
-
-  font-size: 11px;
+  font-size: 9px;
   border: none;
   background: transparent;
   color: var(--ink-2);
   padding: 1px 4px;
   cursor: pointer;
   white-space: nowrap;
+  font-family: inherit;
 }
 .cal-window-menu button:hover { color: var(--urg-crit); }
 
@@ -7890,7 +7952,6 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
   flex-wrap: wrap;
 }
 .cal-flag-btn {
-
   font-size: 11px;
   padding: 3px 9px;
   cursor: pointer;
@@ -7898,6 +7959,7 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
   border-radius: 3px;
   background: var(--bg-panel);
   color: var(--muted);
+  font-family: inherit;
 }
 .cal-flag-btn:hover { border-color: var(--accent); color: var(--ink-2); }
 .cal-flag-btn.is-active {
@@ -7924,6 +7986,7 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
   background: var(--paper);
   color: var(--ink);
   font-variant-numeric: tabular-nums;
+  font-family: inherit;
 }
 
 /* Toolbar review chip — quiet amber until opened. */
@@ -7968,7 +8031,7 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
   white-space: nowrap;
 }
 .cal-reconcile-time {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -7978,8 +8041,7 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
   flex-shrink: 0;
 }
 .cal-reconcile-actions button {
-
-  font-size: 11px;
+  font-size: 10px;
   padding: 2px 7px;
   cursor: pointer;
   border: 1px solid var(--grid-border);
@@ -7987,6 +8049,7 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
   background: var(--bg-panel);
   color: var(--ink-2);
   white-space: nowrap;
+  font-family: inherit;
 }
 .cal-reconcile-actions button:hover { border-color: var(--accent); }
 
@@ -8006,10 +8069,10 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
 .cal-entry-chip {
   display: inline-block;
   margin-left: 6px;
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 600;
-  letter-spacing: normal;
-  text-transform: none;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   padding: 0 5px;
   border: 1px solid var(--grid-border);
   border-radius: 999px;
@@ -8042,9 +8105,9 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
   display: flex;
   flex-direction: column;
   gap: 3px;
-  font-size: 11px;
-  letter-spacing: normal;
-  text-transform: none;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--muted);
   min-width: 0;
 }
@@ -8058,9 +8121,9 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
-  letter-spacing: normal;
-  text-transform: none;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--muted);
 }
 .cal-creator-priority input {
@@ -8073,6 +8136,7 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
   background: var(--paper);
   color: var(--ink);
   font-variant-numeric: tabular-nums;
+  font-family: inherit;
 }
 
 /* Existing-task selector (§7). */
@@ -8088,7 +8152,7 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
   padding: 12px;
   font-size: 12px;
   color: var(--muted);
-  font-style: normal;
+  font-style: italic;
 }
 .cal-task-picker-row {
   display: flex;
@@ -8101,6 +8165,7 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
   border-bottom: 1px solid var(--hair);
   background: var(--bg-panel);
   cursor: pointer;
+  font-family: inherit;
 
 }
 .cal-task-picker-row:last-child { border-bottom: none; }
@@ -8117,7 +8182,7 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
   white-space: nowrap;
 }
 .cal-task-picker-meta {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -8133,13 +8198,12 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
   display: flex;
   flex-direction: column;
   gap: 3px;
-  font-size: 11px;
-  letter-spacing: normal;
-  text-transform: none;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--muted);
 }
 .cal-time-field input[type="time"] {
-
   font-size: 12px;
   padding: 3px 6px;
   border: 1px solid var(--grid-border);
@@ -8148,6 +8212,7 @@ html[data-appearance="dark"] .cal-popover { box-shadow: 0 8px 28px rgba(0, 0, 0,
   color: var(--ink);
   color-scheme: dark;
   font-variant-numeric: tabular-nums;
+  font-family: inherit;
 }
 html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-scheme: light; }
 .cal-time-duration {
@@ -8169,6 +8234,7 @@ html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-sc
   background: var(--paper);
   color: var(--ink);
   font-variant-numeric: tabular-nums;
+  font-family: inherit;
 }
 
 /* Calendar session editor — task-modal chrome at a compact width. */
@@ -8196,7 +8262,7 @@ html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-sc
 .cal-block--ext:active { cursor: default; }
 .cal-ext-marker {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 9px;
   color: var(--muted);
 }
 
@@ -8207,7 +8273,7 @@ html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-sc
   right: 3px;
   height: 16px;
   z-index: 9;
-  font-size: 11px;
+  font-size: 10px;
   line-height: 16px;
   padding: 0 6px;
   overflow: hidden;
@@ -8356,7 +8422,6 @@ html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-sc
   flex-direction: column;
 }
 .cmdk-input {
-
   font-size: 14px;
   padding: 12px 14px;
   border: none;
@@ -8364,6 +8429,7 @@ html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-sc
   outline: none;
   background: var(--bg-panel);
   color: var(--ink);
+  font-family: inherit;
 }
 .cmdk-list {
   max-height: 320px;
@@ -8385,6 +8451,7 @@ html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-sc
   color: var(--ink-2);
   cursor: pointer;
   border-radius: 4px;
+  font-family: inherit;
 }
 .cmdk-row.is-active {
   background: color-mix(in srgb, var(--accent) 13%, transparent);
@@ -8434,9 +8501,9 @@ html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-sc
 /* ── Academic importer (V5.3 Part VIII) ── */
 .acad-shell { width: min(760px, calc(100vw - 40px)); }
 .acad-textarea {
-
   font-size: 12px;
   resize: vertical;
+  font-family: var(--font-mono, monospace);
 }
 .acad-bulkbar {
   display: flex;
@@ -8480,9 +8547,9 @@ html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-sc
 }
 .acad-status-mark { width: 14px; text-align: center; }
 .acad-kind {
-  font-size: 11px;
-  text-transform: none;
-  letter-spacing: normal;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
   color: var(--muted);
   border: 1px solid var(--grid-border);
   border-radius: 3px;
@@ -8536,7 +8603,7 @@ html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-sc
   white-space: nowrap;
 }
 .exec-log--skipped td { opacity: 0.55; }
-.exec-log--scheduled td { opacity: 0.7; font-style: normal; }
+.exec-log--scheduled td { opacity: 0.7; font-style: italic; }
 .exec-facts { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; }
 .exec-fact {
   display: flex;
@@ -8551,7 +8618,7 @@ html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-sc
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
-.exec-insufficient { color: var(--muted-2); font-style: normal; }
+.exec-insufficient { color: var(--muted-2); font-style: italic; }
 .exec-forecast { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; }
 .exec-week-row {
   display: flex;
@@ -8567,6 +8634,7 @@ html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-sc
   cursor: pointer;
   border-radius: 3px;
   text-align: left;
+  font-family: inherit;
 }
 .exec-week-row:hover, .exec-week-row.is-open {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
@@ -8608,8 +8676,8 @@ html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-sc
 .dash-signal { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .dash-signal-title {
   font-size: 11px;
-  text-transform: none;
-  letter-spacing: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
   color: var(--muted);
 }
 .dash-signal-bars {
@@ -8638,7 +8706,7 @@ html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-sc
 }
 .dash-signal-bar-flex { background: var(--accent); border-radius: 2px 2px 0 0; }
 .dash-signal-bar-fixed { background: var(--muted-2); border-radius: 0 0 2px 2px; }
-.dash-signal-week-label { font-size: 11px; color: var(--muted-2); }
+.dash-signal-week-label { font-size: 9px; color: var(--muted-2); }
 .dash-signal-row {
   display: flex;
   justify-content: space-between;
@@ -8691,16 +8759,9 @@ html:not([data-appearance="dark"]) .cal-time-field input[type="time"] { color-sc
   .task-grid .sticky-col { left: auto !important; }
 }
 
-/* Shared typography, navigation and responsive header layout. */
-*, *::before, *::after { font-family: inherit; }
-html { color-scheme: light; }
-html[data-appearance="dark"] { color-scheme: dark; }
-button, input, select, textarea { font: inherit; }
-input::placeholder, textarea::placeholder { font: inherit; color: var(--muted); opacity: 1; }
-:where(button, input, select, textarea) { border: 1px solid var(--rule); border-radius: 4px; }
-:where(input, select, textarea) { background: var(--bg-panel); color: var(--ink-2); padding: 2px 6px; }
-:where(button) { background: var(--bg-panel); color: var(--ink-2); cursor: pointer; }
-button:disabled { cursor: not-allowed; opacity: .5; }
+/* Shared navigation and responsive header layout. Form controls use the one
+   UI family (sizes stay with each component's own rules). */
+button, input, select, textarea { font-family: inherit; }
 :where(button, input, select, textarea, a, [tabindex]):focus-visible { outline: 2px solid var(--focus-blue); outline-offset: 2px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
@@ -8714,9 +8775,9 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .main-views { display: flex; align-items: center; gap: 6px; border-left: 1px solid #ffffff40; border-right: 1px solid #ffffff40; padding: 0 6px; }
 .main-views .tab.active { color: #fff; background: #ffffff26; border-color: #ffffff66; box-shadow: inset 0 -2px var(--accent); }
 
-.ws-sheet-header, .ws-dash-header, .ws-page-header { display: flex; align-items: center; gap: 16px; padding: 10px 16px; min-height: 60px; border-bottom: 1px solid var(--rule); overflow: visible; position: relative; z-index: 45; }
-.ws-sheet-title, .ws-dash-title, .ws-page-header { font-size: 18px; font-weight: 600; line-height: 1.2; }
-.ws-sheet-meta, .ws-dash-sub, .ws-page-header-sub { font-size: 12px; font-weight: 400; line-height: 1.4; }
+.ws-sheet-header, .ws-page-header { display: flex; align-items: center; gap: 16px; padding: 10px 16px; min-height: 60px; border-bottom: 1px solid var(--rule); overflow: visible; position: relative; z-index: 45; }
+.ws-sheet-title, .ws-page-header { font-size: 18px; font-weight: 600; line-height: 1.2; }
+.ws-sheet-meta, .ws-page-header-sub { font-size: 12px; font-weight: 400; line-height: 1.4; }
 .ws-sheet-header-left { min-width: 0; }
 /* Equal side tracks center the complete month group relative to the header. */
 .ws-sheet-header--task { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
@@ -8742,17 +8803,11 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 /* The Grid action shelf is separate; filters use the reference row spacing. */
 .live-grid > .ws-filter-bar { padding: 6px 14px; gap: 8px; background: var(--bg-surface); }
 .live-grid .ws-filter-seg, .live-grid .ws-filter-pill, .live-grid .ws-group-btn { border-radius: 0; }
-.ws-filter-seg-btn, .ws-filter-pill, .ws-group-btn, .report-mode-btn, .report-nav, .cal-nav-btn, .cal-seg-btn { font-size: 13px; border-radius: 4px; }
+.ws-filter-seg-btn, .ws-filter-pill, .ws-group-btn { font-size: 13px; border-radius: 4px; }
 /* Segmented controls retain their existing measured heights. */
-.ws-filter-seg-btn, .report-mode-btn { padding: 2px 10px; line-height: 15px; }
+.ws-filter-seg-btn { padding: 2px 10px; line-height: 15px; }
 .ws-filter-pill, .ws-group-btn { padding: 1px 10px; line-height: 15px; }
-.cal-seg-btn { padding: 3px 12px; line-height: 15px; }
-/* Reading keeps its existing inline action treatment. */
-.ws-filter-bar .ws-shelf-btn { padding: 0 10px; border-radius: 4px; letter-spacing: normal; text-transform: none; background: var(--bg-panel); border-color: var(--rule); color: var(--ink-2); min-width: 90px; }
-.ws-filter-bar .ws-shelf-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--ink); border-color: var(--muted); }
-.ws-filter-bar .ws-shelf-btn--primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-.ws-filter-bar .ws-shelf-btn--primary:hover:not(:disabled) { background: var(--accent-blue-strong); color: #fff; }
-.ws-filter-seg-btn, .cal-seg-btn, .report-mode-btn { border-radius: 0; }
+.ws-filter-seg-btn { border-radius: 0; }
 /* These families live inside clipped segmented groups. Keep focus inside the box. */
 .ws-filter-seg-btn:focus-visible, .cal-seg-btn:focus-visible, .report-mode-btn:focus-visible, .task-modal-seg-btn:focus-visible, .settings-seg-btn:focus-visible { outline-offset: -2px; }
 .ws-filter-count { font-size: 12px; }
@@ -8765,17 +8820,12 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .ws-inspector-body .edit-bar-note-row { flex: 1 1 240px; }
 .ws-inspector-body .edit-bar-count, .ws-inspector-body .edit-bar-hint { white-space: normal; }
 .ws-inspector-body .edit-bar-note-input:focus { background: var(--bg-panel); }
-.cal-seg-btn.is-active { background: var(--accent-soft); color: var(--ink); box-shadow: inset 0 -2px var(--accent); }
 .task-modal-body, .task-modal-field { min-width: 0; }
 .task-modal-footer { flex-wrap: wrap; }
 .task-modal-footer-note { white-space: normal; }
 .task-modal-actions { margin-left: auto; flex-wrap: wrap; }
-.task-modal-cancel, .task-modal-save, .task-modal-delete-btn, .edit-bar-btn, .ws-kbd-action-btn { border-radius: 4px; }
-.task-modal-textarea { border: 1px solid var(--rule); border-radius: 4px; background: var(--bg-panel); }
-.task-modal-textarea:focus { border: 1px solid var(--accent); outline: 2px solid var(--focus-blue); outline-offset: 1px; }
-.report-view > .report-period { justify-content: flex-start; padding: 8px 16px; border-bottom: 1px solid var(--rule); gap: 8px; }
 .ws-settings .ws-page-header-sub { margin-top: 3px; }
-.cal-toolbar { flex-wrap: wrap; padding: 8px 16px; }
+.cal-toolbar { flex-wrap: wrap; }
 .cal-toolbar-right, .cal-toolbar-nav { flex-wrap: wrap; }
 
 @media (max-width: 900px) {
@@ -8789,7 +8839,7 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   .app-identity { padding-right: 8px; }
   .app-tagline { display: none; }
   .app-utility-nav { margin: 0; }
-  .ws-sheet-header, .ws-dash-header, .ws-page-header { flex-wrap: wrap; padding: 10px 12px; gap: 8px; }
+  .ws-sheet-header, .ws-page-header { flex-wrap: wrap; padding: 10px 12px; gap: 8px; }
   .header-utilities { flex: 1 1 100%; margin-left: 0; }
   .workspace-search { width: auto; }
   .workspace-search-results { right: -28px; max-width: calc(100vw - 24px); }

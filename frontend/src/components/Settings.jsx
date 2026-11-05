@@ -1,4 +1,3 @@
-import HeaderUtilities from './HeaderUtilities.jsx';
 import CsvImport from './CsvImport.jsx';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { downloadExportBackup, downloadExportSheet, restoreBackup, fetchDoc } from '../api.js';
@@ -293,7 +292,6 @@ export default function Settings({ sheetMonth }) {
       {/* ── Hero ── */}
       <div className="ws-page-header">
         <div><span>Settings</span><div className="ws-page-header-sub">Appearance, defaults, and data</div></div>
-        <HeaderUtilities />
       </div>
 
       {/* ── Summary strip ── */}

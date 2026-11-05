@@ -1,4 +1,3 @@
-import HeaderUtilities from './HeaderUtilities.jsx';
 import { canDismiss, resolveKeybinds } from '../keybinds.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -2783,10 +2782,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
 
   return (
     <div className="cal-view" style={{ '--cal-hour-px': `${DENSITY_SCALES[density]}px` }}>
-      <div className="ws-sheet-header">
-        <div className="ws-sheet-header-left"><div className="ws-sheet-title">Calendar</div></div>
-        <HeaderUtilities />
-      </div>
       {/* ── Toolbar ── */}
       <div className="cal-toolbar">
         <div className="cal-toolbar-nav">

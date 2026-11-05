@@ -1,4 +1,3 @@
-import HeaderUtilities from './HeaderUtilities.jsx';
 import Dashboard from './Dashboard.jsx';
 import { useState, useEffect, useMemo } from 'react';
 import { fetchTasks, fetchCompletions, fetchSnapshotPressure, fetchReadingBooks, fetchHiatusPeriodsInRange } from '../api.js';
@@ -171,9 +170,7 @@ export default function MonthlyReport({ savedState = {}, onStateChange }) {
             Current priorities, history, and execution
           </div>
         </div>
-        <HeaderUtilities />
-      </div>
-      <div className="report-period">
+        <div className="report-period">
           <div className="report-period-modes" role="group" aria-label="Report view">
             <button className={`report-mode-btn${view === 'today' ? ' report-mode-btn--active' : ''}`} aria-pressed={view === 'today'} onClick={() => setView('today')}>Today</button>
             <button
@@ -212,6 +209,7 @@ export default function MonthlyReport({ savedState = {}, onStateChange }) {
           <span className="report-period-label">{label}</span>
           <button className="report-nav" onClick={() => shiftPeriod(1)}>›</button>
           </>}
+        </div>
       </div>
 
       {view === 'today' && <Dashboard onOpenReports={() => setView('history')} embedded />}
