@@ -3708,6 +3708,17 @@ thead .meta-col {
   letter-spacing: 0.02em;
 }
 
+/* Edit Task (tm-clean 12) is disabled until a task is selected. */
+.ws-shelf-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ws-shelf-btn:disabled:hover {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+}
+
 /* Primary action — Add Task */
 .ws-shelf-btn--primary {
   color: #fff;

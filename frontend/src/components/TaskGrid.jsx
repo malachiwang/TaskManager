@@ -1925,6 +1925,9 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth: sharedMonth
   // Render
   // ---------------------------------------------------------------------------
 
+  // Edit Task (tm-clean 12) acts on the task of the selected date or meta cell.
+  const selectedTask = tasks.find((t) => t.id === (selectedCell?.taskId ?? selectedMetaCell?.taskId));
+
   if (loading) return <div className="grid-status">Loading…</div>;
   if (error) return (
     <div className="grid-status error">
@@ -1946,6 +1949,12 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth: sharedMonth
       <div className="ws-grid-shelf">
         <div className="ws-shelf-left">
           <button className="ws-shelf-btn ws-shelf-btn--primary" onClick={openAdd}>+ Add Task</button>
+          <button
+            className="ws-shelf-btn"
+            disabled={!selectedTask}
+            onClick={() => selectedTask && openEdit(selectedTask)}
+            title={selectedTask ? undefined : 'Select a task first'}
+          >Edit Task</button>
         </div>
       </div>
 
