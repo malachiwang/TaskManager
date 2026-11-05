@@ -30,17 +30,25 @@ export const ACCENT_THEMES = [
   { value: 'amber',    label: 'Amber',    swatch: '#b26a00' },
 ];
 
-// Header banner art (tm-clean 21/22). 'network' is the original node-and-edge
+// Header banner (tm-clean 21/22/25). 'network' is the original node-and-edge
 // field; 'pixel-network' and 'pixel-blossom' draw the same animated field as
-// pixel art; 'cherry' is a static pixel cherry grove.
+// pixel art; 'custom' shows a user-chosen image stored by the backend next to
+// the database (only its filename is kept here).
 export const BANNER_STYLES = [
   { value: 'network',       label: 'Network' },
   { value: 'pixel-network', label: 'Pixel network' },
   { value: 'pixel-blossom', label: 'Pixel cherry blossom' },
-  { value: 'cherry',        label: 'Cherry blossom' },
+  { value: 'custom',        label: 'Custom image' },
 ];
-// c7c63db stored the animated blossom banner as 'blossom'.
-const LEGACY_BANNER = { blossom: 'pixel-blossom' };
+// c7c63db stored the animated blossom banner as 'blossom'; the static
+// 'cherry' scene was removed in tm-clean 25 and falls back to Network.
+const LEGACY_BANNER = { blossom: 'pixel-blossom', cherry: 'network' };
+export const BANNER_POSITIONS = [
+  { value: 'top',    label: 'Top' },
+  { value: 'center', label: 'Center' },
+  { value: 'bottom', label: 'Bottom' },
+];
+const BANNER_IMAGE_NAME = /^banner-\d+\.(png|jpg|webp)$/;
 
 export const MOTION_LEVELS = [
   { value: 'off',    label: 'Off' },
@@ -62,7 +70,8 @@ export const VISUAL_THEMES = [
   { value: 'midnight', label: 'Midnight',      swatch: ['#101014', '#17171d', '#2e2e38', '#0a0a0e'], darkBase: true },
 ];
 
-const DEFAULTS = { mode: 'system', theme: 'classic', accent: 'blue', motion: 'subtle', banner: 'network' };
+const DEFAULTS = { mode: 'system', theme: 'classic', accent: 'blue', motion: 'subtle', banner: 'network',
+  bannerImage: null, bannerPosition: 'center' };
 
 // One-time migration source: the pre-P10.1 standalone visual-theme key.
 function legacyTheme() {
@@ -85,6 +94,8 @@ export function loadAppearance() {
       motion: MOTION_LEVELS.some((l) => l.value === saved.motion)  ? saved.motion : DEFAULTS.motion,
       banner: BANNER_STYLES.some((b) => b.value === (LEGACY_BANNER[saved.banner] ?? saved.banner))
         ? (LEGACY_BANNER[saved.banner] ?? saved.banner) : DEFAULTS.banner,
+      bannerImage: BANNER_IMAGE_NAME.test(saved.bannerImage || '') ? saved.bannerImage : null,
+      bannerPosition: BANNER_POSITIONS.some((p) => p.value === saved.bannerPosition) ? saved.bannerPosition : DEFAULTS.bannerPosition,
     };
   } catch {
     return { ...DEFAULTS, theme: legacyTheme() };
@@ -144,7 +155,10 @@ export function getMotionLevel() {
   return loadAppearance().motion;
 }
 
-// Current header banner art ('network' | 'blossom').
-export function getBannerStyle() {
-  return loadAppearance().banner;
+// Current header banner: { style, image, position }. 'custom' without a
+// stored image falls back to the network.
+export function getBannerSettings() {
+  const a = loadAppearance();
+  const style = a.banner === 'custom' && !a.bannerImage ? 'network' : a.banner;
+  return { style, image: a.bannerImage, position: a.bannerPosition };
 }

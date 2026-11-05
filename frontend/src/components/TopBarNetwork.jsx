@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { getMotionLevel, getBannerStyle } from '../appearance.js';
+import { getMotionLevel, getBannerSettings } from '../appearance.js';
+import { bannerImageUrl } from '../api.js';
 
 // TopBarNetwork (P8.0B) — a subtle node-and-edge network drawn on a <canvas>
 // that fills its positioned parent. It is background-only: the canvas is
@@ -122,193 +123,10 @@ function rasterSprite(R, sprite, cx, cy) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Static scenic cherry grove (tm-clean 24) — original block-style pixel art,
-// drawn once in code. GROVE_PIXEL = 2 css px per art pixel → 23 art rows in
-// the 46 px bar. Layers, back to front: sky gradient + blocky clouds, a hazy
-// distant tree line, midground trees (trunks, angular branches, canopies of
-// 3×3 leaf blocks with a sunlit top face and shaded underside), ground (grass
-// row over dirt-block sides, small pink flowers), foreground canopy undersides
-// hanging from the top edge with the odd large trunk, and petals mid-air.
-// Everything comes from one fixed-seed generator: the same every load, and the
-// seeded spacing never repeats visibly at any width.
-// ---------------------------------------------------------------------------
-
-const GROVE_PIXEL = 2;
-const GROVE_SEED = 20261105;
-const SKY_TOP = hexRgb('#3E8EE0');
-const SKY_HORIZON = hexRgb('#C4E6FF');
-const CLOUD = ['#F7FBFF', '#E4EFF9', '#D3E3F2'].map(hexRgb);
-const HAZE_LEAF = ['#F3DCE6', '#EACCDA', '#DDBCCC'].map(hexRgb);
-const HAZE_TRUNK = hexRgb('#A99098');
-const HAZE_MEADOW = ['#D8E9CF', '#CBE1C2', '#E6DDE3'].map(hexRgb);
-// Leaf ramp, light → dark.
-const LEAF = ['#FFF1F6', '#FCD9E7', '#F6B9D1', '#EC98BA', '#D47599', '#A9567A'].map(hexRgb);
-const LEAF_WHITE = hexRgb('#FFFFFF');
-const LEAF_FLECK = hexRgb('#C9D86C');
-const TRUNK = ['#6A3634', '#55292A', '#3E1D1F', '#2E1517'].map(hexRgb);   // lit → shaded
-const GRASS = ['#7CC34E', '#64AE3C', '#4F9431', '#3F7D28'].map(hexRgb);
-const DIRT = ['#8A5E3C', '#77502F', '#634127'].map(hexRgb);
-const FLOWER = ['#FF9FC6', '#F77FB0', '#FFD2E4'].map(hexRgb);
-const PETAL = ['#FFC4DB', '#F7A6C8', '#FFE2EE'].map(hexRgb);
-
-function mulberry32(seed) {
-  let t = seed >>> 0;
-  return () => {
-    t = (t + 0x6D2B79F5) >>> 0;
-    let r = Math.imul(t ^ (t >>> 15), 1 | t);
-    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
-    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-const mix = (c1, c2, t) => [0, 1, 2].map((i) => c1[i] + (c2[i] - c1[i]) * t);
-
-// One leaf block: sunlit top face, shaded underside, speckle, white
-// highlights and the odd yellow-green fleck.
-function leafBlock(R, rnd, x0, y0, size, shade = 0) {
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      let i;
-      if (y === 0) i = rnd() < 0.7 ? 1 : 0;                        // top face
-      else if (y === size - 1) i = rnd() < 0.7 ? 4 : 3;            // underside
-      else i = 2 + (rnd() < 0.35 ? 1 : 0) - (rnd() < 0.2 ? 1 : 0);  // body speckle
-      let c = LEAF[Math.min(5, i + shade)];
-      const r = rnd();
-      if (y < size - 1 && r < 0.05) c = LEAF_WHITE;
-      else if (r > 0.97) c = LEAF_FLECK;
-      blend(R, x0 + x, y0 + y, c, 1);
-    }
-  }
-}
-
-// Stepped (angular) branch from (x0,y0) going up with slope dx per row.
-function branch(R, rnd, x0, y0, len, dir) {
-  let x = x0;
-  for (let k = 0; k < len; k += 1) {
-    blend(R, x, y0 - k, TRUNK[1 + (rnd() < 0.4 ? 1 : 0)], 1);
-    if (k % 2 === 1) { x += dir; blend(R, x, y0 - k, TRUNK[2], 1); }
-  }
-}
-
-function drawGrove(R) {
-  const rnd = mulberry32(GROVE_SEED);
-  const { gw, gh } = R;
-  const groundTop = gh - 3;              // grass row; two dirt rows below
-  const horizon = groundTop - 4;
-
-  // Sky: vertical gradient, lighter toward the horizon.
-  for (let y = 0; y < gh; y += 1) {
-    const c = mix(SKY_TOP, SKY_HORIZON, Math.min(1, y / horizon));
-    for (let x = 0; x < gw; x += 1) blend(R, x, y, c, 1);
-  }
-  // Blocky clouds (2-px blocks) high in the sky.
-  for (let x = Math.floor(rnd() * 40); x < gw; x += 60 + Math.floor(rnd() * 90)) {
-    const y = 1 + Math.floor(rnd() * 5);
-    const wBlocks = 3 + Math.floor(rnd() * 5);
-    for (let b = 0; b < wBlocks; b += 1) {
-      const top = b > 0 && b < wBlocks - 1 && rnd() < 0.7;
-      for (let px = 0; px < 2; px += 1) {
-        blend(R, x + b * 2 + px, y + 1, CLOUD[1], 1);
-        blend(R, x + b * 2 + px, y + 2, CLOUD[2], 1);
-        if (top) blend(R, x + b * 2 + px, y, CLOUD[0], 1);
-      }
-    }
-  }
-  // Hazy far meadow between the distant tree line and the grass.
-  for (let y = horizon + 1; y < groundTop; y += 1) {
-    for (let x = 0; x < gw; x += 1) {
-      const c = HAZE_MEADOW[rnd() < 0.85 ? (y === horizon + 1 ? 0 : 1) : 2];
-      blend(R, x, y, c, 1);
-    }
-  }
-  // Distant tree line: small hazy canopies on thin trunks near the horizon.
-  for (let x = -2; x < gw; x += 5 + Math.floor(rnd() * 7)) {
-    const top = horizon - 4 - Math.floor(rnd() * 3);
-    const wB = 2 + Math.floor(rnd() * 3);
-    for (let yy = top + 4; yy <= horizon + 1; yy += 1) blend(R, x + wB, yy, HAZE_TRUNK, 1);
-    for (let b = 0; b < wB; b += 1) {
-      for (let yy = 0; yy < 4; yy += 1) {
-        if (yy === 0 && (b === 0 || b === wB - 1)) continue;
-        for (let px = 0; px < 2; px += 1) {
-          blend(R, x + b * 2 + px, top + yy, HAZE_LEAF[yy === 0 ? 0 : yy === 3 ? 2 : (rnd() < 0.5 ? 0 : 1)], 1);
-        }
-      }
-    }
-  }
-
-  // Midground trees.
-  for (let x = Math.floor(rnd() * 12); x < gw + 10; x += 22 + Math.floor(rnd() * 26)) {
-    const BS = 3;
-    const wB = 5 + Math.floor(rnd() * 5);                 // canopy width in blocks
-    const hB = 3 + (rnd() < 0.5 ? 1 : 0);                 // canopy height in blocks
-    const canopyTop = 1 + Math.floor(rnd() * 3);
-    const canopyBottom = canopyTop + hB * BS;
-    const trunkX = x + Math.floor((wB * BS) / 2) - 1 + Math.floor(rnd() * 3) - 1;
-    // Trunk (2 px: lit left, shaded right) down to the grass.
-    for (let y = canopyBottom - 2; y < groundTop; y += 1) {
-      blend(R, trunkX, y, TRUNK[rnd() < 0.8 ? 0 : 1], 1);
-      blend(R, trunkX + 1, y, TRUNK[rnd() < 0.75 ? 2 : 3], 1);
-    }
-    // Angular branches reaching into the canopy, visible under it.
-    branch(R, rnd, trunkX - 1, canopyBottom + 1, 4, -1);
-    branch(R, rnd, trunkX + 2, canopyBottom + 2, 5, 1);
-    if (rnd() < 0.5) branch(R, rnd, trunkX - 1, canopyBottom + 3, 3, -1);
-    // Canopy: rows of blocks, narrower toward the top, ragged edges.
-    for (let by = 0; by < hB; by += 1) {
-      const inset = by === 0 ? 1 + Math.floor(rnd() * 2) : (by === hB - 1 && rnd() < 0.5 ? 1 : 0);
-      for (let bx = inset; bx < wB - inset; bx += 1) {
-        if ((bx === inset || bx === wB - inset - 1) && rnd() < 0.25) continue;
-        leafBlock(R, rnd, x + bx * BS, canopyTop + by * BS, BS, by === hB - 1 ? 1 : 0);
-      }
-    }
-    // A few leaf blocks drooping below the canopy edge.
-    for (let k = 0; k < 2; k += 1) {
-      if (rnd() < 0.6) leafBlock(R, rnd, x + (1 + Math.floor(rnd() * (wB - 2))) * BS, canopyBottom, BS, 1);
-    }
-  }
-
-  // Ground: grass row with drips over dirt-block sides; small pink flowers.
-  for (let x = 0; x < gw; x += 1) {
-    blend(R, x, groundTop, GRASS[Math.floor(rnd() * 3)], 1);
-    blend(R, x, groundTop + 1, rnd() < 0.35 ? GRASS[3] : DIRT[Math.floor(rnd() * 2)], 1);
-    blend(R, x, groundTop + 2, DIRT[1 + Math.floor(rnd() * 2)], 1);
-    if (x % 4 === 0) blend(R, x, groundTop + 2, DIRT[2], 1);    // dirt-block seams
-  }
-  for (let x = Math.floor(rnd() * 6); x < gw; x += 3 + Math.floor(rnd() * 9)) {
-    blend(R, x, groundTop - 1, FLOWER[Math.floor(rnd() * 3)], 1);
-    blend(R, x, groundTop, GRASS[3], 1);
-  }
-
-  // Foreground: big canopy undersides hanging from the top edge, cut off by
-  // the banner, with the occasional large trunk.
-  for (let x = 30 + Math.floor(rnd() * 60); x < gw; x += 90 + Math.floor(rnd() * 110)) {
-    const BS = 4;
-    const wB = 6 + Math.floor(rnd() * 6);
-    const depth = 1 + Math.floor(rnd() * 2);               // rows of blocks shown
-    for (let bx = 0; bx < wB; bx += 1) {
-      const d = depth + ((bx > 0 && bx < wB - 1 && rnd() < 0.5) ? 1 : 0) - ((bx === 0 || bx === wB - 1) ? 1 : 0);
-      for (let by = 0; by < d; by += 1) leafBlock(R, rnd, x + bx * BS, by * BS - 1, BS, 1);
-    }
-    if (rnd() < 0.35) {
-      const tx = x + Math.floor(rnd() * (wB * BS - 6));
-      for (let y = 0; y < groundTop + 1; y += 1) {
-        for (let k = 0; k < 4; k += 1) {
-          const c = k < 1 ? TRUNK[0] : k < 3 ? TRUNK[rnd() < 0.8 ? 1 : 2] : TRUNK[3];
-          blend(R, tx + k, y, c, 1);
-        }
-      }
-    }
-  }
-
-  // Petals frozen mid-air.
-  for (let x = Math.floor(rnd() * 20); x < gw; x += 14 + Math.floor(rnd() * 30)) {
-    blend(R, x, 2 + Math.floor(rnd() * (groundTop - 4)), PETAL[Math.floor(rnd() * 3)], 1);
-  }
-}
-
-// Smooth dark gradient behind the title and nav (not pixelated): solid up to
-// the nav's right edge, then fading out over GRADIENT_FADE css px.
+// Custom image banner (tm-clean 25): the image covers the bar (no stretching)
+// at the chosen vertical position, with a smooth dark gradient behind the
+// title and nav — solid up to the nav's right edge, then fading out over
+// GRADIENT_FADE css px — so the nav stays readable on bright images.
 const GRADIENT_RGB = '14, 14, 16';
 const GRADIENT_ALPHA = 0.92;
 const GRADIENT_FADE = 90;
@@ -325,11 +143,16 @@ export default function TopBarNetwork({ className = '', followBanner = false }) 
   const [motionLevel, setMotionLevel] = useState(getMotionLevel);
   // Banner art — only the header follows the Settings choice (followBanner);
   // the loading screen always shows the network.
-  const [bannerStyle, setBannerStyle] = useState(() => (followBanner ? getBannerStyle() : 'network'));
+  const [banner, setBanner] = useState(() => (followBanner ? getBannerSettings() : { style: 'network' }));
+  const bannerStyle = banner.style;
   useEffect(() => {
     function onAppearanceChange() {
       setMotionLevel(getMotionLevel());
-      if (followBanner) setBannerStyle(getBannerStyle());
+      if (followBanner) {
+        const next = getBannerSettings();
+        setBanner((prev) => (prev.style === next.style && prev.image === next.image
+          && prev.position === next.position ? prev : next));
+      }
     }
     window.addEventListener('taskos-appearance-change', onAppearanceChange);
     return () => window.removeEventListener('taskos-appearance-change', onAppearanceChange);
@@ -346,11 +169,11 @@ export default function TopBarNetwork({ className = '', followBanner = false }) 
     const reduced = prefersReducedMotion() || motionLevel === 'off';
     const tuning = MOTION_TUNING[motionLevel] || MOTION_TUNING.subtle;
 
-    // Static cherry grove: drawn once (and on resize / appearance change). No
-    // nodes, no animation loop, no cursor interaction.
-    if (bannerStyle === 'cherry') {
-      const groveArt = document.createElement('canvas');
-      const groveCtx = groveArt.getContext('2d');
+    // Custom image: drawn once (and on resize / appearance change). No nodes,
+    // no animation loop, no cursor interaction.
+    if (bannerStyle === 'custom') {
+      const img = new Image();
+      let loaded = false;
       const paint = () => {
         const rect = parent.getBoundingClientRect();
         const w = Math.max(1, Math.round(rect.width));
@@ -359,14 +182,18 @@ export default function TopBarNetwork({ className = '', followBanner = false }) 
         canvas.width = w * dpr; canvas.height = h * dpr;
         canvas.style.width = `${w}px`; canvas.style.height = `${h}px`;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        groveArt.width = Math.ceil(w / GROVE_PIXEL);
-        groveArt.height = Math.ceil(h / GROVE_PIXEL);
-        const R = makeRaster(groveArt.width, groveArt.height, groveCtx);
-        drawGrove(R);
-        rasterFlush(R, groveCtx);
         ctx.clearRect(0, 0, w, h);
-        ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(groveArt, 0, 0, groveArt.width * GROVE_PIXEL, groveArt.height * GROVE_PIXEL);
+        if (!loaded) return;
+        // Cover: scale to fill both dimensions, crop the overflow; the
+        // Position choice picks which horizontal slice of the image shows.
+        const scale = Math.max(w / img.naturalWidth, h / img.naturalHeight);
+        const dw = img.naturalWidth * scale;
+        const dh = img.naturalHeight * scale;
+        const dx = (w - dw) / 2;
+        const dy = banner.position === 'top' ? 0 : banner.position === 'bottom' ? h - dh : (h - dh) / 2;
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, dx, dy, dw, dh);
         // Readability: dark gradient behind the title and nav.
         const nav = parent.querySelector('.app-utility-nav');
         const navRight = nav ? nav.getBoundingClientRect().right - rect.left : 0;
@@ -380,17 +207,21 @@ export default function TopBarNetwork({ className = '', followBanner = false }) 
           ctx.fillRect(0, 0, navRight + GRADIENT_FADE, h);
         }
       };
+      img.onload = () => { loaded = true; paint(); };
+      img.onerror = () => { loaded = false; paint(); };   // missing file: plain bar
+      img.src = bannerImageUrl(banner.image);
       paint();
-      const groveRo = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(paint) : null;
-      if (groveRo) {
-        groveRo.observe(parent);
+      const imgRo = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(paint) : null;
+      if (imgRo) {
+        imgRo.observe(parent);
         // The nav changes width when Main's views slide open/closed.
         const nav = parent.querySelector('.app-utility-nav');
-        if (nav) groveRo.observe(nav);
+        if (nav) imgRo.observe(nav);
       } else window.addEventListener('resize', paint);
       window.addEventListener('taskos-appearance-change', paint);
       return () => {
-        if (groveRo) groveRo.disconnect(); else window.removeEventListener('resize', paint);
+        img.onload = null; img.onerror = null;
+        if (imgRo) imgRo.disconnect(); else window.removeEventListener('resize', paint);
         window.removeEventListener('taskos-appearance-change', paint);
       };
     }
@@ -635,7 +466,7 @@ export default function TopBarNetwork({ className = '', followBanner = false }) 
       parent.removeEventListener('pointerleave', onPointerLeave);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [motionLevel, bannerStyle]);
+  }, [motionLevel, bannerStyle, banner.image, banner.position]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return <canvas ref={canvasRef} className={`topbar-network-canvas ${className}`} aria-hidden="true" />;
 }

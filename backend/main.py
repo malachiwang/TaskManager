@@ -13,6 +13,7 @@ import json
 import re
 import sqlite3
 import sys
+import time
 from pathlib import Path
 from collections import defaultdict
 from contextlib import asynccontextmanager
@@ -4962,6 +4963,80 @@ def serve_doc(name: str):
     if not path.exists():
         raise HTTPException(status_code=404, detail="Document file missing")
     return Response(content=path.read_text(encoding="utf-8"), media_type="text/plain; charset=utf-8")
+
+# ---------------------------------------------------------------------------
+# Custom banner image (tm-clean 25)
+#
+# One user-chosen image for the header banner, stored as a plain file next to
+# the database (e.g. ~/.taskmanager/banner-<stamp>.png). The frontend keeps
+# only the filename in its local appearance settings. Not part of backups.
+# ---------------------------------------------------------------------------
+
+BANNER_MAX_BYTES = 10 * 1024 * 1024
+_BANNER_NAME = re.compile(r"^banner-\d+\.(png|jpg|webp)$")
+_BANNER_TYPES = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp"}
+
+
+def _banner_dir() -> Path:
+    return db_config.DB_PATH.parent
+
+
+def _sniff_image(data: bytes) -> Optional[str]:
+    """Image type from the file's own bytes (never the client's filename)."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpg"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    return None
+
+
+def _remove_banner_files() -> None:
+    for old in _banner_dir().glob("banner-*.*"):
+        if _BANNER_NAME.match(old.name):
+            old.unlink(missing_ok=True)
+
+
+@app.post("/banner-image", status_code=201)
+async def upload_banner_image(file: UploadFile = File(...)):
+    """Store a PNG, JPEG or WebP (max 10 MB) as the banner image; replaces any
+    previous one. Returns the stored filename."""
+    data = await file.read(BANNER_MAX_BYTES + 1)
+    if len(data) > BANNER_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Image is larger than 10 MB.")
+    ext = _sniff_image(data)
+    if ext is None:
+        raise HTTPException(status_code=415, detail="Choose a PNG, JPG or WebP image.")
+    folder = _banner_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    # Unique per upload, so the browser can cache each file forever.
+    stamp = time.time_ns() // 1000
+    while list(folder.glob(f"banner-{stamp}.*")):
+        stamp += 1
+    name = f"banner-{stamp}.{ext}"
+    tmp = folder / (name + ".tmp")
+    tmp.write_bytes(data)
+    _remove_banner_files()
+    tmp.replace(folder / name)
+    return {"filename": name}
+
+
+@app.get("/banner-image/{filename}")
+def get_banner_image(filename: str):
+    m = _BANNER_NAME.match(filename)
+    path = _banner_dir() / filename
+    if not m or not path.is_file():
+        raise HTTPException(status_code=404, detail="Banner image not found")
+    return Response(content=path.read_bytes(), media_type=_BANNER_TYPES[m.group(1)],
+                    headers={"Cache-Control": "max-age=31536000, immutable"})
+
+
+@app.delete("/banner-image")
+def delete_banner_image():
+    _remove_banner_files()
+    return {"deleted": True}
+
 
 # ---------------------------------------------------------------------------
 # Export

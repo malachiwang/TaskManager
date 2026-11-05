@@ -159,6 +159,28 @@ export async function deleteTask(id) {
   return res.json();
 }
 
+// Custom banner image (tm-clean 25) — stored next to the database.
+export async function uploadBannerImage(file) {
+  const body = new FormData();
+  body.append('file', file);
+  const res = await fetch(`${BASE}/banner-image`, { method: 'POST', body });
+  if (!res.ok) {
+    let detail = '';
+    try { detail = (await res.json()).detail; } catch { /* not JSON */ }
+    throw new Error(detail || `Upload failed (${res.status}).`);
+  }
+  return (await res.json()).filename;
+}
+
+export async function deleteBannerImage() {
+  const res = await fetch(`${BASE}/banner-image`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`deleteBannerImage failed: ${res.status}`);
+}
+
+export function bannerImageUrl(filename) {
+  return `${BASE}/banner-image/${encodeURIComponent(filename)}`;
+}
+
 // Workspace search (tm-clean 11).
 export async function searchWorkspace(q, signal) {
   const res = await fetch(`${BASE}/search/workspace?q=${encodeURIComponent(q)}`, { signal });

@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { downloadExportBackup, downloadExportSheet, restoreBackup, fetchDoc } from '../api.js';
+import { downloadExportBackup, downloadExportSheet, restoreBackup, fetchDoc, uploadBannerImage, deleteBannerImage } from '../api.js';
 import CsvImport from './CsvImport.jsx';
 import {
   KEYBINDS, KB_GROUP_ORDER, FIXED_SHORTCUTS, FIXED_REASON_LABELS,
@@ -9,7 +9,7 @@ import {
 } from '../keybinds.js';
 import {
   loadAppearance, saveAppearance,
-  APPEARANCE_MODES, ACCENT_THEMES, MOTION_LEVELS, BANNER_STYLES, VISUAL_THEMES,
+  APPEARANCE_MODES, ACCENT_THEMES, MOTION_LEVELS, BANNER_STYLES, BANNER_POSITIONS, VISUAL_THEMES,
 } from '../appearance.js';
 import {
   loadPreferences as loadDashPrefs,
@@ -282,6 +282,52 @@ export default function Settings({ sheetMonth = null }) {
     } catch {}
   }
 
+  // Custom banner image (tm-clean 25): stored by the backend next to the
+  // database; only the filename lives in the appearance settings.
+  const bannerInputRef = useRef(null);
+  const [bannerBusy, setBannerBusy] = useState(false);
+  const [bannerError, setBannerError] = useState('');
+  const BANNER_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+  async function handleBannerFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setBannerError('');
+    if (!BANNER_TYPES.includes(file.type) || file.size > 10 * 1024 * 1024) {
+      setBannerError('Choose a PNG, JPG or WebP image up to 10 MB.');
+      return;
+    }
+    setBannerBusy(true);
+    try {
+      const filename = await uploadBannerImage(file);
+      updateAppearance({ banner: 'custom', bannerImage: filename });
+    } catch (err) {
+      setBannerError(err?.message || 'Upload failed.');
+    } finally {
+      setBannerBusy(false);
+    }
+  }
+  function chooseBanner(value) {
+    setBannerError('');
+    if (value === 'custom' && !appearance.bannerImage) {
+      bannerInputRef.current?.click();
+      return;
+    }
+    updateAppearance({ banner: value });
+  }
+  async function removeBannerImage() {
+    setBannerError('');
+    setBannerBusy(true);
+    try {
+      await deleteBannerImage();
+      updateAppearance({ banner: 'network', bannerImage: null });
+    } catch (err) {
+      setBannerError(err?.message || 'Could not remove the image.');
+    } finally {
+      setBannerBusy(false);
+    }
+  }
+
   function updateAppearance(patch) {
     setAppearance((prev) => {
       const next = { ...prev, ...patch };
@@ -433,14 +479,61 @@ export default function Settings({ sheetMonth = null }) {
                       type="button"
                       className={`settings-seg-btn${appearance.banner === b.value ? ' settings-seg-btn--active' : ''}`}
                       aria-pressed={appearance.banner === b.value}
-                      onClick={() => updateAppearance({ banner: b.value })}
+                      onClick={() => chooseBanner(b.value)}
                     >
                       {b.label}
                     </button>
                   ))}
                 </div>
+                <input
+                  ref={bannerInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  style={{ display: 'none' }}
+                  onChange={handleBannerFile}
+                />
               </div>
             </div>
+            {appearance.banner === 'custom' && appearance.bannerImage && (
+              <>
+                <div className="ws-ctrl-row">
+                  <div className="ws-ctrl-info">
+                    <span className="ws-ctrl-label">Image</span>
+                  </div>
+                  <div className="ws-ctrl-action">
+                    <button className="button-secondary" onClick={() => bannerInputRef.current?.click()} disabled={bannerBusy}>
+                      Choose image…
+                    </button>
+                    <button className="button-secondary" onClick={removeBannerImage} disabled={bannerBusy}>
+                      Remove image
+                    </button>
+                  </div>
+                </div>
+                <div className="ws-ctrl-row">
+                  <div className="ws-ctrl-info">
+                    <span className="ws-ctrl-label">Position</span>
+                  </div>
+                  <div className="ws-ctrl-action">
+                    <div className="settings-seg" role="group" aria-label="Banner image position">
+                      {BANNER_POSITIONS.map((pos) => (
+                        <button
+                          key={pos.value}
+                          type="button"
+                          className={`settings-seg-btn${appearance.bannerPosition === pos.value ? ' settings-seg-btn--active' : ''}`}
+                          aria-pressed={appearance.bannerPosition === pos.value}
+                          onClick={() => updateAppearance({ bannerPosition: pos.value })}
+                        >
+                          {pos.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+            {bannerError && (
+              <div className="ws-restore-msg ws-restore-msg--error" role="alert">{bannerError}</div>
+            )}
           </div>
 
           {/* 02 Task Defaults */}
