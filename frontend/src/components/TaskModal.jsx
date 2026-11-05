@@ -518,6 +518,7 @@ export default function TaskModal({ task, sectionSuggestions = [], initialValues
                 <label className="task-modal-label" htmlFor="tm-category">Category</label>
                 <input
                   id="tm-category"
+                  autoComplete="off"
                   className="task-modal-input"
                   value={form.category}
                   onChange={(e) => set('category', e.target.value)}
