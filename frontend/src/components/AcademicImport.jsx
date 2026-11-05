@@ -177,18 +177,13 @@ export default function AcademicImport({ contexts, onClose, onChanged }) {
                   onChange={(e) => setText(e.target.value)}
                 />
               </div>
-              <div className="task-modal-field-hint">
-                Parsing is local and deterministic. Nothing becomes a task or a
-                calendar record until you approve it on the next screen.
-              </div>
               {error && <div className="task-modal-save-error" role="alert">{error}</div>}
             </>
           ) : (
             <>
               {candidates.length === 0 && (
                 <div className="task-modal-field-hint">
-                  No schedulable lines were recognized. Each candidate needs a
-                  date (or a weekday + time for recurring rows).
+                  No schedulable lines were recognized.
                 </div>
               )}
               {pending.length > 0 && (
@@ -208,7 +203,6 @@ export default function AcademicImport({ contexts, onClose, onChanged }) {
                       className="task-modal-input cal-dup-date"
                       value={until}
                       onChange={(e) => setUntil(e.target.value)}
-                      title="Recurring class/office-hour rows expand into fixed calendar entries up to this date"
                     />
                   </span>
                   <button type="button" className="task-modal-save" disabled={busy || selected.length === 0}
@@ -264,7 +258,6 @@ export default function AcademicImport({ contexts, onClose, onChanged }) {
                           : 'Possible duplicate of an existing record'}
                         {c.date_conflict && c.duplicate_of.startsWith('task:') && (
                           <button type="button" className="cal-flag-btn"
-                            title="Update the existing task's deadline instead of creating a new one"
                             onClick={() => approve(c, { mode: 'update_existing' })}>
                             Accept change
                           </button>

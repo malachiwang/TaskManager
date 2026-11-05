@@ -509,8 +509,8 @@ export default function ReadingSheet({ searchTarget = null, onTargetConsumed = (
                     <td className="rd-col-buynotes" title={book.purchase_notes}>{book.purchase_notes || '—'}</td>
                     <td className="rd-col-actions">
                       <div className="rd-action-group">
-                        <button className="action-btn" onClick={() => markBought(book)} title="Mark bought — moves to the library as an unread book">BOUGHT</button>
-                        <button className="action-btn" onClick={() => openEdit(book)} title="Book details">EDIT</button>
+                        <button className="action-btn" onClick={() => markBought(book)}>BOUGHT</button>
+                        <button className="action-btn" onClick={() => openEdit(book)}>EDIT</button>
                       </div>
                     </td>
                   </tr>
@@ -556,7 +556,7 @@ export default function ReadingSheet({ searchTarget = null, onTargetConsumed = (
                         min="0"
                         className="rd-page-input"
                         defaultValue={book.current_page}
-                        title="Current page — updates progress and logs today's checkpoint"
+                        aria-label="Current page"
                         onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
                         onBlur={(e) => commitPage(book, e.target.value)}
                       />
@@ -580,14 +580,14 @@ export default function ReadingSheet({ searchTarget = null, onTargetConsumed = (
                     </td>
                     <td className="rd-col-actions">
                       <div className="rd-action-group">
-                        <button className="action-btn" onClick={() => openEdit(book)} title="Book details">EDIT</button>
+                        <button className="action-btn" onClick={() => openEdit(book)}>EDIT</button>
                         {book.status === 'active' && (
-                          <button className="action-btn" onClick={() => changeStatus(book, 'finished')} title="Mark finished">FINISH</button>
+                          <button className="action-btn" onClick={() => changeStatus(book, 'finished')}>FINISH</button>
                         )}
                         {book.status !== 'archived' ? (
-                          <button className="action-btn" onClick={() => changeStatus(book, 'archived')} title="Archive (keeps history)">ARCHIVE</button>
+                          <button className="action-btn" onClick={() => changeStatus(book, 'archived')}>ARCHIVE</button>
                         ) : (
-                          <button className="action-btn" onClick={() => changeStatus(book, 'active')} title="Reactivate">UNARCHIVE</button>
+                          <button className="action-btn" onClick={() => changeStatus(book, 'active')}>UNARCHIVE</button>
                         )}
                       </div>
                     </td>
@@ -606,11 +606,11 @@ export default function ReadingSheet({ searchTarget = null, onTargetConsumed = (
                             <input type="date" className="rd-cp-dateinput"
                               value={draftDate} onChange={(e) => setDraftDate(e.target.value)}
                               onKeyDown={(e) => { if (e.key === 'Enter') submitCheckpoint(book.id); if (e.key === 'Escape') cancelAdd(); }} />
-                            <button className="rd-cp-save" onClick={() => submitCheckpoint(book.id)} title="Save checkpoint">✓</button>
-                            <button className="rd-cp-cancel" onClick={cancelAdd} title="Cancel">×</button>
+                            <button className="rd-cp-save" onClick={() => submitCheckpoint(book.id)} aria-label="Save checkpoint">✓</button>
+                            <button className="rd-cp-cancel" onClick={cancelAdd} aria-label="Cancel">×</button>
                           </span>
                         ) : (
-                          <button className="rd-checkpoint rd-checkpoint-add" onClick={() => startAdd(book.id)} title="Add a page checkpoint">+</button>
+                          <button className="rd-checkpoint rd-checkpoint-add" onClick={() => startAdd(book.id)} aria-label="Add checkpoint">+</button>
                         )}
                       </div>
                     </td>

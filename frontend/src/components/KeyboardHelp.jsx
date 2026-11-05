@@ -49,17 +49,11 @@ export default function KeyboardHelp({ panelRef, closeButtonRef, onClose, resolv
                     <span className="ws-kbd-help-changed"> · default {bindingLabel(normalizeBinding(def))}</span>
                   )}
                 </span>
-                {def?.customizable && (
-                  <span className="ws-kbd-help-custom" title="Customizable in Settings">✎</span>
-                )}
               </div>
             );
           })}
         </div>
       ))}
-      <div className="ws-kbd-help-note ws-kbd-help-footnote">
-        ✎ marks customizable shortcuts — change them in Settings → Keyboard shortcuts.
-      </div>
     </div>
   );
 }

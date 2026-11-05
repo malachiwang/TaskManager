@@ -140,7 +140,6 @@ export function RepeatFields({ repeat, onChange, anchorWeekday, startMin, endMin
           className={`task-modal-seg-btn${repeat.mode === 'weekly' ? ' task-modal-seg-btn--active' : ''}`}
           aria-pressed={repeat.mode === 'weekly'}
           disabled={disabled}
-          title="Repeat every week on the same weekday at the same time"
           onClick={() => set({ mode: 'weekly', weekdays: [anchorWeekday], interval: 1 })}
         >
           Weekly
@@ -574,12 +573,6 @@ export default function CalendarEditor({
                 </datalist>
               </div>
             )}
-            {!isLinked && !isRecurring && (
-              <div className="task-modal-field-hint">
-                This lives only on the Calendar — it is not a Grid task and
-                carries no pressure. Use “Add to main Grid…” to promote it.
-              </div>
-            )}
           </div>
 
           <div className="task-modal-section">
@@ -609,9 +602,6 @@ export default function CalendarEditor({
                   Fixed
                 </button>
               </div>
-              <div className="task-modal-field-hint">
-                Fixed sessions resist future automatic replanning. Session status: {statusLabel}.
-              </div>
             </div>
             {isRecurring && (
               <div className="task-modal-field task-modal-field--full">
@@ -629,9 +619,6 @@ export default function CalendarEditor({
                     </button>
                   ))}
                 </div>
-                <div className="task-modal-field-hint">
-                  Past occurrences and recorded work are never rewritten.
-                </div>
               </div>
             )}
           </div>
@@ -647,8 +634,7 @@ export default function CalendarEditor({
             />
             {isRecurring && (
               <div className="task-modal-field-hint">
-                Repeat-rule changes apply to the whole series. Choosing None
-                stops the repeat after this occurrence — history stays.
+                Repeat changes apply to the whole series.
               </div>
             )}
           </div>
@@ -691,11 +677,6 @@ export default function CalendarEditor({
                 <button
                   type="button"
                   className="task-modal-delete-btn"
-                  title={isRecurring
-                    ? 'Remove this occurrence, this and following, or the whole series'
-                    : isLinked
-                      ? 'Remove only this scheduled session — never the task'
-                      : 'Remove this calendar entry'}
                   onClick={() => setConfirmDelete(true)}
                 >
                   {isLinked ? 'Remove session' : 'Remove entry'}
@@ -706,9 +687,6 @@ export default function CalendarEditor({
                     <button
                       type="button"
                       className="task-modal-cancel"
-                      title={isLinked
-                        ? 'Mark this session completed (records a completion for its date)'
-                        : 'Mark this entry completed — calendar-only, no Grid completion'}
                       onClick={() => { onCompleteSession(); onClose(); }}
                     >
                       {isLinked ? 'Complete session' : 'Complete entry'}
@@ -718,7 +696,6 @@ export default function CalendarEditor({
                     <button
                       type="button"
                       className="task-modal-cancel"
-                      title="Open the complete TaskManager record editor"
                       onClick={onOpenFullTask}
                     >
                       Open full task
@@ -727,7 +704,6 @@ export default function CalendarEditor({
                     <button
                       type="button"
                       className="task-modal-cancel"
-                      title="Create a canonical Grid task from this entry via the standard New Task form"
                       onClick={() => onPromote({
                         name: form.name.trim() || session.task_name,
                         depth: form.depth || 0,

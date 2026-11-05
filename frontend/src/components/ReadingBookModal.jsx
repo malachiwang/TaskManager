@@ -80,9 +80,6 @@ export default function ReadingBookModal({ book, onSave, onDelete, onClose, init
           <div className="task-modal-header-left">
             <div className="task-modal-kicker">{kicker}</div>
             <div className="task-modal-title">{isEdit ? (book.title || 'Untitled') : 'New book'}</div>
-            <div className="task-modal-subtitle">
-              {form.to_buy ? 'reading wishlist · priority · purchase link' : 'reading sheet · current page · progress'}
-            </div>
           </div>
           <button className="task-modal-close" type="button" onClick={onClose} aria-label="Close">×</button>
         </div>
@@ -105,11 +102,6 @@ export default function ReadingBookModal({ book, onSave, onDelete, onClose, init
                     To buy
                   </button>
                 </div>
-                {isEdit && !!book.to_buy && !form.to_buy && (
-                  <div className="task-modal-field-hint">
-                    Saving marks this book bought — it moves to the library as an unread book.
-                  </div>
-                )}
               </div>
               <div className="task-modal-field task-modal-field--full">
                 <label className="task-modal-label" htmlFor="rb-title">Title</label>
@@ -195,13 +187,11 @@ export default function ReadingBookModal({ book, onSave, onDelete, onClose, init
                   <label className="task-modal-label" htmlFor="rb-started">Started</label>
                   <input id="rb-started" className="task-modal-input" type="date"
                     value={form.started_at} onChange={(e) => set('started_at', e.target.value)} />
-                  <div className="task-modal-field-hint">MM/DD/YYYY</div>
                 </div>
                 <div className="task-modal-field">
                   <label className="task-modal-label" htmlFor="rb-finished">Finished</label>
                   <input id="rb-finished" className="task-modal-input" type="date"
                     value={form.finished_at} onChange={(e) => set('finished_at', e.target.value)} />
-                  <div className="task-modal-field-hint">MM/DD/YYYY</div>
                 </div>
               </div>
             </div>
@@ -231,9 +221,6 @@ export default function ReadingBookModal({ book, onSave, onDelete, onClose, init
               <>
                 {isEdit && onDelete && (
                   <button type="button" className="task-modal-delete-btn" onClick={() => setConfirmDelete(true)}>Delete Book</button>
-                )}
-                {!isEdit && (
-                  <span className="task-modal-footer-note">Changes save to local SQLite reading record</span>
                 )}
                 <div className="task-modal-actions">
                   <button type="button" className="task-modal-cancel" onClick={onClose}>Cancel</button>

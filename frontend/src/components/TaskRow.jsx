@@ -350,7 +350,6 @@ export default function TaskRow({
           <button
             className="action-btn"
             onClick={() => onEdit(task)}
-            title="Task details"
           >EDIT</button>
         </div>
       </td>

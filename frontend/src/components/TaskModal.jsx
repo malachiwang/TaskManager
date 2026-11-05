@@ -13,30 +13,6 @@ import TaskDatePicker, { getLocalTodayIso } from './TaskDatePicker.jsx';
 const STATUS_OPTIONS = ['active', 'hiatus', 'finished'];
 const STATUS_LABELS = { active: 'Active', hiatus: 'Hiatus', finished: 'Finished' };
 
-// One-line consequence hint under the status control. Transition-specific
-// copy (opening/closing a hiatus, un-finishing) wins over the steady state.
-function statusHint(choice, task) {
-  if (choice === 'active') {
-    if (task?.status === 'hiatus') {
-      return 'Resuming closes the hiatus as of yesterday — its dates stay blank permanently. Today onward returns to normal checkboxes.';
-    }
-    if (task?.is_ended) {
-      return 'Clears the end date — the task returns to normal tracking.';
-    }
-    return 'Tracks normally and counts toward pressure.';
-  }
-  if (choice === 'hiatus') {
-    if (task?.status !== 'hiatus') {
-      return 'Hiatus starts today. Dates during the hiatus render as blank cells; completion history underneath is preserved.';
-    }
-    return 'Paused — hiatus-period cells render blank; completion history is preserved.';
-  }
-  if (task?.is_ended) {
-    return 'Finished — excluded from tracking and pressure. Past completions are preserved.';
-  }
-  return 'Sets the End date below — dates after it are disabled and the task leaves active tracking. Past completions are preserved.';
-}
-
 function loadTaskDefaults() {
   try {
     const saved = localStorage.getItem('taskos-settings');
@@ -426,9 +402,6 @@ export default function TaskModal({ task, sectionSuggestions = [], initialValues
             <div className="task-modal-title">
               {isEdit ? (task.name || 'Untitled') : 'New task record'}
             </div>
-            <div className="task-modal-subtitle">
-              {isEdit ? 'scheduling · status · priority · notes' : 'local task record · SQLite'}
-            </div>
             {isEdit && (() => {
               // Read-only urgency decomposition (P4.0B) — explains the current
               // pressure. Inactive tasks (Hiatus/Finished/scheduled) show '—'.
@@ -540,10 +513,6 @@ export default function TaskModal({ task, sectionSuggestions = [], initialValues
               <datalist id="tm-context-options">
                 {contexts.map((c) => <option key={c.id} value={c.name} />)}
               </datalist>
-              <div className="task-modal-field-hint">
-                Links this task to a course/project context. New names create the
-                context; blank removes the link.
-              </div>
             </div>
 
             {/* Status — segmented buttons (Active / Hiatus / Finished) */}
@@ -562,7 +531,6 @@ export default function TaskModal({ task, sectionSuggestions = [], initialValues
                   </button>
                 ))}
               </div>
-              <div className="task-modal-field-hint">{statusHint(statusChoice, task)}</div>
             </div>
 
             {/* Hiatus history (P11.0/P11.2) — per-interval Edit + guarded delete */}
@@ -631,21 +599,14 @@ export default function TaskModal({ task, sectionSuggestions = [], initialValues
                         ) : (
                           <span className="task-modal-hiatus-actions">
                             <button type="button" className="task-modal-hiatus-edit-btn"
-                              title="Edit this interval's dates — blanking follows the new range; completions are untouched"
                               onClick={() => startEditPeriod(p)}>Edit</button>
                             <button type="button" className="task-modal-hiatus-delete"
-                              title="Remove this hiatus interval — its dates return to normal cells; nothing else changes"
                               onClick={() => setConfirmPeriodDelete(p.id)}>Remove</button>
                           </span>
                         )}
                       </div>
                     )
                   ))}
-                </div>
-                <div className="task-modal-field-hint">
-                  Dates inside these intervals render as blank hiatus cells.
-                  Editing an interval changes which dates are blank; removing one
-                  un-blanks its dates. Completions and text overrides are preserved.
                 </div>
               </div>
             )}
@@ -665,10 +626,6 @@ export default function TaskModal({ task, sectionSuggestions = [], initialValues
                     {d === 0 ? 'None' : `D${d}`}
                   </button>
                 ))}
-              </div>
-              <div className="task-modal-field-hint">
-                D1 deep work · D2 focused/interruptible · D3 shallow/administrative.
-                Shown on Calendar blocks and used for depth windows.
               </div>
             </div>
 
@@ -724,9 +681,6 @@ export default function TaskModal({ task, sectionSuggestions = [], initialValues
                   value={form.estimated_minutes}
                   onChange={(e) => set('estimated_minutes', e.target.value)}
                 />
-                <div className="task-modal-field-hint">
-                  Default Calendar block length when scheduling this task. Blank = none.
-                </div>
               </div>
               <div className="task-modal-field">
                 <label className="task-modal-label" htmlFor="tm-due-date">Due date</label>
@@ -735,9 +689,6 @@ export default function TaskModal({ task, sectionSuggestions = [], initialValues
                   value={form.due_date}
                   onChange={(v) => set('due_date', v)}
                 />
-                <div className="task-modal-field-hint">
-                  Deadline for Calendar coverage math — distinct from End date.
-                </div>
               </div>
               <div className="task-modal-field">
                 <label className="task-modal-label" htmlFor="tm-active-from">Active from</label>
@@ -746,7 +697,6 @@ export default function TaskModal({ task, sectionSuggestions = [], initialValues
                   value={form.active_from}
                   onChange={(v) => set('active_from', v)}
                 />
-                <div className="task-modal-field-hint">MM/DD/YYYY</div>
               </div>
               <div className="task-modal-field">
                 <label className="task-modal-label" htmlFor="tm-lastdone">Manual last done</label>
@@ -755,7 +705,6 @@ export default function TaskModal({ task, sectionSuggestions = [], initialValues
                   value={form.manual_last_done_override}
                   onChange={(v) => set('manual_last_done_override', v)}
                 />
-                <div className="task-modal-field-hint">MM/DD/YYYY</div>
               </div>
               <div className="task-modal-field">
                 <label className="task-modal-label" htmlFor="tm-end-date">End date</label>
@@ -764,9 +713,6 @@ export default function TaskModal({ task, sectionSuggestions = [], initialValues
                   value={form.end_date}
                   onChange={(v) => set('end_date', v)}
                 />
-                <div className="task-modal-field-hint">
-                  MM/DD/YYYY · Dates after this are disabled; past completions are preserved.
-                </div>
               </div>
             </div>
           </div>
@@ -815,8 +761,7 @@ export default function TaskModal({ task, sectionSuggestions = [], initialValues
               /* ── Delete confirmation zone ── */
               <div className="task-modal-confirm-zone">
                 <span className="task-modal-confirm-copy">
-                  This removes the task from the grid and dashboard.
-                  Completion history is preserved and will remain in any existing archive snapshots.
+                  Remove this task from the grid? Its completion history is kept.
                 </span>
                 <div className="task-modal-confirm-actions">
                   <button
@@ -851,16 +796,10 @@ export default function TaskModal({ task, sectionSuggestions = [], initialValues
                   <button
                     type="button"
                     className="task-modal-cancel"
-                    title="Open the Calendar with this task armed for placement — never duplicates the task"
                     onClick={() => onSchedule(task)}
                   >
                     Schedule on Calendar
                   </button>
-                )}
-                {!isEdit && (
-                  <span className="task-modal-footer-note">
-                    Changes save to local SQLite task record
-                  </span>
                 )}
                 <div className="task-modal-actions">
                   {saveError && (

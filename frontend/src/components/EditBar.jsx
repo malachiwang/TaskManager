@@ -72,7 +72,6 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
         <div className="edit-bar-actions">
           <button
             className="edit-bar-btn"
-            title="Convert selected checkboxes to blank text cells and blank selected text cells. Completion history is kept."
             onClick={() => onRangeDelete(cells)}
             disabled={checkboxCount === 0 && overrideWithText === 0}
           >
@@ -106,7 +105,6 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
               </button>
             )
           )}
-          <span className="edit-bar-hint">Del converts · Esc collapses range</span>
         </div>
         {feedbackLine}
       </div>
@@ -299,7 +297,6 @@ export default function EditBar({ selectedCell, tasks, completions, notes, today
           )}
           <button
             className="edit-bar-btn"
-            title="Convert this date cell to a text cell (checkbox is hidden, not deleted)"
             onClick={() => onConvertToText(taskId, date)}
           >Text…</button>
         </div>

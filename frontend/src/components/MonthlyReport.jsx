@@ -176,9 +176,6 @@ export default function MonthlyReport() {
       <div className="ws-dash-header">
         <div className="ws-dash-header-left">
           <div className="ws-dash-title">Reports</div>
-          <div className="ws-dash-sub">
-            what happened over time · historical trends, completion patterns, pressure changes, reading progress
-          </div>
         </div>
         <div className="report-period">
           <div className="report-period-modes" role="group" aria-label="Report view">
@@ -200,7 +197,6 @@ export default function MonthlyReport() {
               className={`report-mode-btn${view === 'execution' ? ' report-mode-btn--active' : ''}`}
               aria-pressed={view === 'execution'}
               onClick={() => setView('execution')}
-              title="Planned vs actual, estimate accuracy, execution patterns, and the upcoming-load forecast"
             >
               Execution
             </button>
@@ -285,7 +281,6 @@ export default function MonthlyReport() {
         <div className="ws-frame ws-frame--full">
           <div className="ws-frame-header">
             <span>Staleness &amp; Cleanup Candidates</span>
-            <span className="ws-frame-header-sub">current-state · which tasks may need pause, archive, or rewording rather than doing</span>
           </div>
           <div className="ws-frame-body">
             {!staleness ? <div className="ws-empty">Loading…</div> : (
@@ -320,7 +315,7 @@ export default function MonthlyReport() {
 
         {/* Completed this period */}
         <div className="ws-frame ws-frame--full">
-          <div className="ws-frame-header"><span>Completed This Period</span><span className="ws-frame-header-sub">completion checkbox activity in {label}</span></div>
+          <div className="ws-frame-header"><span>Completed This Period</span></div>
           <div className="ws-frame-body">
             {compError ? <div className="ws-empty">Could not load completions.</div>
               : !activity ? <div className="ws-empty">Loading…</div>
@@ -367,7 +362,7 @@ export default function MonthlyReport() {
 
         {/* Finished this period */}
         <div className="ws-frame ws-frame--full">
-          <div className="ws-frame-header"><span>Finished This Period</span><span className="ws-frame-header-sub">explicit Finished (end date in period) · not completion checkboxes</span></div>
+          <div className="ws-frame-header"><span>Finished This Period</span></div>
           {tasksError ? <div className="ws-empty">Could not load tasks.</div>
             : !tasks ? <div className="ws-empty">Loading…</div>
             : finished.length === 0 ? <div className="ws-empty">No tasks were marked Finished this period.</div>
@@ -389,7 +384,7 @@ export default function MonthlyReport() {
 
         {/* Carried forward */}
         <div className="ws-frame ws-frame--full">
-          <div className="ws-frame-header"><span>Carried Forward</span><span className="ws-frame-header-sub">currently unresolved · high pressure still active (current-state approximation)</span></div>
+          <div className="ws-frame-header"><span>Carried Forward</span></div>
           {!tasks ? <div className="ws-empty">Loading…</div>
             : carried.length === 0 ? <div className="ws-empty">Nothing high-pressure is currently carried forward.</div>
             : (
@@ -412,7 +407,7 @@ export default function MonthlyReport() {
 
         {/* Neglected all period */}
         <div className="ws-frame ws-frame--full">
-          <div className="ws-frame-header"><span>Neglected All Period</span><span className="ws-frame-header-sub">active but no completion during the period</span></div>
+          <div className="ws-frame-header"><span>Neglected All Period</span></div>
           {!tasks || !activity ? <div className="ws-empty">Loading…</div>
             : neglected.length === 0 ? <div className="ws-empty">Every relevant active task got some attention this period.</div>
             : (
@@ -436,9 +431,9 @@ export default function MonthlyReport() {
 
         {/* Section breakdown */}
         <div className="ws-frame ws-frame--full">
-          <div className="ws-frame-header"><span>Section Breakdown</span><span className="ws-frame-header-sub">completions + current pressure by section</span></div>
+          <div className="ws-frame-header"><span>Section Breakdown</span></div>
           {uncatHeavy && (
-            <div className="report-note">Category analysis is limited — {cleanup.uncategorizedPct}% of active tasks are uncategorized.</div>
+            <div className="report-note">{cleanup.uncategorizedPct}% of active tasks are uncategorized.</div>
           )}
           {!tasks || !activity ? <div className="ws-empty">Loading…</div>
             : breakdown.length === 0 ? <div className="ws-empty">No active sections.</div>
@@ -467,7 +462,7 @@ export default function MonthlyReport() {
 
         {/* Consistency + Pressure change (two compact frames side by side via grid) */}
         <div className="ws-frame ws-frame--full">
-          <div className="ws-frame-header"><span>Consistency</span><span className="ws-frame-header-sub">momentum over the period</span></div>
+          <div className="ws-frame-header"><span>Consistency</span></div>
           <div className="ws-frame-body">
             {!cons ? <div className="ws-empty">Loading…</div> : (
               <div className="report-stat-row">
@@ -482,11 +477,11 @@ export default function MonthlyReport() {
 
         {/* Pressure change */}
         <div className="ws-frame ws-frame--full">
-          <div className="ws-frame-header"><span>Pressure Change</span><span className="ws-frame-header-sub">section-level · from snapshot history (task-level history not stored)</span></div>
+          <div className="ws-frame-header"><span>Pressure Change</span></div>
           <div className="ws-frame-body">
             {!snapshot ? <div className="ws-empty">Loading…</div>
               : !pressure.supported ? (
-                <div className="report-note">Pressure change uses available snapshot days only — not enough snapshot history yet ({pressure.dayCount} day{pressure.dayCount !== 1 ? 's' : ''} captured). Visit the Dashboard regularly to build it.</div>
+                <div className="report-note">Not enough snapshot history yet ({pressure.dayCount} day{pressure.dayCount !== 1 ? 's' : ''}).</div>
               ) : (
                 <div className="report-two-col">
                   <div>
@@ -512,7 +507,7 @@ export default function MonthlyReport() {
 
         {/* System cleanup */}
         <div className="ws-frame ws-frame--full">
-          <div className="ws-frame-header"><span>System Cleanup</span><span className="ws-frame-header-sub">is this backlog real work, or dirty setup?</span></div>
+          <div className="ws-frame-header"><span>System Cleanup</span></div>
           <div className="ws-frame-body">
             {!cleanup ? <div className="ws-empty">Loading…</div> : (
               <div className="report-stat-row">
@@ -527,7 +522,7 @@ export default function MonthlyReport() {
 
         {/* Reading summary (books-only, optional) */}
         <div className="ws-frame ws-frame--full">
-          <div className="ws-frame-header"><span>Reading Summary</span><span className="ws-frame-header-sub">books activity · from the Reading Sheet</span></div>
+          <div className="ws-frame-header"><span>Reading Summary</span></div>
           <div className="ws-frame-body">
             {!reading ? <div className="ws-empty">Loading…</div>
               : reading.total === 0 ? <div className="ws-empty">No books tracked yet.</div>
@@ -563,7 +558,7 @@ export default function MonthlyReport() {
 
         {/* Books to Buy (P11.0) */}
         <div className="ws-frame ws-frame--full">
-          <div className="ws-frame-header"><span>Books to Buy</span><span className="ws-frame-header-sub">reading wishlist · marked-bought activity in {label}</span></div>
+          <div className="ws-frame-header"><span>Books to Buy</span></div>
           <div className="ws-frame-body">
             {!toBuy ? <div className="ws-empty">Loading…</div>
               : toBuy.count === 0 && toBuy.boughtInPeriod.length === 0
@@ -591,7 +586,7 @@ export default function MonthlyReport() {
 
         {/* Hiatus (P11.0) — current state + interval boundaries in the period */}
         <div className="ws-frame ws-frame--full">
-          <div className="ws-frame-header"><span>Hiatus</span><span className="ws-frame-header-sub">tasks on pause · hiatus intervals touching {label}</span></div>
+          <div className="ws-frame-header"><span>Hiatus</span></div>
           <div className="ws-frame-body">
             {!hiatus ? <div className="ws-empty">Loading…</div>
               : hiatus.currentCount === 0 && hiatus.startedInPeriod === 0 && hiatus.endedInPeriod === 0

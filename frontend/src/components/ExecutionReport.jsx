@@ -182,7 +182,6 @@ export default function ExecutionReport({ start, end }) {
         <div className="ws-frame">
           <div className="ws-frame-header">
             <span>Estimate accuracy</span>
-            <span className="ws-frame-header-sub">medians over recorded history · informational only</span>
           </div>
           {!estimates ? <div className="ws-empty">Loading…</div> : (
             <div className="exec-facts">
@@ -222,7 +221,6 @@ export default function ExecutionReport({ start, end }) {
         <div className="ws-frame">
           <div className="ws-frame-header">
             <span>Execution patterns</span>
-            <span className="ws-frame-header-sub">historical observations, not rules</span>
           </div>
           {!patterns ? <div className="ws-empty">Loading…</div> : insufficientAll ? (
             <div className="ws-empty">Not enough execution history yet — patterns appear once enough sessions are recorded (n ≥ {patterns.min_sample}).</div>
@@ -254,7 +252,6 @@ export default function ExecutionReport({ start, end }) {
         <div className="ws-frame ws-frame--full">
           <div className="ws-frame-header">
             <span>Upcoming load — next 8 weeks</span>
-            <span className="ws-frame-header-sub">fixed commitments vs flexible estimated work · click a week for its sources</span>
           </div>
           {!forecast ? <div className="ws-empty">Loading…</div> : (
             <div className="exec-forecast">

@@ -2067,7 +2067,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
             aria-label={isEntry
               ? (done ? 'Mark entry not completed' : 'Mark entry completed (calendar-only)')
               : (done ? 'Mark session not completed' : 'Mark session completed')}
-            title={isEntry ? 'Calendar-only entry — completing it never writes a Grid completion' : undefined}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => { e.stopPropagation(); toggleComplete(s); }}
           >
@@ -2200,10 +2199,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
             />
             Protected — ask before scheduling other-depth work here
           </label>
-          <div className="cal-popover-hint">
-            Depth windows are background capacity regions — what kind of work this
-            time is for, not a task.
-          </div>
           {creator.error && <div className="cal-popover-error" role="alert">{creator.error}</div>}
           <div className="cal-popover-actions">
             <button type="button" className="task-modal-cancel" onClick={() => setCreator(null)}>Cancel</button>
@@ -2280,9 +2275,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
                     type="button"
                     className={`cal-flag-btn${matches(rule) ? ' is-active' : ''}`}
                     aria-pressed={matches(rule)}
-                    title={label === 'Weekly'
-                      ? 'Every week, same weekday and time'
-                      : `Repeat ${label.toLowerCase()} at this time`}
                     onClick={() => setCreator((c) => (c ? { ...c, repeat: rule } : c))}
                   >
                     {label}
@@ -2333,16 +2325,10 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
                 type="button"
                 className={`cal-flag-btn${creator.isFixed ? ' is-active' : ''}`}
                 aria-pressed={creator.isFixed}
-                title="Fixed sessions resist future automatic replanning"
                 onClick={() => setCreator((c) => (c ? { ...c, isFixed: !c.isFixed } : c))}
               >
                 {creator.isFixed ? 'Fixed' : 'Flexible'}
               </button>
-            </div>
-            <div className="cal-popover-hint">
-              Creates a calendar entry only — nothing is added to the Grid
-              unless you choose “Add to main Grid…”. {QUICK_CREATE_HINT} for
-              inline creation · ⇧ drag for a depth window.
             </div>
             {(() => {
               const pw = protectedConflictAt(creator.dateIso, creator.startMin, creator.endMin, creator.depth || null);
@@ -2357,7 +2343,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
               <button
                 type="button"
                 className="task-modal-cancel"
-                title="Create this as a canonical Grid task via the standard New Task form"
                 onClick={addToGridFromCreator}
                 disabled={creator.saving}
               >
@@ -2398,7 +2383,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
                   role="option"
                   aria-selected="false"
                   className={`cal-task-picker-row${t.depth ? ` cal-task-picker-row--d${t.depth}` : ''}`}
-                  title="Schedule this task in the selected interval"
                   onClick={() => scheduleExistingTask(t)}
                 >
                   <span className="cal-task-picker-name">{displayTitle(t.name)}</span>
@@ -2415,10 +2399,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
                   </span>
                 </button>
               ))}
-            </div>
-            <div className="cal-popover-hint">
-              Schedules a session for the chosen task — the task itself is never
-              duplicated.
             </div>
             {creator.error && <div className="cal-popover-error" role="alert">{creator.error}</div>}
             <div className="cal-popover-actions">
@@ -2457,7 +2437,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
             {isNow && s.status === 'scheduled' && <span className="cal-now-chip">NOW</span>}
             {displayTitle(s.task_name)}
             {s.task_id == null && (
-              <span className="cal-entry-chip" title="Lives only on the Calendar — not a Grid task">
+              <span className="cal-entry-chip">
                 calendar-only
               </span>
             )}
@@ -2513,14 +2493,12 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
         ) : (
           <div className="cal-popover-actions cal-popover-actions--wrap">
             {canStart && (
-              <button type="button" className="cal-complete-btn" onClick={() => startNow(s)}
-                title="Stamp the actual start time — planned times are untouched">
+              <button type="button" className="cal-complete-btn" onClick={() => startNow(s)}>
                 Start now
               </button>
             )}
             {canFinish && (
-              <button type="button" className="cal-complete-btn" onClick={() => finishNow(s)}
-                title="Stamp the actual end, record the actual minutes, and complete the session">
+              <button type="button" className="cal-complete-btn" onClick={() => finishNow(s)}>
                 Finish
               </button>
             )}
@@ -2534,7 +2512,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
             <button
               type="button"
               className="cal-complete-btn"
-              title="Record that only part of this session's work happened"
               onClick={() => setPartialEdit({ sessionId: s.id, minutes: s.planned_minutes })}
             >
               Partial…
@@ -2543,7 +2520,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
               <button
                 type="button"
                 className="cal-complete-btn"
-                title="Record what actually happened in this slot — the plan is preserved as displaced"
                 onClick={() => openInstead(s)}
               >
                 Instead…
@@ -2553,7 +2529,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
               <button
                 type="button"
                 className="cal-complete-btn"
-                title="Place another session of this same task — never a duplicate task"
                 onClick={() => { closeTransients(); setPlacingTask(task); }}
               >
                 Schedule remaining · {durationLabel(task.remaining_unscheduled_minutes)}
@@ -2567,7 +2542,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
               type="button"
               className={`cal-flag-btn${s.is_fixed ? ' is-active' : ''}`}
               aria-pressed={!!s.is_fixed}
-              title="Fixed sessions resist future automatic replanning; task sessions default to flexible"
               onClick={() => toggleFixed(s)}
             >
               {s.is_fixed ? 'Fixed' : 'Flexible'}
@@ -2576,7 +2550,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
               <button
                 type="button"
                 className="cal-flag-btn"
-                title="Repeat this block every week — same weekday and time; the task or entry is never duplicated"
                 onClick={() => repeatWeekly(s)}
               >
                 ↻ Repeat weekly
@@ -2586,7 +2559,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
               type="button"
               className={`cal-flag-btn${dupOpen ? ' is-active' : ''}`}
               aria-expanded={dupOpen}
-              title="Add another session — same task or entry, never a duplicate record"
               onClick={() => { setDupOpen((o) => !o); setDupDate(''); }}
             >
               Duplicate ▾
@@ -2596,7 +2568,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
             <button
               type="button"
               className="task-modal-cancel"
-              title="Edit this session and its task's scheduling fields (E)"
               onClick={() => { setQuickOpen(false); setEditorSessionId(s.id); }}
             >
               Edit
@@ -2604,9 +2575,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
             <button
               type="button"
               className="cal-danger-btn"
-              title={s.series_id != null
-                ? 'Remove… — choose this occurrence, this and following, or all occurrences'
-                : 'Remove this scheduled session — the task itself is untouched'}
               onClick={() => requestRemove(s)}
             >
               {s.series_id != null ? 'Remove…' : 'Remove'}
@@ -2625,12 +2593,10 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
             ) : null}
             <div className="cal-popover-actions cal-popover-actions--wrap">
               <button type="button" className="cal-flag-btn"
-                title="Same time tomorrow"
                 onClick={() => { setDupOpen(false); duplicateSession(s, 1); }}>
                 Tomorrow
               </button>
               <button type="button" className="cal-flag-btn"
-                title="Same time next week"
                 onClick={() => { setDupOpen(false); duplicateSession(s, 7); }}>
                 Next week
               </button>
@@ -2643,7 +2609,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
               />
               <button type="button" className="cal-flag-btn"
                 disabled={!dupDate}
-                title="Same time on the picked date"
                 onClick={() => { setDupOpen(false); duplicateSession(s, 0, dupDate); }}>
                 On date
               </button>
@@ -2698,7 +2663,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
                   <button
                     type="button"
                     className="cal-flag-btn cal-goodfits-place"
-                    title="Arm placement for this task — you pick the interval"
                     onClick={() => {
                       if (!task) return;
                       closeTransients();
@@ -2735,7 +2699,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
                   drawerDragRef.current = null;
                   setDropPreview(null);
                 }}
-                title="Drag onto the calendar to schedule"
               >
                 <span className="cal-drawer-item-name">{displayTitle(t.name)}</span>
                 <span className="cal-drawer-item-meta">
@@ -2806,7 +2769,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
           <button
             type="button"
             className="cal-nav-btn"
-            title={`Vertical density — click to cycle (now: ${density})`}
             onClick={() => setDensity(
               density === 'compact' ? 'standard' : density === 'standard' ? 'detailed' : 'compact',
             )}
@@ -2825,8 +2787,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
             <button
               type="button"
               className={`cal-nav-btn cal-review-btn${remindersOpen ? ' is-active' : ''}`}
-              aria-pressed={remindersOpen}
-              title="Reminders — upcoming sessions, commitments, prep and deadlines"
+              aria-pressed={remindersOpen} aria-label="Reminders"
               onClick={() => { const open = remindersOpen; closeTransients(); setRemindersOpen(!open); }}
             >
               ⚑ {visibleReminders.length}
@@ -2836,7 +2797,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
             type="button"
             className={`cal-nav-btn${calsOpen ? ' is-active' : ''}`}
             aria-pressed={calsOpen}
-            title="External calendars (read-only ICS feeds — classes, meetings, personal)"
             onClick={() => { const open = calsOpen; closeTransients(); setCalsOpen(!open); }}
           >
             Calendars{externalCalendars.length ? ` · ${externalCalendars.length}` : ''}
@@ -2844,7 +2804,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
           <button
             type="button"
             className="cal-nav-btn"
-            title="Academic import — paste a syllabus/schedule, review candidates, approve what's real"
             onClick={() => { closeTransients(); setImportOpen(true); }}
           >
             Import
@@ -2853,7 +2812,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
             type="button"
             className={`cal-nav-btn${shiftOpen ? ' is-active' : ''}`}
             aria-pressed={shiftOpen}
-            title="Shift today's remaining flexible work later — fixed commitments stay put"
             onClick={() => { const open = shiftOpen; closeTransients(); setShiftOpen(!open); }}
           >
             Shift
@@ -2862,7 +2820,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
             type="button"
             className={`cal-nav-btn${templatesOpen ? ' is-active' : ''}`}
             aria-pressed={templatesOpen}
-            title="Depth window templates — reusable window sets"
             onClick={() => { const open = templatesOpen; closeTransients(); setTemplatesOpen(!open); }}
           >
             Windows
@@ -2872,7 +2829,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
               type="button"
               className={`cal-nav-btn cal-review-btn${reconcileOpen ? ' is-active' : ''}`}
               aria-pressed={reconcileOpen}
-              title="Planned sessions whose time passed without being resolved"
               onClick={() => { const open = reconcileOpen; closeTransients(); setReconcileOpen(!open); }}
             >
               Review · {unresolvedSessions.length}
@@ -2882,7 +2838,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
             type="button"
             className={`cal-nav-btn${hideCompleted ? ' is-active' : ''}`}
             aria-pressed={hideCompleted}
-            title="Hide completed sessions (history is kept — this only filters the view)"
             onClick={() => setHideCompleted((v) => !v)}
           >
             {hideCompleted ? 'Done hidden' : 'Hide done'}
@@ -2928,7 +2883,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
                 type="button"
                 className={`cal-flag-btn${placingWeekly ? ' is-active' : ''}`}
                 aria-pressed={placingWeekly}
-                title="Repeat the placed session every week at the placed time"
                 onClick={() => setPlacingWeekly(true)}
               >
                 ↻ Weekly
@@ -2952,7 +2906,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
                     type="button"
                     key={dIso}
                     className={`cal-day-header${isToday ? ' is-today' : ''}${templateMode ? ' is-arm-target' : ''}`}
-                    title={templateMode ? 'Apply template action to this day' : 'Open day view'}
                     onClick={() => {
                       // Template arm modes intercept the day-header click.
                       if (templateMode?.type === 'apply') { applyTemplateToDate(templateMode.tpl, dIso); return; }
@@ -3017,9 +2970,9 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
                         </span>
                         {windowMenu?.windowId === w.id && windowMenu.dateIso === dIso ? (
                           <span className="cal-window-menu">
-                            <button type="button" title="Remove only this day's occurrence"
+                            <button type="button"
                               onClick={() => skipWindowDay(w.id, dIso)}>This day</button>
-                            <button type="button" title="Delete the whole weekly window"
+                            <button type="button"
                               onClick={() => { setWindowMenu(null); removeWindow(w.id); }}>All weeks</button>
                             <button type="button" aria-label="Cancel"
                               onClick={() => setWindowMenu(null)}>×</button>
@@ -3029,9 +2982,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
                             type="button"
                             className="cal-window-del"
                             aria-label="Remove depth window"
-                            title={w.weekday != null
-                              ? 'Remove — choose this day only or the whole series'
-                              : 'Remove this depth window'}
                             onClick={() => (w.weekday != null
                               ? setWindowMenu({ windowId: w.id, dateIso: dIso })
                               : removeWindow(w.id))}
@@ -3079,10 +3029,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
             <button type="button" className="cal-popover-close" aria-label="Close"
               onClick={() => setReconcileOpen(false)}>×</button>
           </div>
-          <div className="cal-popover-hint">
-            Planned sessions whose time passed without being resolved. Deciding
-            keeps the history honest — nothing here is required.
-          </div>
           {unresolvedSessions.length === 0 && (
             <div className="cal-popover-time">All caught up.</div>
           )}
@@ -3117,17 +3063,17 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
                   </div>
                 ) : (
                   <div className="cal-reconcile-actions">
-                    <button type="button" title="It happened as planned"
+                    <button type="button"
                       onClick={() => toggleComplete(s)}>Done</button>
-                    <button type="button" title="Some of it happened — record the minutes"
+                    <button type="button"
                       onClick={() => setPartialEdit({ sessionId: s.id, minutes: s.planned_minutes })}>
                       Partial…
                     </button>
-                    <button type="button" title="Move this session to tomorrow, same time"
+                    <button type="button"
                       onClick={() => rescheduleSession(s, 1)}>Tmrw</button>
-                    <button type="button" title="Something else happened in this slot — record it"
+                    <button type="button"
                       onClick={() => openInstead(s)}>Instead…</button>
-                    <button type="button" title="It didn't happen — keep the record, return the effort to the backlog"
+                    <button type="button"
                       onClick={() => skipSession(s)}>Skip</button>
                   </div>
                 )}
@@ -3146,9 +3092,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
               onClick={() => setCalsOpen(false)}>×</button>
           </div>
           <div className="cal-popover-hint">
-            Read-only ICS feeds. For Google Calendar: Settings → your calendar →
-            “Secret address in iCal format”. Events show as fixed external
-            commitments — never tasks.
+            ICS feed URL (Google Calendar: “Secret address in iCal format”).
           </div>
           {externalCalendars.map((c) => (
             <div key={c.id} className="cal-reconcile-row">
@@ -3162,15 +3106,15 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
                 </span>
               </div>
               <div className="cal-reconcile-actions">
-                <button type="button" title={c.visible ? 'Hide this calendar' : 'Show this calendar'}
+                <button type="button"
                   onClick={async () => { await updateExternalCalendar(c.id, { visible: !c.visible }); refreshExternal(); }}>
                   {c.visible ? 'Hide' : 'Show'}
                 </button>
-                <button type="button" title="Fetch the feed again now"
+                <button type="button"
                   onClick={async () => { try { await syncExternalCalendar(c.id); } catch {} refreshExternal(); }}>
                   Sync
                 </button>
-                <button type="button" title="Remove this calendar and its events"
+                <button type="button" aria-label="Remove this calendar and its events"
                   onClick={async () => { await deleteExternalCalendar(c.id); refreshExternal(); }}>
                   ×
                 </button>
@@ -3209,11 +3153,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
             <button type="button" className="cal-popover-close" aria-label="Close"
               onClick={() => setShiftOpen(false)}>×</button>
           </div>
-          <div className="cal-popover-hint">
-            Moves today's remaining flexible blocks later. Fixed sessions,
-            external commitments, and depth windows stay where they are;
-            conflicts are shown before anything is applied.
-          </div>
           <div className="cal-popover-actions cal-popover-actions--wrap">
             {[15, 30, 45, 60, 90].map((m) => (
               <button key={m} type="button" className="cal-flag-btn" onClick={() => buildShiftPlan(m)}>
@@ -3236,7 +3175,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
               <>
                 <div className="cal-popover-hint">
                   {shiftPlan.proposed.length} block{shiftPlan.proposed.length !== 1 ? 's' : ''} will move.
-                  Fixed commitments stay put.
                 </div>
                 {shiftPlan.proposed.map((p, idx) => {
                   const [sm, em] = resolvedShiftTimes(p);
@@ -3256,27 +3194,23 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
                         <div className="cal-reconcile-actions">
                           <button type="button"
                             className={p.resolution === 'keep' ? 'is-active' : ''}
-                            title="Allow the overlap"
                             onClick={() => setShiftPlan((pl) => ({ ...pl, proposed: pl.proposed.map((x, i) => (i === idx ? { ...x, resolution: 'keep' } : x)) }))}>
                             Overlap
                           </button>
                           <button type="button"
                             className={p.resolution === 'after' ? 'is-active' : ''}
-                            title="Place it after the fixed commitment"
                             onClick={() => setShiftPlan((pl) => ({ ...pl, proposed: pl.proposed.map((x, i) => (i === idx ? { ...x, resolution: 'after' } : x)) }))}>
                             After
                           </button>
                           {canShorten && (
                             <button type="button"
                               className={p.resolution === 'shorten' ? 'is-active' : ''}
-                              title="Shorten it to end where the fixed commitment begins"
                               onClick={() => setShiftPlan((pl) => ({ ...pl, proposed: pl.proposed.map((x, i) => (i === idx ? { ...x, resolution: 'shorten' } : x)) }))}>
                               Shorten
                             </button>
                           )}
                           <button type="button"
                             className={p.resolution === 'unschedule' ? 'is-active' : ''}
-                            title="Skip this session — its effort returns to the backlog"
                             onClick={() => setShiftPlan((pl) => ({ ...pl, proposed: pl.proposed.map((x, i) => (i === idx ? { ...x, resolution: 'unschedule' } : x)) }))}>
                             Unschedule
                           </button>
@@ -3324,12 +3258,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
               endMin={insteadFor.endMin}
               onChange={({ startMin, endMin }) => setInsteadFor((x) => (x ? { ...x, startMin, endMin } : x))}
             />
-            <div className="cal-popover-hint">
-              The planned block stays in history as displaced
-              {insteadFor.session.task_id != null ? ' and the task keeps its remaining effort' : ''}.
-              What happened is recorded as a completed calendar-only entry — use
-              “Add to main Grid…” later if it deserves to become a task.
-            </div>
             {insteadFor.error && <div className="cal-popover-error" role="alert">{insteadFor.error}</div>}
             <div className="cal-popover-actions">
               <button type="button" className="task-modal-cancel" onClick={() => setInsteadFor(null)}>Cancel</button>
@@ -3346,10 +3274,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
             <span className="cal-popover-kicker">Depth window templates</span>
             <button type="button" className="cal-popover-close" aria-label="Close"
               onClick={() => setTemplatesOpen(false)}>×</button>
-          </div>
-          <div className="cal-popover-hint">
-            Reusable window sets you define — applying one creates those
-            windows on the day you pick. No inferred capacity, ever.
           </div>
           {templates.length === 0 && (
             <div className="cal-popover-time">No templates yet — save one from a day below.</div>
@@ -3383,19 +3307,19 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
                 </span>
               </div>
               <div className="cal-reconcile-actions">
-                <button type="button" title="Apply to a day — click a day header next"
+                <button type="button"
                   onClick={() => { setTemplatesOpen(false); setTemplateMode({ type: 'apply', tpl: t }); }}>
                   Apply…
                 </button>
-                <button type="button" title="Replace this template's windows from a day — click a day header next"
+                <button type="button" aria-label="Replace this template's windows from a day"
                   onClick={() => { setTemplatesOpen(false); setTemplateMode({ type: 'update', tpl: t }); }}>
                   ⟳
                 </button>
-                <button type="button" title="Rename"
+                <button type="button" aria-label="Rename"
                   onClick={() => setTemplateRename({ id: t.id, name: t.name })}>
                   ✎
                 </button>
-                <button type="button" title="Delete this template"
+                <button type="button" aria-label="Delete this template"
                   onClick={async () => { await deleteWindowTemplate(t.id); setTemplates(await fetchWindowTemplates()); }}>
                   ×
                 </button>
@@ -3404,7 +3328,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
           ))}
           <div className="cal-popover-actions">
             <button type="button" className="task-modal-save"
-              title="Capture an existing day's windows as a new template"
               onClick={() => { setTemplatesOpen(false); setTemplateMode({ type: 'save' }); }}>
               New from day…
             </button>
@@ -3432,11 +3355,11 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
               </div>
               <div className="cal-reconcile-actions">
                 {r.type === 'class_review' && (
-                  <button type="button" title="Schedule review work — nothing is created until you decide"
+                  <button type="button"
                     onClick={() => scheduleReview(r)}>Schedule…</button>
                 )}
                 {r.type === 'deadline' && (
-                  <button type="button" title="Arm placement for this task's remaining effort"
+                  <button type="button"
                     onClick={() => {
                       const t = tasks.find((x) => x.id === r.task_id);
                       if (t) { closeTransients(); setPlacingTask(t); }
@@ -3449,13 +3372,12 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
                 )}
                 {r.type === 'event_moved' && (
                   <button type="button"
-                    title="Jump to the event — its detail panel offers the move"
                     onClick={() => {
                       closeTransients();
                       if (r.event_start) setAnchorIso(r.event_start.slice(0, 10));
                     }}>Open</button>
                 )}
-                <button type="button" title="Dismiss this reminder"
+                <button type="button" aria-label="Dismiss this reminder"
                   onClick={() => dismissReminder(r.key)}>×</button>
               </div>
             </div>
@@ -3537,7 +3459,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
                   <span className="cal-drawer-group-title">Courses / contexts</span>
                   {searchResults.contexts.map((c) => (
                     <button key={c.id} type="button" className="cal-task-picker-row"
-                      title="Filter results to this context"
                       onClick={() => { setSearchCtx({ id: c.id, name: c.name }); setSearchQuery(''); }}>
                       <span className="cal-task-picker-name">{c.name}</span>
                       <span className="cal-task-picker-meta">{c.task_count} task{c.task_count !== 1 ? 's' : ''}</span>
@@ -3550,7 +3471,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
                   <span className="cal-drawer-group-title">Grid tasks</span>
                   {searchResults.tasks.map((t) => (
                     <button key={t.id} type="button" className="cal-task-picker-row"
-                      title="Open the full task record"
                       onClick={() => {
                         const full = tasks.find((x) => x.id === t.id);
                         setSearchOpen(false);
@@ -3569,8 +3489,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
                 <div className="cal-ext-links">
                   <span className="cal-drawer-group-title">Sessions & entries</span>
                   {searchResults.sessions.map((r) => (
-                    <button key={r.id} type="button" className="cal-task-picker-row"
-                      title="Go to this block on the Calendar"
+                    <button key={r.id} type="button" className="cal-task-picker-row" aria-label="Go to this block on the Calendar"
                       onClick={() => gotoSearchSession(r)}>
                       <span className="cal-task-picker-name">
                         {displayTitle(r.name)}
@@ -3587,8 +3506,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
                 <div className="cal-ext-links">
                   <span className="cal-drawer-group-title">External commitments</span>
                   {searchResults.events.map((r, i) => (
-                    <button key={`${r.uid}:${r.start}:${i}`} type="button" className="cal-task-picker-row"
-                      title="Go to this commitment on the Calendar"
+                    <button key={`${r.uid}:${r.start}:${i}`} type="button" className="cal-task-picker-row" aria-label="Go to this commitment on the Calendar"
                       onClick={() => gotoSearchEvent(r)}>
                       <span className="cal-task-picker-name">▸ {displayTitle(r.title)}</span>
                       <span className="cal-task-picker-meta">
@@ -3640,7 +3558,6 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
                 <div className="cal-partial-row">
                   <span className="cal-reconcile-name">{ev.context_name}</span>
                   <button type="button" className="task-modal-cancel"
-                    title="Remove this association — the event and any tasks stay"
                     onClick={() => assignEventContext(ev, '')}>Unlink</button>
                 </div>
               ) : (
@@ -3705,14 +3622,12 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
                   ))}
                   {p.fixed_count > 0 && (
                     <div className="cal-popover-hint">
-                      {p.fixed_count} fixed session{p.fixed_count !== 1 ? 's' : ''} stay
-                      put unless you move them yourself.
+                      {p.fixed_count} fixed session{p.fixed_count !== 1 ? 's' : ''} stay put.
                     </div>
                   )}
                   <div className="cal-popover-actions cal-popover-actions--wrap">
                     {p.items.length === 0 ? (
                       <button type="button" className="task-modal-cancel"
-                        title="Acknowledge the new time — nothing is scheduled"
                         onClick={() => resolveEventMove(ev, p, [])}>Got it</button>
                     ) : sel != null ? (
                       <>
@@ -3767,7 +3682,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
                       ) : null}
                     </div>
                     <div className="cal-reconcile-actions">
-                      <button type="button" title="Detach this relationship — the task survives"
+                      <button type="button" aria-label="Detach this relationship"
                         onClick={async () => { await deleteTaskEventLink(l.id); refreshExtDetailLinks(ev); }}>×</button>
                     </div>
                   </div>

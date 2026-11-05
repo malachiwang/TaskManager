@@ -225,21 +225,11 @@ export default function DateCell({
       onClick={handleCellClick}
       onDoubleClick={handleCellDoubleClick}
       title={
-        isHiatusBlank && !isFuture
-          ? 'Task is on hiatus'
-          : isTextOverride
-            ? (overrideText || 'Text cell — double-click to edit')
-            : hasNote && noteText
-              ? noteText
-              : isFuture
-                ? 'Future date — not available'
-                : isBeforeActiveFrom
-                  ? 'Before active date'
-                  : isAfterEndDate
-                    ? 'After task end date'
-                    : isPaused
-                      ? 'Task is on hiatus'
-                      : date
+        isTextOverride
+          ? (overrideText || date)
+          : hasNote && noteText
+            ? noteText
+            : date
       }
     >
       <span className="dc-cell-center">

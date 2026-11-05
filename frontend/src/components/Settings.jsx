@@ -304,7 +304,6 @@ export default function Settings({ sheetMonth = null }) {
       {/* ── Hero ── */}
       <div className="ws-page-header">
         <span>Settings</span>
-        <span className="ws-page-header-sub">local preferences · browser storage · never synced</span>
       </div>
 
       {/* ── Summary strip ── */}
@@ -342,10 +341,6 @@ export default function Settings({ sheetMonth = null }) {
             <div className="ws-ctrl-row ws-ctrl-row--stack">
               <div className="ws-ctrl-info">
                 <span className="ws-ctrl-label">Visual theme</span>
-                <span className="ws-ctrl-desc">
-                  Curated surface palettes — same layout and shapes, different paper.
-                  Midnight always uses a dark base.
-                </span>
               </div>
               <div className="settings-theme-grid" role="group" aria-label="Visual theme">
                 {VISUAL_THEMES.map((t) => (
@@ -372,10 +367,6 @@ export default function Settings({ sheetMonth = null }) {
             <div className="ws-ctrl-row">
               <div className="ws-ctrl-info">
                 <span className="ws-ctrl-label">Appearance</span>
-                <span className="ws-ctrl-desc">
-                  System follows your OS light/dark preference. Urgency colors keep
-                  their meaning in every mode.
-                </span>
               </div>
               <div className="ws-ctrl-action">
                 <div className="settings-seg" role="group" aria-label="Appearance mode">
@@ -396,10 +387,6 @@ export default function Settings({ sheetMonth = null }) {
             <div className="ws-ctrl-row">
               <div className="ws-ctrl-info">
                 <span className="ws-ctrl-label">Accent theme</span>
-                <span className="ws-ctrl-desc">
-                  Colors links, selection outlines, focus rings, chips, and active
-                  accents. Blue is the default.
-                </span>
               </div>
               <div className="ws-ctrl-action">
                 <div className="settings-swatches" role="group" aria-label="Accent theme">
@@ -421,10 +408,6 @@ export default function Settings({ sheetMonth = null }) {
             <div className="ws-ctrl-row">
               <div className="ws-ctrl-info">
                 <span className="ws-ctrl-label">Background motion</span>
-                <span className="ws-ctrl-desc">
-                  Drift of the node-edge network in the header and loading screen.
-                  Off draws a static frame. Reduced-motion OS settings always win.
-                </span>
               </div>
               <div className="ws-ctrl-action">
                 <div className="settings-seg" role="group" aria-label="Background motion">
@@ -449,13 +432,11 @@ export default function Settings({ sheetMonth = null }) {
             <div className="ws-frame-header">
               <span className="ws-frame-kicker">02</span>
               <span>Task defaults</span>
-              <span className="ws-frame-header-sub">pre-filled in Add Task</span>
             </div>
             <form onSubmit={handleSaveDefaults}>
               <div className="ws-ctrl-row">
                 <div className="ws-ctrl-info">
                   <span className="ws-ctrl-label">Default section</span>
-                  <span className="ws-ctrl-desc">Pre-filled section name for new tasks.</span>
                 </div>
                 <div className="ws-ctrl-action">
                   <input
@@ -470,7 +451,6 @@ export default function Settings({ sheetMonth = null }) {
               <div className="ws-ctrl-row">
                 <div className="ws-ctrl-info">
                   <span className="ws-ctrl-label">Default priority <span className="settings-label-hint">(1–10)</span></span>
-                  <span className="ws-ctrl-desc">Starting priority level for new tasks.</span>
                 </div>
                 <div className="ws-ctrl-action">
                   <input
@@ -487,7 +467,6 @@ export default function Settings({ sheetMonth = null }) {
               <div className="ws-ctrl-row">
                 <div className="ws-ctrl-info">
                   <span className="ws-ctrl-label">Default interval <span className="settings-label-hint">(days)</span></span>
-                  <span className="ws-ctrl-desc">How often a new task recurs by default.</span>
                 </div>
                 <div className="ws-ctrl-action">
                   <input
@@ -515,16 +494,10 @@ export default function Settings({ sheetMonth = null }) {
             <div className="ws-frame-header">
               <span className="ws-frame-kicker">03</span>
               <span>Grid preferences</span>
-              <span className="ws-frame-header-sub">layout only · no task data changed</span>
             </div>
             <div className="ws-ctrl-row">
               <div className="ws-ctrl-info">
                 <span className="ws-ctrl-label">Quick Jump</span>
-                <span className="ws-ctrl-desc">
-                  Use Shift+number shortcuts and the Jump button to navigate the grid.
-                  No selection: Shift+digits jumps to that row. With a cell selected:
-                  Shift+digits jumps to that date column in the current row.
-                </span>
               </div>
               <div className="ws-ctrl-action">
                 <label className="settings-switch-row settings-switch-row--inline">
@@ -543,10 +516,9 @@ export default function Settings({ sheetMonth = null }) {
               <div className="ws-ctrl-info">
                 <span className="ws-ctrl-label">Column widths</span>
                 <span className="ws-ctrl-desc">
-                  Drag column edges to resize. Widths are saved in browser storage per device.
                   {colResetMsg && (
                     <span className="settings-saved" style={{ display: 'block', marginTop: '4px' }}>
-                      Widths cleared. Switch to the Tasks sheet to see the updated layout.
+                      Widths cleared. Switch to the Grid to see the updated layout.
                     </span>
                   )}
                 </span>
@@ -564,7 +536,6 @@ export default function Settings({ sheetMonth = null }) {
             <div className="ws-frame-header">
               <span className="ws-frame-kicker">04</span>
               <span>Dashboard</span>
-              <span className="ws-frame-header-sub">show/hide panels · browser storage · no task data changed</span>
             </div>
 
             <div className="ws-settings-group">Dashboard sections</div>
@@ -603,10 +574,6 @@ export default function Settings({ sheetMonth = null }) {
             <div className="ws-ctrl-row">
               <div className="ws-ctrl-info">
                 <span className="ws-ctrl-label">Reset display &amp; dismissals</span>
-                <span className="ws-ctrl-desc">
-                  Dashboard-only preferences — hidden from Dashboard, does not edit any task.
-                  Changes apply next time you open the Dashboard.
-                </span>
               </div>
               <div className="ws-ctrl-action settings-dash-reset">
                 <button className="button-secondary" onClick={handleDashResetVisibility}>Show all sections</button>
@@ -627,7 +594,6 @@ export default function Settings({ sheetMonth = null }) {
             <div className="ws-frame-header">
               <span className="ws-frame-kicker">05</span>
               <span>Data &amp; backup</span>
-              <span className="ws-frame-header-sub">export before bulk changes or imports</span>
             </div>
 
             {/* Export (JSON full backup or CSV of the grid's month), with
@@ -719,7 +685,6 @@ export default function Settings({ sheetMonth = null }) {
             <div className="ws-frame-header">
               <span className="ws-frame-kicker">06</span>
               <span>Keyboard shortcuts</span>
-              <span className="ws-frame-header-sub">customizable · saved in browser storage</span>
             </div>
             {kbGroups.map(({ group, actions }) => (
               <div key={group}>
@@ -781,7 +746,6 @@ export default function Settings({ sheetMonth = null }) {
             <div className="ws-frame-header">
               <span className="ws-frame-kicker">07</span>
               <span>Technical reference</span>
-              <span className="ws-frame-header-sub">how the system works · expand what you need</span>
             </div>
             <div className="ws-frame-body">
               <RefSection label="Urgency formula">
@@ -791,72 +755,6 @@ base   = f(priority)        floor  = base / 2
 growth = 1 − exp(−k × D/I)  k = 2.0
 
 D = days_since   I = interval_days`}</pre>
-                <p className="ws-formula-note">
-                  Asymptotic — approaches 10, never exceeds it. At D = I (due), urgency is
-                  roughly halfway to 10. At D = 2I, urgency is near-peak. Hiatus tasks always score 0.
-                </p>
-              </RefSection>
-
-              <RefSection label="Task status &amp; lifecycle">
-                <div className="ws-state-row">
-                  <div className="ws-ctrl-info">
-                    <span className="ws-ctrl-label">Active</span>
-                    <span className="ws-ctrl-desc">Accumulates urgency. Appears in all pressure calculations. Default for all new tasks.</span>
-                  </div>
-                  <span className="ws-state-badge ws-state-badge--on">tracking</span>
-                </div>
-                <div className="ws-state-row">
-                  <div className="ws-ctrl-info">
-                    <span className="ws-ctrl-label">Hiatus</span>
-                    <span className="ws-ctrl-desc">Suspended. Scores 0 urgency. Hidden from dashboard pressure and priority queue. Fully recoverable — set back to Active to resume.</span>
-                  </div>
-                  <span className="ws-state-badge ws-state-badge--off">suspended</span>
-                </div>
-                <div className="ws-state-row">
-                  <div className="ws-ctrl-info">
-                    <span className="ws-ctrl-label">Hiatus intervals</span>
-                    <span className="ws-ctrl-desc">Entering Hiatus starts a persisted interval (from today); resuming closes it as of yesterday. Dates inside any interval render as blank hiatus cells forever — completions underneath are preserved, never deleted. Mistaken intervals can be edited or removed from Task Details; overlapping intervals are rejected.</span>
-                  </div>
-                  <span className="ws-state-badge">history</span>
-                </div>
-                <div className="ws-state-row">
-                  <div className="ws-ctrl-info">
-                    <span className="ws-ctrl-label">Active from</span>
-                    <span className="ws-ctrl-desc">Optional display-only date. Stored and visible in the grid. Does not affect urgency calculations.</span>
-                  </div>
-                  <span className="ws-state-badge">display only</span>
-                </div>
-                <div className="ws-state-row">
-                  <div className="ws-ctrl-info">
-                    <span className="ws-ctrl-label">Delete task</span>
-                    <span className="ws-ctrl-desc">Sets <code>is_active = 0</code>. Disappears from grid and dashboard. Completion history and archive snapshots are fully preserved. Recoverable via backup.</span>
-                  </div>
-                  <span className="ws-state-badge">soft delete</span>
-                </div>
-                <div className="ws-state-row">
-                  <div className="ws-ctrl-info">
-                    <span className="ws-ctrl-label">Archive snapshots</span>
-                    <span className="ws-ctrl-desc">Frozen JSON copy of all active tasks for a date range. Independent of live tasks — renaming or deleting current tasks has no effect on snapshots.</span>
-                  </div>
-                  <span className="ws-state-badge">immutable</span>
-                </div>
-              </RefSection>
-
-              <RefSection label="Reading library">
-                <div className="ws-state-row">
-                  <div className="ws-ctrl-info">
-                    <span className="ws-ctrl-label">Book priority</span>
-                    <span className="ws-ctrl-desc">Every book has a 1–5 priority (1 background · 3 normal · 5 highest), shown as a calm colored badge in Reading rows. Priority never affects task urgency or pressure scoring.</span>
-                  </div>
-                  <span className="ws-state-badge">1–5 scale</span>
-                </div>
-                <div className="ws-state-row">
-                  <div className="ws-ctrl-info">
-                    <span className="ws-ctrl-label">Books to Buy</span>
-                    <span className="ws-ctrl-desc">A wishlist view inside Reading. To-buy books need only a title (author, priority, purchase link, and notes optional) and never carry page checkpoints. Marking one bought stamps the purchase date and moves it to the library as an unread book.</span>
-                  </div>
-                  <span className="ws-state-badge">wishlist</span>
-                </div>
               </RefSection>
             </div>
           </div>
@@ -868,25 +766,11 @@ D = days_since   I = interval_days`}</pre>
               <span>About &amp; Policies</span>
             </div>
             <div className="ws-frame-body settings-prose">
-              <p>
-                <strong>TaskManager</strong> is a local-first task, reading, and pressure
-                tracker. FastAPI backend, SQLite storage, React/Vite frontend. Built as a
-                personal productivity instrument.
-              </p>
               {/* Build identity (P17 §5) — the one place to check whether a
                   packaged app is stale relative to the source tree. */}
               <p style={{ marginTop: '8px', fontVariantNumeric: 'tabular-nums' }}>
                 Build: <code>{typeof __BUILD_INFO__ !== 'undefined' ? __BUILD_INFO__.commit : 'dev'}</code>
                 {typeof __BUILD_INFO__ !== 'undefined' ? ` · built ${__BUILD_INFO__.date}` : ''}
-              </p>
-              <p style={{ marginTop: '8px' }}>
-                All data is stored locally in <code>~/.taskmanager/taskos.db</code> — one
-                canonical database shared by the desktop app and development. Never leaves
-                your machine. No cloud, no account, no external runtime dependencies.
-              </p>
-              <p style={{ marginTop: '8px', color: 'var(--muted)' }}>
-                Personal tool — not a public SaaS product. No notifications, no mobile, no
-                multi-user support. Current limitations are known and intentional.
               </p>
               <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <DocSection name="privacy"       label="Privacy Policy" />

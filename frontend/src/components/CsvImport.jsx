@@ -163,14 +163,6 @@ function ImportPreviewBody() {
   return (
     <div className="ws-frame-body" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       {/* Dry-run banner — design report .ban pattern */}
-      <div className="ws-import-banner">
-        <div>
-          <span className="ws-import-banner-label">Before importing</span>
-          Export a backup via <em>Export (JSON)</em> so you can recover if something
-          goes wrong. Import creates new tasks only — it never modifies or deletes existing data.
-        </div>
-      </div>
-
       <div className="import-file-row">
         <input
           type="file"
@@ -231,7 +223,6 @@ export default function CsvImport() {
     <div className="ws-frame">
       <div className="ws-frame-header">
         <span>Import CSV</span>
-        <span className="ws-frame-header-sub">create tasks from a backup export</span>
       </div>
       <ImportPreviewBody />
     </div>

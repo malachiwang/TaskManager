@@ -2082,7 +2082,6 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth: sharedMonth
             type="button"
             className="ws-filter-pill"
             onClick={() => { setRangeEnd(null); numericBufferRef.current = null; setJumpMode({ type: 'quick', value: '', error: '' }); }}
-            title="Quick jump to row, task name, or date"
           >
             Jump
           </button>
@@ -2200,7 +2199,6 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth: sharedMonth
                       {groupMode === GROUP_MODES.SECTION && (
                         <span
                           className="drag-handle section-drag-handle"
-                          title="Drag to reorder section"
                           onPointerDown={(e) => handleSectionPointerDown(e, group)}
                         >⠿</span>
                       )}
@@ -2228,11 +2226,10 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth: sharedMonth
                     data-section-drop="into"
                   >
                     <td className="ws-section-empty-frozen" colSpan={8}>
-                      <span className="ws-section-empty-note">No tasks — drag a task here</span>
+                      <span className="ws-section-empty-note">No tasks</span>
                       <button
                         type="button"
                         className="ws-section-empty-remove"
-                        title="Remove this empty section from the list"
                         onClick={() => handleRemoveSection(group)}
                       >Remove section</button>
                     </td>

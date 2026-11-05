@@ -82,7 +82,6 @@ export default function SemesterSignals({ tasks }) {
     <div className="ws-frame ws-frame--full dash-semester">
       <div className="ws-frame-header">
         <span>Semester signals</span>
-        <span className="ws-frame-header-sub">forward load, deadline coverage, and measured patterns · facts only</span>
       </div>
       <div className="ws-frame-body dash-semester-grid">
         {loadCard && (
