@@ -328,12 +328,12 @@ export default function Settings({ sheetMonth = null }) {
     }
   }
 
+  // Save outside the state updater: saveAppearance notifies other components
+  // (the banner), which must not happen while Settings is rendering.
   function updateAppearance(patch) {
-    setAppearance((prev) => {
-      const next = { ...prev, ...patch };
-      saveAppearance(next);
-      return next;
-    });
+    const next = { ...appearance, ...patch };
+    setAppearance(next);
+    saveAppearance(next);
   }
 
   function handleResetColumns() {
