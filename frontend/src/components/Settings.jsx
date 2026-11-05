@@ -184,14 +184,6 @@ export default function Settings({ sheetMonth = null }) {
       // Pure modifier keys — ignore silently; user is still composing.
       if (['Shift', 'Control', 'Meta', 'Alt', 'CapsLock'].includes(e.key)) return;
 
-      // Escape always cancels recording, never binds.
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        setRecordingAction(null);
-        setRecordingError('');
-        return;
-      }
-
       // Block everything else from triggering browser shortcuts while recording.
       e.preventDefault();
       e.stopPropagation();
@@ -199,17 +191,9 @@ export default function Settings({ sheetMonth = null }) {
       const binding = captureEventToBinding(e);
       if (!binding) return;
 
-      // Shift+0–9 reserved for Quick Jump (row/column navigation and jump prompt).
-      // event.code check is layout-agnostic (Shift+0 gives ')' in event.key on US keyboards).
-      if (e.shiftKey && /^Digit[0-9]$/.test(e.code)) {
-        setRecordingError('Reserved — Shift+digits are used by Quick Jump navigation');
-        return;
-      }
-
-      if (isReservedBinding(binding)) {
-        setRecordingError('Reserved — modifier combos and named keys (Enter, Esc, arrows, Tab…) belong to the browser/system. Choose a plain letter, digit, or symbol.');
-        return;
-      }
+      // Every key can be bound (tm-clean 13); only modifier-only/unidentified
+      // events are ignored. Conflicts are still rejected below.
+      if (isReservedBinding(binding)) return;
 
       const conflict = findBindingConflict(binding, recordingAction, resolvedKb);
       if (conflict) {
@@ -236,8 +220,9 @@ export default function Settings({ sheetMonth = null }) {
       setRecordingError('');
     }
 
-    window.addEventListener('keydown', captureKey);
-    return () => window.removeEventListener('keydown', captureKey);
+    // Capture phase: the recorder sees Tab, Enter, Esc… before anything else.
+    window.addEventListener('keydown', captureKey, true);
+    return () => window.removeEventListener('keydown', captureKey, true);
   }, [recordingAction, resolvedKb]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function startRecording(action) {
@@ -251,6 +236,13 @@ export default function Settings({ sheetMonth = null }) {
   }
 
   function resetOverride(action) {
+    // The default may since have been given to another action.
+    const conflict = findBindingConflict(KEYBINDS[action], action, resolvedKb);
+    if (conflict) {
+      setRecordingAction(action);
+      setRecordingError(`Default conflicts with "${KEYBINDS[conflict].description}". Change that binding or reset all shortcuts.`);
+      return;
+    }
     setKbOverrides((prev) => {
       const next = { ...prev };
       delete next[action];
@@ -734,17 +726,6 @@ export default function Settings({ sheetMonth = null }) {
                 <div className="ws-settings-group">{group}</div>
                 {actions.map(([action, binding]) => {
                   const isRecording = recordingAction === action;
-                  if (!binding.customizable) {
-                    return (
-                      <div key={action} className="ws-kbd-shortcut-row">
-                        <kbd className="ws-kbd-key">{bindingLabel(resolvedKb[action])}</kbd>
-                        <span className="ws-kbd-shortcut-desc">{binding.description}</span>
-                        <span className="ws-state-badge ws-state-badge--dim">
-                          fixed · {FIXED_REASON_LABELS[binding.fixedReason] || 'fixed'}
-                        </span>
-                      </div>
-                    );
-                  }
                   if (isRecording) {
                     return (
                       <div key={action} className="ws-kbd-shortcut-row ws-kbd-shortcut-row--recording">

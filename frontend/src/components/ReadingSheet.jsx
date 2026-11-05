@@ -10,7 +10,7 @@ import {
 import ReadingBookModal, { PRIORITY_LABELS } from './ReadingBookModal.jsx';
 import KeyboardHelp from './KeyboardHelp.jsx';
 import WorkspaceSearch from './WorkspaceSearch.jsx';
-import { matchKeybind, resolveKeybinds } from '../keybinds.js';
+import { matchKeybind, resolveKeybinds, canDismiss } from '../keybinds.js';
 import { normalizeSafeUrl } from '../linkUtils.js';
 import { handleSafeLinkClick } from '../openExternalLink.js';
 
@@ -249,7 +249,7 @@ export default function ReadingSheet({ searchTarget = null, onTargetConsumed = (
       const kb = resolvedKb;
 
       // Escape — pre-guard so it also works from inside modal inputs.
-      if (e.key === 'Escape') {
+      if (canDismiss(e, kb.CLEAR_SELECTION, s.modalOpen)) {
         if (s.modalOpen) { closeModal(); return; }
         const tag = document.activeElement?.tagName?.toLowerCase();
         const isTyping = ['input', 'textarea', 'select'].includes(tag)
@@ -291,7 +291,7 @@ export default function ReadingSheet({ searchTarget = null, onTargetConsumed = (
       // Enter — open the checkpoint form for the selected book (page input
       // autofocuses, so typing the page number flows naturally). To-buy books
       // have no checkpoints, so Enter is a no-op in the To Buy view.
-      if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (matchKeybind(e, kb.READING_CHECKPOINT)) {
         if (s.selectedBookId == null || s.addingFor != null || s.viewMode === 'tobuy') return;
         e.preventDefault();
         startAdd(s.selectedBookId);
@@ -300,7 +300,7 @@ export default function ReadingSheet({ searchTarget = null, onTargetConsumed = (
 
       // Delete/Backspace — arm the inline delete confirmation for the
       // selected book. Nothing is deleted until the strip is confirmed.
-      if ((e.key === 'Delete' || e.key === 'Backspace') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (matchKeybind(e, kb.READING_DELETE) || matchKeybind(e, kb.READING_BACKSPACE)) {
         if (s.selectedBookId == null) return;
         e.preventDefault();
         setConfirmDeleteId(s.selectedBookId);
@@ -308,15 +308,15 @@ export default function ReadingSheet({ searchTarget = null, onTargetConsumed = (
       }
 
       // Arrow up/down — move row selection through the visible list.
-      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (matchKeybind(e, kb.MOVE_DOWN) || matchKeybind(e, kb.MOVE_UP)) {
         const ids = s.visibleIds;
         if (!ids.length) return;
         e.preventDefault();
         const idx = ids.indexOf(s.selectedBookId);
         if (idx === -1) {
-          setSelectedBookId(e.key === 'ArrowDown' ? ids[0] : ids[ids.length - 1]);
+          setSelectedBookId(matchKeybind(e, kb.MOVE_DOWN) ? ids[0] : ids[ids.length - 1]);
         } else {
-          const next = e.key === 'ArrowDown'
+          const next = matchKeybind(e, kb.MOVE_DOWN)
             ? Math.min(ids.length - 1, idx + 1)
             : Math.max(0, idx - 1);
           setSelectedBookId(ids[next]);

@@ -9,6 +9,7 @@ import LoadingScreen from './components/LoadingScreen.jsx';
 import { fetchHealth } from './api.js';
 import { initAppearance } from './appearance.js';
 import { WorkspaceNavigation } from './components/WorkspaceSearch.jsx';
+import { isTypingTarget, matchKeybind, resolveKeybinds } from './keybinds.js';
 
 // Main's views, shown inline in the nav row while Main is active.
 const MAIN_VIEWS = [['tasks', 'Grid'], ['reading', 'Reading'], ['calendar', 'Calendar']];
@@ -156,6 +157,27 @@ export default function App() {
   // and keeps the implementation self-contained.
   useEffect(() => {
     initAppearance();
+  }, []);
+
+  // Remapped focus movement (tm-clean 13; ported from drift-ref). Tab and
+  // Shift+Tab stay native; a custom FOCUS_NEXT / FOCUS_PREVIOUS binding moves
+  // focus through visible, enabled controls outside text fields and dialogs.
+  useEffect(() => {
+    function onKeyDown(event) {
+      if (event.key === 'Tab' || isTypingTarget(event.target)) return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"], .task-modal-overlay')) return;
+      const kb = resolveKeybinds();
+      const next = matchKeybind(event, kb.FOCUS_NEXT);
+      const previous = matchKeybind(event, kb.FOCUS_PREVIOUS);
+      if (!next && !previous) return;
+      const focusable = [...document.querySelectorAll('button, input, select, textarea, a[href], [tabindex="0"]')]
+        .filter((el) => !el.disabled && el.getClientRects().length);
+      const index = focusable.indexOf(document.activeElement);
+      event.preventDefault();
+      focusable[(index + (previous ? -1 : 1) + focusable.length) % focusable.length]?.focus();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
   function openMainView(view) {

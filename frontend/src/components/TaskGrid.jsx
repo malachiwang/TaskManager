@@ -28,7 +28,7 @@ import KeyboardHelp from './KeyboardHelp.jsx';
 import WorkspaceSearch from './WorkspaceSearch.jsx';
 import { FILTERS, FILTER_LABELS, PRIMARY_FILTERS, taskPassesFilter } from '../filters.js';
 import { GROUP_MODES, groupTasks, uniqueSections } from '../grouping.js';
-import { matchKeybind, resolveKeybinds } from '../keybinds.js';
+import { matchKeybind, resolveKeybinds, jumpDigit, canDismiss } from '../keybinds.js';
 import GroupSelect from './GroupSelect.jsx';
 
 // ---------------------------------------------------------------------------
@@ -1489,7 +1489,7 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth: sharedMonth
       // Escape — priority: modal > help > range > cell selection. Modal close
       // is pre-guard (works while typing inside a modal input); the rest
       // respect the typing guard.
-      if (matchKeybind(e, kb.CLEAR_SELECTION)) {
+      if (canDismiss(e, kb.CLEAR_SELECTION, modalOpenRef.current)) {
         if (modalOpenRef.current) {
           closeModal();
           return;
@@ -1520,8 +1520,8 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth: sharedMonth
       // Shift+digit (0–9) — opens/fills the Jump panel for context-aware Quick Jump.
       // Reserved before typing-to-edit below, so Shift+digits never type into cells.
       // Uses event.code (layout-agnostic) because Shift+3 → '#' in event.key on US keyboards.
-      if (quickJumpEnabledRef.current && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && /^Digit[0-9]$/.test(e.code)) {
-        const digit = e.code[5]; // '0'–'9'
+      if (quickJumpEnabledRef.current && jumpDigit(e, kb) !== null) {
+        const digit = jumpDigit(e, kb); // '0'–'9'
         e.preventDefault();
         numericBufferRef.current = (numericBufferRef.current ?? '') + digit;
         setJumpMode((m) => m === null
@@ -1532,8 +1532,7 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth: sharedMonth
       }
 
       // Shift+Arrow — extend the range from the anchor, spreadsheet-style.
-      if (sel && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey
-          && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+      if (sel && ['LEFT', 'RIGHT', 'UP', 'DOWN'].some((d) => matchKeybind(e, kb[`RANGE_${d}`]))) {
         e.preventDefault();
         const focus = rangeEndRef.current ?? sel;
         const rIdx = tasks.findIndex((t) => t.id === focus.taskId);
@@ -1541,10 +1540,10 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth: sharedMonth
         if (rIdx < 0 || dIdx < 0) return;
         let nr = rIdx;
         let nd = dIdx;
-        if (e.key === 'ArrowLeft')  nd = Math.max(0, dIdx - 1);
-        if (e.key === 'ArrowRight') nd = Math.min(dates.length - 1, dIdx + 1);
-        if (e.key === 'ArrowUp')    nr = Math.max(0, rIdx - 1);
-        if (e.key === 'ArrowDown')  nr = Math.min(tasks.length - 1, rIdx + 1);
+        if (matchKeybind(e, kb.RANGE_LEFT))  nd = Math.max(0, dIdx - 1);
+        if (matchKeybind(e, kb.RANGE_RIGHT)) nd = Math.min(dates.length - 1, dIdx + 1);
+        if (matchKeybind(e, kb.RANGE_UP))    nr = Math.max(0, rIdx - 1);
+        if (matchKeybind(e, kb.RANGE_DOWN))  nr = Math.min(tasks.length - 1, rIdx + 1);
         setRangeEnd({ taskId: tasks[nr].id, date: dates[nd] });
         return;
       }
@@ -1620,7 +1619,7 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth: sharedMonth
       // Delete / Backspace — convert selected cell(s) to blank text cells.
       // Range selection converts every eligible cell; the underlying completion
       // counts are preserved and locked cells are skipped (handleDeleteCells).
-      if ((e.key === 'Delete' || e.key === 'Backspace') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (matchKeybind(e, kb.DELETE_CELL) || matchKeybind(e, kb.BACKSPACE_CELL)) {
         e.preventDefault();
         const range = rangeSelectionRef.current;
         handleDeleteCells(range ? range.cells : [cellMeta(sel.taskId, sel.date)]);
@@ -1773,8 +1772,8 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth: sharedMonth
 
   function handleJumpKeyDown(e) {
     // Allow additional Shift+digits to accumulate in the panel while it's open.
-    if (quickJumpEnabled && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && /^Digit[0-9]$/.test(e.code)) {
-      const digit = e.code[5];
+    if (quickJumpEnabled && jumpDigit(e, resolvedKb) !== null) {
+      const digit = jumpDigit(e, resolvedKb);
       e.preventDefault();
       numericBufferRef.current = (numericBufferRef.current ?? '') + digit;
       setJumpMode((m) => ({ ...m, type: 'numeric', value: (m?.value ?? '') + digit, error: '' }));

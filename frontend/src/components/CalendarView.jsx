@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { canDismiss, resolveKeybinds } from '../keybinds.js';
 import {
   fetchTasks, fetchSessions, fetchDepthWindows, fetchCompletions,
   createTask, updateTask, deleteTask,
@@ -528,7 +529,7 @@ export default function CalendarView({ placeRequest = null, onPlaceRequestConsum
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable) return;
       // The scoped-remove dialog owns its own keys (Escape/Enter/radios).
       if (editingTask || editorSessionId || newTaskOpen || importOpen || removeFor) return;
-      if (e.key === 'Escape') {
+      if (canDismiss(e, resolveKeybinds().CLEAR_SELECTION)) {
         // Staged dismissal (§4): transient UI first, selection second.
         updateDrag(null);
         const hadTransient = creator || quickOpen || confirmAction || windowMenu
