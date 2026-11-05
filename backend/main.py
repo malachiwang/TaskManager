@@ -4114,35 +4114,26 @@ def upsert_completion(task_id: int, completion_date: str):
         raise HTTPException(status_code=404, detail="Task not found")
 
     now = datetime.now().isoformat()
-    existing = conn.execute(
-        "SELECT * FROM completions WHERE task_id = ? AND completion_date = ?",
-        (task_id, completion_date),
-    ).fetchone()
-
+    # One atomic upsert, read back inside the same transaction: a concurrent
+    # DELETE can no longer remove the row between the write and the re-read
+    # (which returned a 500), and a concurrent first insert cannot hit the
+    # UNIQUE(task_id, completion_date) constraint.
     with conn:
-        if existing:
-            conn.execute(
-                """
-                UPDATE completions
-                SET completion_count = completion_count + 1, updated_timestamp = ?
-                WHERE task_id = ? AND completion_date = ?
-                """,
-                (now, task_id, completion_date),
-            )
-        else:
-            conn.execute(
-                """
-                INSERT INTO completions (task_id, completion_date, completion_count,
-                    created_timestamp, updated_timestamp)
-                VALUES (?, ?, 1, ?, ?)
-                """,
-                (task_id, completion_date, now, now),
-            )
-
-    result = conn.execute(
-        "SELECT * FROM completions WHERE task_id = ? AND completion_date = ?",
-        (task_id, completion_date),
-    ).fetchone()
+        conn.execute(
+            """
+            INSERT INTO completions (task_id, completion_date, completion_count,
+                created_timestamp, updated_timestamp)
+            VALUES (?, ?, 1, ?, ?)
+            ON CONFLICT (task_id, completion_date) DO UPDATE
+                SET completion_count = completion_count + 1,
+                    updated_timestamp = excluded.updated_timestamp
+            """,
+            (task_id, completion_date, now, now),
+        )
+        result = conn.execute(
+            "SELECT * FROM completions WHERE task_id = ? AND completion_date = ?",
+            (task_id, completion_date),
+        ).fetchone()
     conn.close()
     return dict(result)
 
