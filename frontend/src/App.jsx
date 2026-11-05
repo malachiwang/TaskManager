@@ -11,15 +11,14 @@ import { fetchHealth } from './api.js';
 import { initAppearance } from './appearance.js';
 
 export default function App() {
-  // Navigation is split into two concepts (P5.0-fix1):
-  //   activeSheet — the primary spreadsheet surface (Tasks | Reading), chosen
-  //     from the bottom worksheet-tab bar. Its value is preserved while a tool
-  //     view is open, so returning from a tool lands back on the last sheet.
-  //   activeTool  — a supporting utility view (Calendar | Dashboard | Reports |
-  //     Settings) opened from the top toolbar; null means "show the
-  //     active sheet".
-  const [activeSheet, setActiveSheet] = useState('tasks');
-  const [activeTool, setActiveTool] = useState(null);
+  // Top-level pages (tm-clean 05): Main | Reports | Settings.
+  //   mainView   — which Main surface is showing (Tasks | Reading | Calendar),
+  //     chosen from the bottom worksheet-tab bar; kept while another page is
+  //     open, so returning to Main lands on the last view.
+  //   reportView — Reports or the Dashboard reached through its crosslink.
+  const [page, setPage] = useState('main');
+  const [mainView, setMainView] = useState('tasks');
+  const [reportView, setReportView] = useState('report');
   const [gridMonth, setGridMonth] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() + 1 };
@@ -92,13 +91,16 @@ export default function App() {
     initAppearance();
   }, []);
 
-  const showingTool = activeTool !== null;
-
-  // Selecting a bottom sheet tab leaves any open tool view and shows that sheet.
-  function openSheet(sheet) {
-    setActiveSheet(sheet);
-    setActiveTool(null);
+  // Selecting a bottom sheet tab shows that Main view.
+  function openMainView(view) {
+    setMainView(view);
+    setPage('main');
   }
+  function openPage(next) {
+    if (next === 'reports') setReportView('report');
+    setPage(next);
+  }
+  const tabKey = page === 'main' ? mainView : page === 'reports' ? reportView : page;
 
   if (booting) return <LoadingScreen />;
 
@@ -113,49 +115,46 @@ export default function App() {
             <span className="app-title">TaskManager</span>
             <span className="app-tagline">Local Workspace</span>
           </div>
-          {/* Utility/tool views — not primary sheets. */}
-          <nav className="app-utility-nav" aria-label="Tools">
-            <button className={`tab${activeTool === 'calendar' ? ' active' : ''}`} onClick={() => setActiveTool('calendar')}>Calendar</button>
-            <button className={`tab${activeTool === 'dashboard' ? ' active' : ''}`} onClick={() => setActiveTool('dashboard')}>Dashboard</button>
-            <button className={`tab${activeTool === 'report' ? ' active' : ''}`} onClick={() => setActiveTool('report')}>Reports</button>
-            <button className={`tab${activeTool === 'settings' ? ' active' : ''}`} onClick={() => setActiveTool('settings')}>Settings</button>
+          <nav className="app-utility-nav" aria-label="Pages">
+            <button className={`tab${page === 'main' ? ' active' : ''}`} aria-current={page === 'main' ? 'page' : undefined} onClick={() => openPage('main')}>Main</button>
+            <button className={`tab${page === 'reports' ? ' active' : ''}`} aria-current={page === 'reports' ? 'page' : undefined} onClick={() => openPage('reports')}>Reports</button>
+            <button className={`tab${page === 'settings' ? ' active' : ''}`} aria-current={page === 'settings' ? 'page' : undefined} onClick={() => openPage('settings')}>Settings</button>
           </nav>
         </div>
       </header>
 
-      <main className="app-main" data-tab={showingTool ? activeTool : activeSheet}>
-        {!showingTool && activeSheet === 'tasks' && (
+      <main className="app-main" data-tab={tabKey}>
+        {page === 'main' && mainView === 'tasks' && (
           <TaskGrid
             viewMonth={gridMonth}
             setViewMonth={setGridMonth}
             onScheduleTask={(task) => {
               setCalendarPlaceTask(task);
-              setActiveTool('calendar');
+              openMainView('calendar');
             }}
           />
         )}
-        {!showingTool && activeSheet === 'reading' && <ReadingSheet />}
-        {activeTool === 'calendar' && (
+        {page === 'main' && mainView === 'reading' && <ReadingSheet />}
+        {page === 'main' && mainView === 'calendar' && (
           <CalendarView
             placeRequest={calendarPlaceTask}
             onPlaceRequestConsumed={() => setCalendarPlaceTask(null)}
           />
         )}
-        {activeTool === 'dashboard' && <Dashboard onOpenReports={() => setActiveTool('report')} />}
-        {activeTool === 'report' && <MonthlyReport onOpenDashboard={() => setActiveTool('dashboard')} />}
-        {activeTool === 'settings' && <Settings sheetMonth={gridMonth} />}
+        {page === 'reports' && reportView === 'dashboard' && <Dashboard onOpenReports={() => setReportView('report')} />}
+        {page === 'reports' && reportView === 'report' && <MonthlyReport onOpenDashboard={() => setReportView('dashboard')} />}
+        {page === 'settings' && <Settings sheetMonth={gridMonth} />}
       </main>
 
-      {/* Primary sheet tabs — Google-Sheets-style worksheet tabs. */}
-      <nav className="sheet-tabbar" aria-label="Sheets">
-        <button
-          className={`sheet-tab${!showingTool && activeSheet === 'tasks' ? ' sheet-tab-active' : ''}`}
-          onClick={() => openSheet('tasks')}
-        >Tasks</button>
-        <button
-          className={`sheet-tab${!showingTool && activeSheet === 'reading' ? ' sheet-tab-active' : ''}`}
-          onClick={() => openSheet('reading')}
-        >Reading</button>
+      {/* Main views — Google-Sheets-style worksheet tabs. */}
+      <nav className="sheet-tabbar" aria-label="Main views">
+        {[['tasks', 'Tasks'], ['reading', 'Reading'], ['calendar', 'Calendar']].map(([view, label]) => (
+          <button
+            key={view}
+            className={`sheet-tab${page === 'main' && mainView === view ? ' sheet-tab-active' : ''}`}
+            onClick={() => openMainView(view)}
+          >{label}</button>
+        ))}
       </nav>
     </div>
   );
