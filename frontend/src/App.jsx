@@ -9,11 +9,15 @@ import LoadingScreen from './components/LoadingScreen.jsx';
 import { fetchHealth } from './api.js';
 import { initAppearance } from './appearance.js';
 
+// Main's views, shown inline in the nav row while Main is active.
+const MAIN_VIEWS = [['tasks', 'Grid'], ['reading', 'Reading'], ['calendar', 'Calendar']];
+
 export default function App() {
   // Top-level pages (tm-clean 05): Main | Reports | Settings.
-  //   mainView   — which Main surface is showing (Tasks | Reading | Calendar),
-  //     chosen from the bottom worksheet-tab bar; kept while another page is
-  //     open, so returning to Main lands on the last view.
+  //   mainView — which Main surface is showing (Grid | Reading | Calendar).
+  //     Its buttons appear in the nav row right after Main while Main is
+  //     active (tm-clean 07); the value is kept while another page is open,
+  //     so returning to Main lands on the last view.
   const [page, setPage] = useState('main');
   const [mainView, setMainView] = useState('tasks');
   const [gridMonth, setGridMonth] = useState(() => {
@@ -88,7 +92,6 @@ export default function App() {
     initAppearance();
   }, []);
 
-  // Selecting a bottom sheet tab shows that Main view.
   function openMainView(view) {
     setMainView(view);
     setPage('main');
@@ -113,6 +116,14 @@ export default function App() {
           </div>
           <nav className="app-utility-nav" aria-label="Pages">
             <button className={`tab${page === 'main' ? ' active' : ''}`} aria-current={page === 'main' ? 'page' : undefined} onClick={() => openPage('main')}>Main</button>
+            {page === 'main' && MAIN_VIEWS.map(([view, label]) => (
+              <button
+                key={view}
+                className={`tab${mainView === view ? ' active' : ''}`}
+                aria-pressed={mainView === view}
+                onClick={() => openMainView(view)}
+              >{label}</button>
+            ))}
             <button className={`tab${page === 'reports' ? ' active' : ''}`} aria-current={page === 'reports' ? 'page' : undefined} onClick={() => openPage('reports')}>Reports</button>
             <button className={`tab${page === 'settings' ? ' active' : ''}`} aria-current={page === 'settings' ? 'page' : undefined} onClick={() => openPage('settings')}>Settings</button>
           </nav>
@@ -140,17 +151,6 @@ export default function App() {
         {page === 'reports' && <MonthlyReport />}
         {page === 'settings' && <Settings sheetMonth={gridMonth} />}
       </main>
-
-      {/* Main views — Google-Sheets-style worksheet tabs. */}
-      <nav className="sheet-tabbar" aria-label="Main views">
-        {[['tasks', 'Tasks'], ['reading', 'Reading'], ['calendar', 'Calendar']].map(([view, label]) => (
-          <button
-            key={view}
-            className={`sheet-tab${page === 'main' && mainView === view ? ' sheet-tab-active' : ''}`}
-            onClick={() => openMainView(view)}
-          >{label}</button>
-        ))}
-      </nav>
     </div>
   );
 }
