@@ -1922,7 +1922,7 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth: sharedMonth
       </div>
 
       {/* ── Tier 2: Sheet header — paper surface, identity + nav + status ── */}
-      <div className="ws-sheet-header">
+      <div className="ws-sheet-header ws-sheet-header--centered">
         <div className="ws-sheet-header-left">
           <div className="ws-sheet-title">Task Sheet</div>
           <div className="ws-sheet-meta">

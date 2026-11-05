@@ -3922,6 +3922,17 @@ thead .meta-col {
   flex-shrink: 0;
 }
 
+/* Task sheet (tm-clean 09): equal-flex side blocks keep the month navigation
+   group centered across the header regardless of what sits beside it. */
+.ws-sheet-header--centered > .ws-sheet-header-left,
+.ws-sheet-header--centered > .ws-sheet-header-right {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.ws-sheet-header--centered > .ws-sheet-header-right {
+  justify-content: flex-end;
+}
+
 /* Keyboard legend — compact hint line in sheet header */
 .ws-kbd-legend {
   font-family: var(--font-mono);
