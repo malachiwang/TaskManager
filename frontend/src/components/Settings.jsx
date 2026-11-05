@@ -691,20 +691,6 @@ export default function Settings() {
                 restored. Switch to the Tasks sheet to load the restored data.
               </div>
             )}
-
-            <div className="ws-ctrl-row">
-              <div className="ws-ctrl-info">
-                <span className="ws-ctrl-label">Storage &amp; privacy</span>
-                <span className="ws-ctrl-desc">
-                  Everything is a local SQLite file (<code>taskos.db</code>) — no cloud, no
-                  account, no telemetry. UI preferences stay in this browser and are not part
-                  of backups. Details: Technical reference below.
-                </span>
-              </div>
-              <div className="ws-ctrl-action">
-                <span className="ws-state-badge ws-state-badge--on">local · offline</span>
-              </div>
-            </div>
           </div>
 
           <CsvImport />
@@ -863,25 +849,6 @@ D = days_since   I = interval_days`}</pre>
                   </div>
                   <span className="ws-state-badge">wishlist</span>
                 </div>
-              </RefSection>
-
-              <RefSection label="Storage &amp; privacy details">
-                <p className="settings-prose">
-                  All task data lives in <code>taskos.db</code> — a local SQLite file (project
-                  root in development, app-data directory in the packaged app; overridable with
-                  the <code>TASKOS_DB_PATH</code> environment variable). Gitignored, never
-                  committed, never leaves your machine.
-                </p>
-                <p className="settings-prose" style={{ marginTop: '8px' }}>
-                  UI preferences (theme, appearance, column widths, dashboard toggles, keyboard
-                  shortcuts) stay in this browser&rsquo;s localStorage and are <em>not</em>
-                  included in JSON backups — they do not transfer between devices.
-                </p>
-                <p className="settings-prose" style={{ marginTop: '8px' }}>
-                  No cloud sync. No authentication. No external services. No telemetry.
-                  All network traffic is localhost only. See <code>docs/INSTALL.md</code> in the
-                  repository for setup and device-transfer instructions.
-                </p>
               </RefSection>
             </div>
           </div>

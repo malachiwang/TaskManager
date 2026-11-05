@@ -1941,8 +1941,6 @@ export default function TaskGrid({ onScheduleTask = null }) {
           <button className="ws-sheet-nav" onClick={goToNextMonth}>›</button>
         </div>
         <div className="ws-sheet-header-right">
-          <span className="ws-status-pill ws-status-pill--ok">local</span>
-          <span className="ws-status-pill ws-status-pill--ok">SQLite</span>
           <div className="ws-kbd-help-anchor">
             <button
               ref={helpBtnRef}

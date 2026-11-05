@@ -226,7 +226,7 @@ export default function DateCell({
       onDoubleClick={handleCellDoubleClick}
       title={
         isHiatusBlank && !isFuture
-          ? 'Hiatus period — history preserved'
+          ? 'Task is on hiatus'
           : isTextOverride
             ? (overrideText || 'Text cell — double-click to edit')
             : hasNote && noteText
