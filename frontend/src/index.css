@@ -204,6 +204,12 @@ html[data-accent="amber"] {
    surfaces but keep their green/amber/orange/red semantics.
    ---------------------------------------------------------------------- */
 
+/* tm-clean 20: tell the browser the page is dark so the parts it draws
+   itself (scroll bars) render dark. Dark appearance only. */
+html[data-appearance="dark"] {
+  color-scheme: dark;
+}
+
 html[data-appearance="dark"] {
   /* Surfaces */
   --bg-app:       #151515;
