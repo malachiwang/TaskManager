@@ -521,6 +521,17 @@ body {
   padding-left: 16px;
 }
 
+/* Main's view tabs (tm-clean 08): laid out exactly like direct
+   .app-utility-nav children, so the row is unchanged at rest; the tabs keep
+   their width while the slot slides open or closed. */
+.main-views-slot {
+  display: flex;
+  gap: 2px;
+}
+.main-views-slot > .tab {
+  flex-shrink: 0;
+}
+
 /* Bottom worksheet-tab strip (P5.0-fix1/2, Sheets-styled in fix3) — primary
    sheet switch (Tasks / Reading) matching Google Sheets worksheet tabs: a light
    gray bottom strip with substantial bottom-left tab blocks, an active tab that

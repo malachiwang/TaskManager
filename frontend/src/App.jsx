@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import TaskGrid from './components/TaskGrid.jsx';
 import CalendarView from './components/CalendarView.jsx';
 import Settings from './components/Settings.jsx';
@@ -11,6 +11,71 @@ import { initAppearance } from './appearance.js';
 
 // Main's views, shown inline in the nav row while Main is active.
 const MAIN_VIEWS = [['tasks', 'Grid'], ['reading', 'Reading'], ['calendar', 'Calendar']];
+
+// Slides Main's view tabs open and closed (tm-clean 08; logic ported from
+// drift-ref). Only width, the trailing margin and opacity animate. At rest a
+// closed slot is unmounted, exactly as before, so focus order and the
+// accessibility tree are unchanged; while sliding closed it is inert. No
+// animation on first mount or when the OS asks for reduced motion.
+const NAV_SLIDE_MS = 200;
+function MainViewsSlot({ open, children }) {
+  const [mounted, setMounted] = useState(open);
+  const [closing, setClosing] = useState(false);
+  const slotRef = useRef(null);
+  const animRef = useRef(null);
+  // Previous value, so mount (and StrictMode's repeated mount effects) never animate.
+  const prevOpen = useRef(open);
+  const pendingOpen = useRef(false);
+  const reduced = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const slide = (el, from, to, done) => {
+    animRef.current?.cancel();
+    // Collapsed frame: zero width plus a negative margin equal to the nav gap,
+    // so the row measures exactly as if the slot were not rendered.
+    const gap = parseFloat(getComputedStyle(el.parentElement).columnGap) || 0;
+    const frame = (w) => (w === 0
+      ? { width: '0px', marginRight: `-${gap}px`, opacity: 0 }
+      : { width: `${w}px`, marginRight: '0px', opacity: 1 });
+    el.style.overflow = 'hidden';
+    // Closing holds its collapsed frame until React unmounts the slot, so the
+    // full width never flashes back for a frame.
+    const a = el.animate([frame(from), frame(to)], { duration: NAV_SLIDE_MS, easing: 'ease-out', fill: to === 0 ? 'forwards' : 'none' });
+    animRef.current = a;
+    a.onfinish = () => { el.style.overflow = ''; animRef.current = null; done?.(); };
+    a.oncancel = () => { el.style.overflow = ''; };
+  };
+  useLayoutEffect(() => {
+    if (prevOpen.current === open) return;
+    prevOpen.current = open;
+    if (open) {
+      pendingOpen.current = !reduced();
+      setClosing(false);
+      setMounted(true);
+    } else if (slotRef.current) {
+      if (reduced()) { setMounted(false); return; }
+      setClosing(true);
+      const el = slotRef.current;
+      slide(el, el.getBoundingClientRect().width, 0, () => { setMounted(false); setClosing(false); });
+    }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    if (!mounted || !open || !pendingOpen.current || !slotRef.current) return;
+    pendingOpen.current = false;
+    const el = slotRef.current;
+    slide(el, 0, el.getBoundingClientRect().width);
+  }, [mounted, open]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!mounted) return null;
+  return (
+    <div
+      ref={slotRef}
+      className="main-views-slot"
+      role="group"
+      aria-label="Main views"
+      {...(closing ? { inert: '', 'aria-hidden': 'true' } : {})}
+    >
+      {children}
+    </div>
+  );
+}
 
 export default function App() {
   // Top-level pages (tm-clean 05): Main | Reports | Settings.
@@ -116,14 +181,16 @@ export default function App() {
           </div>
           <nav className="app-utility-nav" aria-label="Pages">
             <button className={`tab${page === 'main' ? ' active' : ''}`} aria-current={page === 'main' ? 'page' : undefined} onClick={() => openPage('main')}>Main</button>
-            {page === 'main' && MAIN_VIEWS.map(([view, label]) => (
-              <button
-                key={view}
-                className={`tab${mainView === view ? ' active' : ''}`}
-                aria-pressed={mainView === view}
-                onClick={() => openMainView(view)}
-              >{label}</button>
-            ))}
+            <MainViewsSlot open={page === 'main'}>
+              {MAIN_VIEWS.map(([view, label]) => (
+                <button
+                  key={view}
+                  className={`tab${mainView === view ? ' active' : ''}`}
+                  aria-pressed={mainView === view}
+                  onClick={() => openMainView(view)}
+                >{label}</button>
+              ))}
+            </MainViewsSlot>
             <button className={`tab${page === 'reports' ? ' active' : ''}`} aria-current={page === 'reports' ? 'page' : undefined} onClick={() => openPage('reports')}>Reports</button>
             <button className={`tab${page === 'settings' ? ' active' : ''}`} aria-current={page === 'settings' ? 'page' : undefined} onClick={() => openPage('settings')}>Settings</button>
           </nav>
