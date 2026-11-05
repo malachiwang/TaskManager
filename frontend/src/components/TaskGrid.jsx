@@ -28,6 +28,7 @@ import KeyboardHelp from './KeyboardHelp.jsx';
 import WorkspaceSearch from './WorkspaceSearch.jsx';
 import { FILTERS, FILTER_LABELS, PRIMARY_FILTERS, taskPassesFilter } from '../filters.js';
 import { GROUP_MODES, groupTasks, uniqueSections } from '../grouping.js';
+import { checkInTaskIds, isVisibleInMonth } from '../monthVisibility.js';
 import { matchKeybind, resolveKeybinds, jumpDigit, canDismiss } from '../keybinds.js';
 import GroupSelect from './GroupSelect.jsx';
 
@@ -396,14 +397,13 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth: sharedMonth
   // ---------------------------------------------------------------------------
 
   const filteredTasks = useMemo(() => {
-    // Finished-task month visibility (P3.0B): a task marked Finished (end_date set)
-    // is hidden in month views AFTER its finish month, but stays visible in the
-    // finish month and all earlier months. Keyed strictly on end_date — a plain
-    // completion entry never sets end_date, so completing a cell never hides a task.
-    const viewYearMonth = `${viewMonth.year}-${String(viewMonth.month).padStart(2, '0')}`;
-    let result = tasks.filter(
-      (t) => !t.end_date || t.end_date.slice(0, 7) >= viewYearMonth,
-    );
+    // Month visibility (tm-clean 14, monthVisibility.js, ported from drift-ref):
+    // only tasks live in the viewed month — started (Active from, else created)
+    // on or before its last day and not finished before its first day — plus
+    // any task with a check-in dated in it, so recorded data is never hidden.
+    // Completing a cell never sets end_date, so it never hides a task.
+    const checkIns = checkInTaskIds({ completions, notes, overrides: cellOverrides }, viewMonth.year, viewMonth.month);
+    let result = tasks.filter((t) => isVisibleInMonth(t, viewMonth.year, viewMonth.month, checkIns));
     if (activeFilter !== FILTERS.ALL) {
       result = result.filter((t) => taskPassesFilter(t, activeFilter));
     }
@@ -418,7 +418,7 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth: sharedMonth
       );
     }
     return result;
-  }, [tasks, activeFilter, searchQuery, viewMonth.year, viewMonth.month]);
+  }, [tasks, completions, notes, cellOverrides, activeFilter, searchQuery, viewMonth.year, viewMonth.month]);
 
   // Any filter/search hides tasks — empty sections are suppressed then, since
   // a section that merely *looks* empty under a filter is a confusing target.
