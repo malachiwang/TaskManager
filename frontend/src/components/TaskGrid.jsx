@@ -932,18 +932,66 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth: sharedMonth
     const scrollEl = headerTr?.closest('.grid-wrapper');
     if (!scrollEl) return;
 
-    // Lightweight floating label — section rows span the whole sheet, so a
-    // full-row clone would just be a wide bar; the name chip reads better.
+    // The whole section lifts as one unit (tm-clean 15; ported from drift-ref),
+    // using the same clone technique as a single-row drag: a fixed clip aligned
+    // to the grid viewport holds a clone of the table containing the header and
+    // every row of this section, cropped to the visible columns.
+    const srcTable = headerTr.closest('table.task-grid');
+    const scrollRect = scrollEl.getBoundingClientRect();
+    const headerRect = headerTr.getBoundingClientRect();
+    const blockRows = [headerTr];
+    for (let n = headerTr.nextElementSibling; n && !n.classList.contains('ws-section-row'); n = n.nextElementSibling) {
+      if (n.tagName === 'TR' && !n.classList.contains('ws-section-end-indicator')) blockRows.push(n);
+    }
+    const blockHeight = blockRows.reduce((h, r) => h + r.getBoundingClientRect().height, 0);
+    // Very long sections show their top part; the clip never exceeds 60% of the grid.
+    const clipHeight = Math.min(blockHeight, Math.max(headerRect.height, scrollRect.height * 0.6));
+
     const ghost = document.createElement('div');
-    ghost.className = 'section-drag-ghost';
-    ghost.textContent = group.label;
-    ghost.style.left = (e.clientX + 14) + 'px';
-    ghost.style.top = (e.clientY - 12) + 'px';
+    ghost.className = 'row-drag-ghost-clip';
+    ghost.style.left = scrollRect.left + 'px';
+    ghost.style.top = headerRect.top + 'px';
+    ghost.style.width = scrollRect.width + 'px';
+    ghost.style.height = clipHeight + 'px';
+    const tableClone = srcTable.cloneNode(false);
+    tableClone.style.width = srcTable.getBoundingClientRect().width + 'px';
+    tableClone.style.tableLayout = 'fixed';
+    tableClone.style.margin = '0';
+    tableClone.style.minWidth = '0';
+    // A fixed-layout table takes column widths from its first row, which here is
+    // the merged section header; pin every column from the real header instead.
+    const colgroup = document.createElement('colgroup');
+    for (const th of srcTable.querySelectorAll('thead tr:first-child > th')) {
+      const col = document.createElement('col');
+      col.style.width = th.getBoundingClientRect().width + 'px';
+      colgroup.appendChild(col);
+    }
+    tableClone.appendChild(colgroup);
+    const tbody = document.createElement('tbody');
+    for (const row of blockRows) {
+      const clone = row.cloneNode(true);
+      // Keep clones out of hit testing and drop-target lookups.
+      clone.removeAttribute('data-task-id');
+      clone.removeAttribute('data-section-key');
+      clone.removeAttribute('data-section-drop');
+      clone.classList.remove('drag-over', 'drag-source', 'ws-section-drag-source', 'ws-section-drop-before', 'ws-drop-below');
+      const src = row.children; const dst = clone.children;
+      for (let i = 0; i < src.length; i++) {
+        if (!dst[i]) continue;
+        const w = src[i].getBoundingClientRect().width;
+        dst[i].style.width = w + 'px'; dst[i].style.minWidth = w + 'px'; dst[i].style.maxWidth = w + 'px';
+      }
+      tbody.appendChild(clone);
+    }
+    tableClone.appendChild(tbody);
+    ghost.appendChild(tableClone);
     document.body.appendChild(ghost);
+    ghost.scrollLeft = scrollEl.scrollLeft;
 
     sectionDragRef.current = {
       active: true, key: group.key, sectionName: group.sectionName,
       lastX: e.clientX, lastY: e.clientY,
+      pointerOffsetY: e.clientY - headerRect.top,
     };
     sectionDropRef.current = null;
     setSectionDragKey(group.key);
@@ -977,8 +1025,7 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth: sharedMonth
       if (!sectionDragRef.current.active) return;
       sectionDragRef.current.lastX = ev.clientX;
       sectionDragRef.current.lastY = ev.clientY;
-      ghost.style.left = (ev.clientX + 14) + 'px';
-      ghost.style.top = (ev.clientY - 12) + 'px';
+      ghost.style.top = (ev.clientY - sectionDragRef.current.pointerOffsetY) + 'px';
       updateIdx(ev.clientY);
     }
 
@@ -2211,7 +2258,7 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth: sharedMonth
                     reorderEnabled={reorderEnabled}
                     dragOverEdge={dragOverTarget?.type === 'task' && dragOverTarget.id === task.id
                       ? dragOverTarget.edge : null}
-                    isDragSource={dragSrcId === task.id}
+                    isDragSource={dragSrcId === task.id || sectionDragKey === group.key}
                     onHandlePointerDown={handleHandlePointerDown}
                     onIncrement={handleIncrement}
                     onEdit={openEdit}
