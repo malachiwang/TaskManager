@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import TaskGrid from './components/TaskGrid.jsx';
 import CalendarView from './components/CalendarView.jsx';
-import Dashboard from './components/Dashboard.jsx';
 import Settings from './components/Settings.jsx';
 import ReadingSheet from './components/ReadingSheet.jsx';
 import MonthlyReport from './components/MonthlyReport.jsx';
@@ -15,10 +14,8 @@ export default function App() {
   //   mainView   — which Main surface is showing (Tasks | Reading | Calendar),
   //     chosen from the bottom worksheet-tab bar; kept while another page is
   //     open, so returning to Main lands on the last view.
-  //   reportView — Reports or the Dashboard reached through its crosslink.
   const [page, setPage] = useState('main');
   const [mainView, setMainView] = useState('tasks');
-  const [reportView, setReportView] = useState('report');
   const [gridMonth, setGridMonth] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() + 1 };
@@ -97,10 +94,9 @@ export default function App() {
     setPage('main');
   }
   function openPage(next) {
-    if (next === 'reports') setReportView('report');
     setPage(next);
   }
-  const tabKey = page === 'main' ? mainView : page === 'reports' ? reportView : page;
+  const tabKey = page === 'main' ? mainView : page === 'reports' ? 'report' : page;
 
   if (booting) return <LoadingScreen />;
 
@@ -141,8 +137,7 @@ export default function App() {
             onPlaceRequestConsumed={() => setCalendarPlaceTask(null)}
           />
         )}
-        {page === 'reports' && reportView === 'dashboard' && <Dashboard onOpenReports={() => setReportView('report')} />}
-        {page === 'reports' && reportView === 'report' && <MonthlyReport onOpenDashboard={() => setReportView('dashboard')} />}
+        {page === 'reports' && <MonthlyReport />}
         {page === 'settings' && <Settings sheetMonth={gridMonth} />}
       </main>
 

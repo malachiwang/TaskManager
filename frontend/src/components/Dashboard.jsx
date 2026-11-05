@@ -459,18 +459,11 @@ function ActionTable({ rows, emptyText, reasonPrefix }) {
   );
 }
 
-function nowLabel() {
-  const d = new Date();
-  const date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
-  const time = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-  return `${date} · ${time}`;
-}
-
 // ---------------------------------------------------------------------------
 // Dashboard
 // ---------------------------------------------------------------------------
 
-export default function Dashboard({ onOpenReports }) {
+export default function Dashboard() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [tasks, setTasks] = useState(null);
@@ -594,26 +587,10 @@ export default function Dashboard({ onOpenReports }) {
     activity: 'Activity',
   };
 
+  // Rendered as Reports' "Today" view (tm-clean 06), inside Reports' own
+  // .ws-dashboard container and under its header.
   return (
-    <div className="ws-dashboard">
-      <div className="ws-dash-header">
-        <div className="ws-dash-header-left">
-          <div className="ws-dash-title">Dashboard</div>
-          <div className="ws-dash-sub">
-            today&rsquo;s command center · current pressure, quick wins, and tasks that need attention
-            {tasksReady ? ` · ${inScope} in scope` : ''}
-            {onOpenReports && (
-              <>
-                {' · '}
-                <button type="button" className="ws-dash-crosslink" onClick={onOpenReports}>
-                  for patterns over time, open Reports →
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-        <div className="ws-dash-now">{nowLabel()}</div>
-      </div>
+    <>
 
       {/* ── Top command panel — contained + inset to align with lower panels ── */}
       <div className="dashboard-command-panel">
@@ -1058,6 +1035,6 @@ export default function Dashboard({ onOpenReports }) {
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }
