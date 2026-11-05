@@ -68,9 +68,18 @@ export default function MonthlyReport() {
   // Current-state fetches (once).
   useEffect(() => {
     fetchTasks().then(setTasks).catch((e) => setTasksError(e.message));
-    fetchSnapshotPressure(60).then(setSnapshot).catch(() => setSnapshot({ rows: [], dates: [] }));
     fetchReadingBooks().then(setBooks).catch(() => setBooks([]));
   }, []);
+
+  // Snapshot pressure is read when History is first opened, not on mount:
+  // the Today view records today's snapshot as it loads, and fetching in
+  // parallel made History's pressure change depend on which request won.
+  const [historyOpened, setHistoryOpened] = useState(view === 'history');
+  useEffect(() => { if (view === 'history') setHistoryOpened(true); }, [view]);
+  useEffect(() => {
+    if (!historyOpened) return;
+    fetchSnapshotPressure(60).then(setSnapshot).catch(() => setSnapshot({ rows: [], dates: [] }));
+  }, [historyOpened]);
 
   // Period completions (refetch on period change).
   useEffect(() => {
