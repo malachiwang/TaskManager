@@ -2773,6 +2773,57 @@ def parse_natural_language(q: str, now: Optional[str] = None):
 _SEARCH_TYPES = frozenset({"task", "session", "entry", "event", "context"})
 
 
+@app.get("/search/workspace")
+def search_workspace(q: str = "", limit: int = 100):
+    """Read-only workspace search (tm-clean 11; ported from drift-ref without
+    the archive-snapshot results, which no UI shows since tm-clean 02).
+
+    Matches tasks (name/subtask/category/section/notes), cell notes, text
+    cells, reading books (title/author/notes/purchase notes) and reading
+    checkpoint notes. Each task result carries the date whose month should be
+    revealed: the note/text cell's own date, else the finish date, else the
+    later of today and Active from.
+    """
+    query = q.strip().casefold()
+    if not query:
+        return []
+    limit = max(1, min(200, limit))
+    conn = get_connection()
+    results = []
+
+    def matches(*values):
+        return any(query in str(value or "").casefold() for value in values)
+
+    def task_result(task, when=None, **extra):
+        # Finished tasks must open no later than their finish month.
+        when = when or task.get("end_date") or max(
+            date.today().isoformat(), (task.get("active_from") or "")[:10])
+        return {"kind": "task", "id": task["id"], "label": task["name"],
+                "date": when[:10], **extra}
+
+    try:
+        tasks = [dict(r) for r in conn.execute("SELECT * FROM tasks WHERE is_active = 1 ORDER BY display_order, id")]
+        by_id = {t["id"]: t for t in tasks}
+        for task in tasks:
+            if matches(*(task.get(k) for k in ("name", "subtask", "category", "section", "notes"))):
+                results.append(task_result(task, detail=task.get("section") or "Task"))
+        # Keep dated matches separate: selecting a note must reveal its own month.
+        for table, date_col, text_col in (("cell_notes", "note_date", "note"), ("date_cell_overrides", "date", "text")):
+            for row in conn.execute(f"SELECT * FROM {table} ORDER BY {date_col} DESC"):
+                if row["task_id"] in by_id and matches(row[text_col]):
+                    results.append(task_result(by_id[row["task_id"]], row[date_col], detail=row[text_col]))
+        for book in conn.execute("SELECT * FROM reading_books ORDER BY display_order, id"):
+            if matches(*(book[k] for k in ("title", "author", "notes", "purchase_notes"))):
+                results.append({"kind": "reading", "id": book["id"], "label": book["title"], "detail": book["author"]})
+        for entry in conn.execute("SELECT e.*, b.title FROM reading_entries e JOIN reading_books b ON b.id = e.book_id ORDER BY e.entry_date DESC"):
+            if matches(entry["note"]):
+                results.append({"kind": "reading", "id": entry["book_id"], "entryId": entry["id"],
+                                "label": entry["title"], "date": entry["entry_date"], "detail": entry["note"]})
+        return results[:limit]
+    finally:
+        conn.close()
+
+
 @app.get("/search")
 def search_calendar(
     q: str = "",

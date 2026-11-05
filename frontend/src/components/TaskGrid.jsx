@@ -25,6 +25,7 @@ import TaskRow from './TaskRow.jsx';
 import TaskModal from './TaskModal.jsx';
 import EditBar from './EditBar.jsx';
 import KeyboardHelp from './KeyboardHelp.jsx';
+import WorkspaceSearch from './WorkspaceSearch.jsx';
 import { FILTERS, FILTER_LABELS, PRIMARY_FILTERS, taskPassesFilter } from '../filters.js';
 import { GROUP_MODES, groupTasks, uniqueSections } from '../grouping.js';
 import { matchKeybind, resolveKeybinds } from '../keybinds.js';
@@ -248,7 +249,7 @@ function startEdgeAutoscroll(scrollEl, getPointerY, onScrollTick) {
   return () => clearInterval(timer);
 }
 
-export default function TaskGrid({ onScheduleTask = null, viewMonth: sharedMonth = null, setViewMonth: setSharedMonth = null }) {
+export default function TaskGrid({ onScheduleTask = null, viewMonth: sharedMonth = null, setViewMonth: setSharedMonth = null, searchTarget = null, onTargetConsumed = () => {} }) {
   // Real today — always fixed regardless of which month is displayed.
   const todayStr = toLocalDate(new Date());
 
@@ -1397,6 +1398,33 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth: sharedMonth
     setRangeEnd(null);
   }, [activeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Workspace search (tm-clean 11): show everything, then select and scroll to
+  // the hit's cell once the target month's rows are rendered. A hit that is
+  // not in the month (e.g. removed meanwhile) is simply consumed.
+  useEffect(() => {
+    if (!searchTarget || searchTarget.kind !== 'task') return;
+    setActiveFilter(FILTERS.ALL);
+    setSearchQuery('');
+    setRangeEnd(null);
+    setSelectedMetaCell(null);
+  }, [searchTarget]);
+  useEffect(() => {
+    if (!searchTarget || searchTarget.kind !== 'task' || loading) return undefined;
+    if (activeFilter !== FILTERS.ALL || searchQuery !== '') return undefined;
+    const date = searchTarget.date && dates.includes(searchTarget.date) ? searchTarget.date : null;
+    if (searchTarget.date && !date) return undefined; // month switch still pending
+    if (!flatGroupedTasks.some((t) => t.id === searchTarget.id)) { onTargetConsumed(); return undefined; }
+    const cellDate = date || dates[0];
+    setSelectedCell({ taskId: searchTarget.id, date: cellDate });
+    const frame = requestAnimationFrame(() => {
+      document.querySelector(`tr[data-task-id="${searchTarget.id}"]`)?.scrollIntoView({ block: 'center', inline: 'nearest' });
+      document.querySelector(`td[data-dc-task="${searchTarget.id}"][data-dc-date="${cellDate}"]`)
+        ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      onTargetConsumed();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [searchTarget, loading, activeFilter, searchQuery, flatGroupedTasks, dates, onTargetConsumed]);
+
   // Clear selectedCell when groupMode changes — render order may change completely.
   useEffect(() => {
     setSelectedCell(null);
@@ -1940,6 +1968,7 @@ export default function TaskGrid({ onScheduleTask = null, viewMonth: sharedMonth
           <button className="ws-sheet-nav" onClick={goToNextMonth}>›</button>
         </div>
         <div className="ws-sheet-header-right">
+          <WorkspaceSearch />
           <div className="ws-kbd-help-anchor">
             <button
               ref={helpBtnRef}

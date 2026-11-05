@@ -9,6 +9,7 @@ import {
 } from '../api.js';
 import ReadingBookModal, { PRIORITY_LABELS } from './ReadingBookModal.jsx';
 import KeyboardHelp from './KeyboardHelp.jsx';
+import WorkspaceSearch from './WorkspaceSearch.jsx';
 import { matchKeybind, resolveKeybinds } from '../keybinds.js';
 import { normalizeSafeUrl } from '../linkUtils.js';
 import { handleSafeLinkClick } from '../openExternalLink.js';
@@ -47,7 +48,7 @@ function formatDate(iso) {
   return y === cur ? `${m}/${d}` : `${m}/${d}/${String(y).slice(2)}`;
 }
 
-export default function ReadingSheet() {
+export default function ReadingSheet({ searchTarget = null, onTargetConsumed = () => {} }) {
   const [books, setBooks] = useState([]);
   const [entriesByBook, setEntriesByBook] = useState({});
   const [loading, setLoading] = useState(true);
@@ -166,11 +167,27 @@ export default function ReadingSheet() {
     updateReadingBook(book.id, { to_buy: false }).then(replaceBook).catch((e) => console.error(e));
   }
 
-  // Row selection does not carry across views — the visible id set changes.
+  // Row selection does not carry across views — the visible id set changes
+  // (except for a workspace-search reveal, which picks the view itself).
   useEffect(() => {
-    setSelectedBookId(null);
+    if (searchTarget?.kind !== 'reading') setSelectedBookId(null);
     setConfirmDeleteId(null);
-  }, [viewMode]);
+  }, [viewMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Workspace search (tm-clean 11): show the book's view, select its row and
+  // open its existing editor.
+  useEffect(() => {
+    if (loading || searchTarget?.kind !== 'reading') return undefined;
+    const book = books.find((b) => b.id === searchTarget.id);
+    if (!book) { onTargetConsumed(); return undefined; }
+    setFilter('all');
+    setViewMode(book.to_buy ? 'tobuy' : 'library');
+    setSelectedBookId(book.id);
+    setEditingBook(book);
+    setModalOpen(true);
+    const frame = requestAnimationFrame(() => onTargetConsumed());
+    return () => cancelAnimationFrame(frame);
+  }, [loading, books, searchTarget, onTargetConsumed]);
 
   function openAdd() { setEditingBook(null); setModalOpen(true); }
   function openEdit(book) { setEditingBook(book); setModalOpen(true); }
@@ -361,6 +378,7 @@ export default function ReadingSheet() {
           </div>
         </div>
         <div className="ws-sheet-header-right">
+          <WorkspaceSearch />
           <div className="ws-kbd-help-anchor">
             <button
               ref={helpBtnRef}

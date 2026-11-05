@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import TaskGrid from './components/TaskGrid.jsx';
 import CalendarView from './components/CalendarView.jsx';
 import Settings from './components/Settings.jsx';
@@ -8,6 +8,7 @@ import TopBarNetwork from './components/TopBarNetwork.jsx';
 import LoadingScreen from './components/LoadingScreen.jsx';
 import { fetchHealth } from './api.js';
 import { initAppearance } from './appearance.js';
+import { WorkspaceNavigation } from './components/WorkspaceSearch.jsx';
 
 // Main's views, shown inline in the nav row while Main is active.
 const MAIN_VIEWS = [['tasks', 'Grid'], ['reading', 'Reading'], ['calendar', 'Calendar']];
@@ -164,11 +165,32 @@ export default function App() {
   function openPage(next) {
     setPage(next);
   }
+
+  // Workspace search (tm-clean 11): pages switch directly; task hits open the
+  // Grid on the hit's month, reading hits open Reading; the view consumes
+  // searchTarget once it has revealed the record.
+  const [searchTarget, setSearchTarget] = useState(null);
+  const consumeSearchTarget = useCallback(() => setSearchTarget(null), []);
+  function openSearchResult(result) {
+    if (result.kind === 'navigation') {
+      setPage(result.page);
+      if (result.view) setMainView(result.view);
+      return;
+    }
+    setPage('main');
+    setMainView(result.kind === 'reading' ? 'reading' : 'tasks');
+    if (result.kind === 'task' && result.date) {
+      const [year, month] = result.date.split('-').map(Number);
+      setGridMonth({ year, month });
+    }
+    setSearchTarget({ ...result, requestId: Date.now() });
+  }
   const tabKey = page === 'main' ? mainView : page === 'reports' ? 'report' : page;
 
   if (booting) return <LoadingScreen />;
 
   return (
+    <WorkspaceNavigation.Provider value={openSearchResult}>
     <div className="app">
       <header className="app-header">
         {/* Background-only network signature — pointer-events:none, behind
@@ -202,13 +224,15 @@ export default function App() {
           <TaskGrid
             viewMonth={gridMonth}
             setViewMonth={setGridMonth}
+            searchTarget={searchTarget}
+            onTargetConsumed={consumeSearchTarget}
             onScheduleTask={(task) => {
               setCalendarPlaceTask(task);
               openMainView('calendar');
             }}
           />
         )}
-        {page === 'main' && mainView === 'reading' && <ReadingSheet />}
+        {page === 'main' && mainView === 'reading' && <ReadingSheet searchTarget={searchTarget} onTargetConsumed={consumeSearchTarget} />}
         {page === 'main' && mainView === 'calendar' && (
           <CalendarView
             placeRequest={calendarPlaceTask}
@@ -219,5 +243,6 @@ export default function App() {
         {page === 'settings' && <Settings sheetMonth={gridMonth} />}
       </main>
     </div>
+    </WorkspaceNavigation.Provider>
   );
 }

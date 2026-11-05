@@ -159,6 +159,13 @@ export async function deleteTask(id) {
   return res.json();
 }
 
+// Workspace search (tm-clean 11).
+export async function searchWorkspace(q, signal) {
+  const res = await fetch(`${BASE}/search/workspace?q=${encodeURIComponent(q)}`, { signal });
+  if (!res.ok) throw new Error(`searchWorkspace failed: ${res.status}`);
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
 // Export downloads — fetch → blob → programmatic click.
 // Direct anchor navigation (href + download) is not honored in Tauri's
