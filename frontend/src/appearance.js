@@ -30,12 +30,17 @@ export const ACCENT_THEMES = [
   { value: 'amber',    label: 'Amber',    swatch: '#b26a00' },
 ];
 
-// Header banner art (tm-clean 21). 'network' is the original node-and-edge
-// field; 'blossom' draws the same field as pixel cherry blossoms.
+// Header banner art (tm-clean 21/22). 'network' is the original node-and-edge
+// field; 'pixel-network' and 'pixel-blossom' draw the same animated field as
+// pixel art; 'cherry' is a static pixel cherry grove.
 export const BANNER_STYLES = [
-  { value: 'network', label: 'Network' },
-  { value: 'blossom', label: 'Cherry blossom' },
+  { value: 'network',       label: 'Network' },
+  { value: 'pixel-network', label: 'Pixel network' },
+  { value: 'pixel-blossom', label: 'Pixel cherry blossom' },
+  { value: 'cherry',        label: 'Cherry blossom' },
 ];
+// c7c63db stored the animated blossom banner as 'blossom'.
+const LEGACY_BANNER = { blossom: 'pixel-blossom' };
 
 export const MOTION_LEVELS = [
   { value: 'off',    label: 'Off' },
@@ -78,7 +83,8 @@ export function loadAppearance() {
       theme:  VISUAL_THEMES.some((t) => t.value === saved.theme)   ? saved.theme : legacyTheme(),
       accent: ACCENT_THEMES.some((a) => a.value === saved.accent)  ? saved.accent : DEFAULTS.accent,
       motion: MOTION_LEVELS.some((l) => l.value === saved.motion)  ? saved.motion : DEFAULTS.motion,
-      banner: BANNER_STYLES.some((b) => b.value === saved.banner)  ? saved.banner : DEFAULTS.banner,
+      banner: BANNER_STYLES.some((b) => b.value === (LEGACY_BANNER[saved.banner] ?? saved.banner))
+        ? (LEGACY_BANNER[saved.banner] ?? saved.banner) : DEFAULTS.banner,
     };
   } catch {
     return { ...DEFAULTS, theme: legacyTheme() };
