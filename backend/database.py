@@ -21,6 +21,8 @@ directory is created automatically on first connection.
 """
 import os
 import sqlite3
+import threading
+import weakref
 from datetime import date as _date
 from pathlib import Path
 
@@ -28,18 +30,103 @@ _default_db = Path(__file__).parent.parent / "taskos.db"
 DB_PATH = Path(os.environ["TASKOS_DB_PATH"]) if "TASKOS_DB_PATH" in os.environ else _default_db
 
 
-def get_connection() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+# ---------------------------------------------------------------------------
+# Connections — one reusable SQLite connection per worker thread.
+#
+# Opening and closing a connection for every request made concurrent bursts
+# open and close the same file from many threads at once; with SQLite 3.51
+# (conda Python 3.13) that deadlocked inside SQLite's unix VFS mutexes and
+# every DB endpoint hung while /health kept answering. Now:
+#   - each thread keeps one connection and reuses it across requests;
+#   - conn.close() in request code ends the request (rolls back anything left
+#     uncommitted, exactly what a real close did) but keeps the connection;
+#   - real opens/closes (first use on a thread, thread retirement, DB_PATH
+#     change, shutdown) are rare and serialized by _LIFECYCLE_LOCK;
+#   - journal_mode=WAL is set once in init_db (it is stored in the DB file).
+# Busy timeout stays at sqlite3's default of 5 s, now explicit.
+# ---------------------------------------------------------------------------
+
+BUSY_TIMEOUT_S = 5.0
+
+_LIFECYCLE_LOCK = threading.Lock()   # serializes real open/close calls
+_OPEN = set()                        # every live connection, for shutdown
+_local = threading.local()
+
+
+class _ThreadConnection(sqlite3.Connection):
+    """A per-thread connection whose close() ends the request, not the connection."""
+
+    def close(self):  # noqa: D401 — request-level close
+        if self.in_transaction:
+            self.rollback()
+
+    def _close_for_real(self):
+        sqlite3.Connection.close(self)
+
+
+def _really_close(conn):
+    with _LIFECYCLE_LOCK:
+        _OPEN.discard(conn)
+        try:
+            conn._close_for_real()
+        except Exception:
+            pass
+
+
+class _Holder:
+    """Thread-local slot. When a worker thread retires its thread-local storage
+    is released and the finalizer closes that thread's connection."""
+
+    def __init__(self, conn, path):
+        self.conn = conn
+        self.path = path
+        weakref.finalize(self, _really_close, conn)
+
+
+def _open(path: str) -> _ThreadConnection:
+    with _LIFECYCLE_LOCK:
+        conn = sqlite3.connect(path, timeout=BUSY_TIMEOUT_S,
+                               check_same_thread=False, factory=_ThreadConnection)
+        _OPEN.add(conn)
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
+
+
+def get_connection() -> sqlite3.Connection:
+    path = str(DB_PATH)
+    holder = getattr(_local, "holder", None)
+    if holder is not None and (holder.path != path or holder.conn not in _OPEN):
+        # DB_PATH changed (tests) or the connection was closed at shutdown.
+        _really_close(holder.conn)
+        holder = None
+    if holder is None:
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        holder = _local.holder = _Holder(_open(path), path)
+    conn = holder.conn
+    if conn.in_transaction:   # never inherit a previous request's transaction
+        conn.rollback()
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
+def close_all_connections() -> None:
+    """Close every open connection (app shutdown)."""
+    with _LIFECYCLE_LOCK:
+        conns = list(_OPEN)
+        _OPEN.clear()
+        for conn in conns:
+            try:
+                conn._close_for_real()
+            except Exception:
+                pass
 
 
 def init_db() -> None:
     """Create tables if they do not already exist."""
     conn = get_connection()
+    # WAL is persistent in the database file — set it once here, not per connection.
+    conn.execute("PRAGMA journal_mode=WAL")
     with conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS tasks (

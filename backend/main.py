@@ -171,6 +171,7 @@ async def lifespan(app: FastAPI):
     print(f"TaskManager backend — SQLite database: {db_config.DB_PATH}", flush=True)
     init_db()
     yield
+    db_config.close_all_connections()
 
 
 app = FastAPI(title="TaskManagementOS API", version="0.1.0", lifespan=lifespan)
